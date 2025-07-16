@@ -134,7 +134,7 @@ def normalize_dicom_std(dicom_std):
     dicom_std["VR"] = dicom_std["VR"].str.strip()
     dicom_std["VM"] = dicom_std["VM"].str.strip()
     dicom_std["Meaning"] = dicom_std["Meaning"].str.strip()
-    dicom_std.rename(columns={"Data Element": "element_sig_pattern", "Private Creator": "Private_Creator", "VR": "vr", "VM": "vm", "Meaning": "tag_name"}, inplace=True)
+    dicom_std.rename(columns={"Data Element": "element_sig_pattern", "Private Creator": "Private_Creator", "VR": "vr", "Meaning": "tag_name"}, inplace=True)
     return dicom_std
 
 
@@ -166,25 +166,33 @@ def rtn_safe_priv_opt(row):
     """
     Determine the safe private attribute disposition for a DICOM row.
 
-    Checks if the 'DICOM Safe Private Attribute' is set and if the 'private_disposition'
+    Checks if the 'MatchTciaPrivateTags' is set and if the 'private_disposition'
     is 'd' (case-insensitive, with whitespace stripped). If both conditions are met,
     returns 'k' to indicate a safe disposition. Otherwise, returns the original
     'private_disposition' value.
 
     Args:
         row (dict): A dictionary representing a DICOM row, expected to contain
-            'DICOM Safe Private Attribute' and 'private_disposition' keys.
+            'MatchTciaPrivateTags' and 'private_disposition' keys.
 
     Returns:
         str: The safe private disposition value ('k' or the original disposition).
     """
-    if row['DICOM Safe Private Attribute'] and str(row['private_disposition']).strip().lower() == 'd':
+    if row['MatchTciaPrivateTags'] and str(row['private_disposition']).strip().lower() == 'd':
         return 'k'
     return row['private_disposition']
 
+
+def split_group_element(val):
+    """Split element_sig_pattern_cmp into Group and Element"""
+    if isinstance(val, str) and ',' in val:
+        parts = val.split(',')
+        return parts[0].strip(), parts[1].strip()
+    return '', ''
+
 def annotate_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=False):
     """
-    Annotate local DataFrame with DICOM Safe Private Attribute and save to CSV.
+    Annotate local DataFrame with MatchTciaPrivateTags and save to CSV.
     For matching rows, add vm from dicom_std and replace tag_name with dicom_std's tag_name.
     For non-matching dicom_std rows, add them with empty private_disposition and k for Basic Prof. and Rtn. Safe Priv. Opt.
     Args:
@@ -203,35 +211,61 @@ def annotate_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia
     # Merge matching rows
     merged = pd.merge(
         tcia_df,
-        dicom_std[['element_sig_pattern_cmp', 'Private_Creator_cmp', 'vr', 'vm', 'tag_name']],
+        dicom_std[['element_sig_pattern_cmp', 'Private_Creator_cmp', 'vr', 'VM', 'tag_name']],
         on=cmp_cols,
         how='left',
         suffixes=('', '_dicom')
     )
-    merged['DICOM Safe Private Attribute'] = merged[cmp_cols].apply(tuple, axis=1).isin(dicom_std[cmp_cols].apply(tuple, axis=1))
+    merged['MatchTciaPrivateTags'] = merged[cmp_cols].apply(tuple, axis=1).isin(dicom_std[cmp_cols].apply(tuple, axis=1))
     merged['tag_name'] = merged['tag_name_dicom'].where(merged['tag_name_dicom'].notna(), merged['tag_name'])
-    merged['vm'] = merged['vm']
-    merged['Basic Prof.'] = merged['DICOM Safe Private Attribute'].apply(lambda v: 'k' if v else 'x')
+    merged['Basic Prof.'] = merged['MatchTciaPrivateTags'].apply(lambda v: 'k' if v else 'x')
     merged['Rtn. Safe Priv. Opt.'] = merged.apply(rtn_safe_priv_opt, axis=1)
 
     # Prepare non-matching dicom_std rows
     local_tuples = set(merged[cmp_cols].apply(tuple, axis=1))
     dicom_std_not_in_tcia = dicom_std[~dicom_std[cmp_cols].apply(tuple, axis=1).isin(local_tuples)].copy()
     dicom_std_not_in_tcia['private_disposition'] = ''
-    dicom_std_not_in_tcia['DICOM Safe Private Attribute'] = False
+    dicom_std_not_in_tcia['MatchTciaPrivateTags'] = False
     dicom_std_not_in_tcia['Basic Prof.'] = 'k'
     dicom_std_not_in_tcia['Rtn. Safe Priv. Opt.'] = 'k'
-
     # Select columns for output
-    save_cols = ['element_sig_pattern', 'Private_Creator', 'tag_name', 'vr', 'private_disposition', 'DICOM Safe Private Attribute', 'vm', 'Basic Prof.', 'Rtn. Safe Priv. Opt.']
+    save_cols = ['element_sig_pattern', 'Private_Creator', 'tag_name', 'vr', 'private_disposition', 'MatchTciaPrivateTags', 'VM', 'Basic Prof.', 'Rtn. Safe Priv. Opt.', 'element_sig_pattern_cmp','Private_Creator_cmp']
     merged_out = merged[save_cols]
     dicom_std_not_in_tcia_out = dicom_std_not_in_tcia[save_cols]
     final_out = pd.concat([merged_out, dicom_std_not_in_tcia_out], ignore_index=True)
-    final_out.to_csv(output_path, index=False, columns=save_cols)
-    print(f"Saved to {output_path} with DICOM Safe Private Attribute.")
+    final_out['Group'], final_out['Element'] = zip(*final_out['element_sig_pattern_cmp'].map(split_group_element))    
+   
+    # Renaming columns for standardizing output
+    rename_map = {
+        'Private_Creator': 'TCIA Private_Creator',
+        'Private_Creator_cmp': 'PrivateCreator',
+        'tag_name': 'Name',
+        'vr': 'VR',
+        'element_sig_pattern': 'TCIA element_sig_pattern',
+        'tag_name': 'TCIA tag_name',
+        'private_disposition': 'TCIA private_disposition'
+    }
+    final_out = final_out.rename(columns=rename_map)
+    
+    # Set final columns order and fill missing columns with empty string
+    requested_cols = [
+        'Group', 'Element', 'PrivateCreator', 'Name', 'VR', 'VM', 'Basic Prof.', 'Rtn. Safe Priv. Opt.',
+        'Rtn. UIDs Opt.', 'Rtn. Dev. Id. Opt.', 'Rtn. Inst. Id. Opt.', 'Rtn. Pat. Chars. Opt.',
+        'Rtn. Long. Full Dates Opt.', 'Rtn. Long. Modif. Dates Opt.', 'Clean Desc. Opt.',
+        'Clean Struct. Cont. Opt.', 'Clean Graph. Opt.', 'MatchTciaPrivateTags',
+        'TCIA element_sig_pattern', 'TCIA Private_Creator', 'TCIA tag_name', 'TCIA private_disposition',
+        'MatchTciaStandardAttributes', 'TCIA Profile', 'TCIA Implementation', 'Final CTP Script'
+    ]
+    for col in requested_cols:
+        if col not in final_out.columns:
+            final_out[col] = ''
+    final_out = final_out[requested_cols]
+
+    final_out.to_csv(output_path, index=False, columns=requested_cols)
+    print(f"Saved to {output_path} with MatchTciaPrivateTags.")
     if save_dicom_std_not_in_tcia:
-        print(f"Number of True in 'DICOM Safe Private Attribute from TCIA private tags list': {merged['DICOM Safe Private Attribute'].sum()}")
-        print(f"Number of rows in DICOM Safe Private Attribute: {len(dicom_std)}")
+        print(f"Number of True in 'MatchTciaPrivateTags from TCIA private tags list': {merged['MatchTciaPrivateTags'].sum()}")
+        print(f"Number of rows in MatchTciaPrivateTags: {len(dicom_std)}")
         dicom_std_not_in_tcia_path = output_path.replace('.csv', '_DICOM_SAFE_PRIVATE_TAGS_not_in_TCIA_PRIVATE_TAGS.csv')
         dicom_std_not_in_tcia_out.to_csv(dicom_std_not_in_tcia_path, index=False)
         print(f"Saved dicom_std rows not in tcia_df to {dicom_std_not_in_tcia_path}.")
