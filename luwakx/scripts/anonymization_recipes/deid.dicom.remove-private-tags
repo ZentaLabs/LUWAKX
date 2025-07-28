@@ -1,0 +1,5 @@
+FORMAT dicom
+
+%header
+
+REMOVE ALL func:is_private
