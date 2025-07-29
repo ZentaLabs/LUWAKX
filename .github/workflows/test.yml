@@ -1,0 +1,45 @@
+name: Run Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout the repository
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Set up Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    # Install dependencies
+    - name: Install dependencies
+      run: |
+        pip install -r luwakx/requirements.txt
+
+    # Create test_data directory
+    - name: Create test_data directory
+      run: mkdir -p test_data
+      
+    # Download test data from the release
+    - name: Download test data
+      run: |
+        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+        -L "https://github.com/ZentaLabs/luwak/releases/download/0.0.1-test-file/00000001.dcm" \
+        -o test_data/00000001.dcm
+
+    # Run tests
+    - name: Run tests
+      run: |
+        python -m unittest discover luwakx

@@ -3,5 +3,4 @@ requests
 beautifulsoup4
 pandas
 argparse
-unittest
-shutil
+git+https://github.com/Simlomb/deid.git@enhversion

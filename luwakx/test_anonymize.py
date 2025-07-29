@@ -33,7 +33,7 @@ class TestAnonymizeScript(unittest.TestCase):
         print("Test anonymize script runs without errors")
         # Run the anonymize script
         result = subprocess.run([
-            "python", "anonymize.py",
+            "python", "luwakx/anonymize.py",
             "--base", self.test_input_dir,
             "--output", self.test_output_dir
         ], capture_output=True, text=True)
@@ -50,11 +50,11 @@ class TestAnonymizeScript(unittest.TestCase):
 
         print("Test private tags are removed when retain_safe_private_tags is False")
         # Path to the test DICOM file
-        test_dicom_file = "/home/simona/Downloads/input_data_2/1104142010/3.1.363.1.0.6227606.3.741.1202632684086966693/3.1.363.1.0.6227606.3.741.1212668621585478698/00000001.dcm"
+        test_dicom_file = "test_data/00000001.dcm"
         
         # Run the anonymize script
         result = subprocess.run([
-            "python", "anonymize.py",
+            "python", "luwakx/anonymize.py",
             "--base", test_dicom_file,
             "--output", self.test_output_dir,
             "--retain_safe_private_tags", "False"
@@ -76,9 +76,9 @@ class TestAnonymizeScript(unittest.TestCase):
         print("Test safe private tags retention based on recipe")
 
         # Path to the test DICOM file
-        test_dicom_file = "/home/simona/Downloads/input_data_2/1104142010/3.1.363.1.0.6227606.3.741.1202632684086966693/3.1.363.1.0.6227606.3.741.1212668621585478698/00000001.dcm"
-        safe_private_tags_recipe = "./scripts/anonymization_recipes/deid.dicom.safe-private-tags"
-
+        test_dicom_file = "test_data/00000001.dcm"
+        safe_private_tags_recipe = os.path.join(os.getenv("GITHUB_WORKSPACE", ""), "luwakx/scripts/anonymization_recipes/deid.dicom.safe-private-tags")
+        #safe_private_tags_recipe = "./scripts/anonymization_recipes/deid.dicom.safe-private-tags" #
         # Parse the safe_private_tags recipe to extract KEEP expressions
         keep_expressions = []
         with open(safe_private_tags_recipe, "r") as recipe_file:
@@ -102,7 +102,7 @@ class TestAnonymizeScript(unittest.TestCase):
         
         # Run the anonymize script
         result = subprocess.run([
-            "python", "anonymize.py",
+            "python", "luwakx/anonymize.py",
             "--base", test_dicom_file,
             "--output", self.test_output_dir,
             "--retain_safe_private_tags", "True"
@@ -115,7 +115,15 @@ class TestAnonymizeScript(unittest.TestCase):
         anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
         self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
 
-        ds_anonymized = pydicom.dcmread(anonymized_file)
+        # Verify the file exists before reading
+        self.assertTrue(os.path.exists(anonymized_file), f"Anonymized file not found at {anonymized_file}")
+
+        # Log file details for debugging
+        print(f"File path: {anonymized_file}")
+        print(f"File size: {os.path.getsize(anonymized_file)} bytes")
+
+        # Force read the file with pydicom to bypass header issues
+        ds_anonymized = pydicom.dcmread(anonymized_file, force=True)
         retained_private_tags = []
         removed_private_tags = []
         for tag in ds_anonymized.iterall():
