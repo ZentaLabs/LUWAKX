@@ -1,0 +1,7 @@
+pydicom
+requests
+beautifulsoup4
+pandas
+argparse
+unittest
+shutil

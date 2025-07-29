@@ -55,14 +55,19 @@ def main():
         help="Output directory for anonymized DICOM files. Default: ~/luwak_output_files"
     )
     parser.add_argument(
-        "--safe_tags", 
+        "--deid_recipe", 
+        default="deid.dicom", 
+        help="Path to the deid recipe. Default: deid.dicom"
+    )
+    parser.add_argument(
+        "--safe_private_tags", 
         default="./scripts/anonymization_recipes/deid.dicom.safe-private-tags", 
         help="Path to the deid.dicom.safe-private-tags recipe. Default: ./scripts/anonymization_recipes/deid.dicom.safe-private-tags"
     )
     parser.add_argument(
-        "--remove_tags", 
-        default="./scripts/anonymization_recipes/deid.dicom.remove-private-tags", 
-        help="Path to the deid.dicom.remove-private-tags recipe. Default: ./scripts/anonymization_recipes/deid.dicom.remove-private-tags"
+        "--retain_safe_private_tags", 
+        default="True", 
+        help="Whether to retain safe private tags. Default: True"
     )
     args = parser.parse_args()
 
@@ -88,8 +93,16 @@ def main():
         os.makedirs(output, exist_ok=True)
     
     items = get_identifiers(dicom_files)
-    
-    recipe = DeidRecipe(deid=[args.safe_tags, args.remove_tags], base=True)
+
+    # Create the deid recipe
+    if args.retain_safe_private_tags.lower() == "true":
+        remove_other_private_tags = "./scripts/anonymization_recipes/deid.dicom.remove-private-tags"
+        recipe = DeidRecipe(deid=[args.safe_private_tags, remove_other_private_tags], base=True, default_base=args.deid_recipe)
+        remove_private=False
+    else:
+        recipe = DeidRecipe(deid=args.deid_recipe)
+        remove_private=True 
+
 
     for item in items:
         items[item]["is_private"] = is_tag_private
@@ -97,7 +110,7 @@ def main():
     parsed_files = replace_identifiers(
         dicom_files=dicom_files, deid=recipe, strip_sequences=False,
         ids=items,
-        remove_private=False,
+        remove_private=remove_private,
         save=True, output_folder=output,
         overwrite=True
     )

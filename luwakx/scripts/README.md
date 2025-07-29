@@ -55,3 +55,49 @@ python format_private_tags.py --input_tcia TCIAPrivateTagKB-02-01-2024-formatted
 - Reformatted TCIA CSV (optional)
 - Annotated CSV with safe private attribute info
 - DICOM tags not in TCIA (optional)
+
+## Additional Scripts
+
+### Format Standard Tags (`format_standard_tags.py`)
+
+This script processes and formats standard DICOM tags for further use.
+
+#### Usage
+
+```bash
+python format_standard_tags.py --input <input_csv> --output <output_csv>
+```
+
+#### Arguments
+- `--input`: Path to the input CSV file containing standard DICOM tags.
+- `--output`: Path to save the formatted standard tags CSV.
+
+#### Example
+
+```bash
+python format_standard_tags.py --input dicom_standard_tags.csv --output formatted_standard_tags.csv
+```
+
+### Generate Deid Private Tag File (`make_deid_private_tag_file.py`)
+
+This script generates a deid-compatible private tag file from the provided input.
+
+#### Usage
+
+```bash
+python make_deid_private_tag_file.py --input <input_csv> --output <output_file>
+```
+
+#### Arguments
+- `--input`: Path to the input CSV file containing private tag information.
+- `--output`: Path to save the generated deid private tag file.
+
+#### Example
+
+```bash
+python make_deid_private_tag_file.py --input DICOM_SAFE_PRIVATE_TAGS.csv --output deid.dicom.safe-private-tags
+```
+
+## Notes
+- Ensure the input files are correctly formatted before running the scripts.
+- Output files will be overwritten if they already exist.
