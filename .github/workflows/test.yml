@@ -31,13 +31,24 @@ jobs:
     # Create test_data directory
     - name: Create test_data directory
       run: mkdir -p test_data
-      
-    # Download test data from the release
+          
+    # Cache test data
+    - name: Cache test data
+      uses: actions/cache@v3
+      with:
+        path: test_data
+        key: ${{ runner.os }}-test-data-cache
+        restore-keys: |
+          ${{ runner.os }}-test-data-cache
+
+    # Download test data from the release if not cached
     - name: Download test data
       run: |
-        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-        -L "https://github.com/ZentaLabs/luwak/releases/download/0.0.1-test-file/00000001.dcm" \
-        -o test_data/00000001.dcm
+        if [ ! -f test_data/test-dicom-files-2.tar.gz ]; then
+          curl -L "https://github.com/Simlomb/Test-data-anonymization/releases/download/0.0.1-dicom-files-test/test-dicom-files-2.tar.gz" \
+          -o test_data/test-dicom-files-2.tar.gz && \
+          tar --strip-components=1 -xvzf test_data/test-dicom-files-2.tar.gz -C test_data
+        fi
 
     # Run tests
     - name: Run tests
