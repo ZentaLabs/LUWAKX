@@ -1,0 +1,9 @@
+{
+  "inputFolder": "./inputs",
+  "outputDeidentified_folder": "./outputs/deidentified",
+  "outputPrivateMappingFolder": "./outputs/privateMapping",
+  "recipesFolder": "{shared_config}/recipes",
+  "recipes": ["dicom_basic_profile", "retain_safe_private_tags", "retain_uids"],
+  "output_folder_hierarchy": "copy_from_input",
+   "encryption_root": "7f4fsui293asdf"
+}
