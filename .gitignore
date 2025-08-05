@@ -1,1 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
 *.DS_Store
+Thumbs.db
+
+# Project specific
+test_data/
+test_input_*/
+test_output/
+*.tar.gz
+
+# Logs and temp files
+*.log
+*.tmp

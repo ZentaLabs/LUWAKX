@@ -37,20 +37,26 @@ jobs:
       uses: actions/cache@v3
       with:
         path: test_data
-        key: ${{ runner.os }}-test-data-cache
+        key: ${{ runner.os }}-test-data-v1
         restore-keys: |
-          ${{ runner.os }}-test-data-cache
+          ${{ runner.os }}-test-data-
 
     # Download test data from the release if not cached
-    - name: Download test data
+    - name: Download and extract test data
       run: |
-        if [ ! -f test_data/test-dicom-files-2.tar.gz ]; then
+        if [ ! -d "test_data" ] || [ -z "$(ls -A test_data)" ]; then
+          echo "Test data not found or empty, downloading..."
+          mkdir -p test_data
           curl -L "https://github.com/Simlomb/Test-data-anonymization/releases/download/0.0.1-dicom-files-test/test-dicom-files-2.tar.gz" \
-          -o test_data/test-dicom-files-2.tar.gz && \
-          tar --strip-components=1 -xvzf test_data/test-dicom-files-2.tar.gz -C test_data
+          -o test-dicom-files-2.tar.gz
+          tar --strip-components=1 -xzf test-dicom-files-2.tar.gz -C test_data
+          rm test-dicom-files-2.tar.gz
+          echo "Downloaded and extracted $(ls test_data | wc -l) files"
+        else
+          echo "Using cached test data ($(ls test_data | wc -l) files)"
         fi
 
     # Run tests
     - name: Run tests
       run: |
-        python -m unittest discover luwakx
+        python -m unittest discover test -v

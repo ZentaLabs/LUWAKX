@@ -1,62 +1,141 @@
-# Anonymize DICOM Files with anonymize.py
+# LuwakX - Config-Driven DICOM Anonymization
 
-The `anonymize.py` script is a tool for anonymizing DICOM files using the `deid` library. It supports removing private tags and retaining safe private tags based on a recipe.
+LuwakX is a powerful, config-driven tool for anonymizing DICOM files using the `deid` library. It supports flexible configuration through JSON files and provides both command-line and programmatic interfaces.
 
 ## Prerequisites
 
-1. **Python**: Ensure you have Python installed on your system.
+1. **Python**: Ensure you have Python 3.7+ installed on your system.
 2. **Dependencies**: Install the required dependencies by running:
    ```bash
    pip install -r requirements.txt
    ```
-3. **deid Repository**: The script automatically clones and installs the `deid` repository if not already present.
+
+## Architecture
+
+LuwakX uses a config-driven architecture with two main components:
+
+- **`anonymize.py`**: Contains the `LuwakAnonymizer` class for programmatic use
+- **`luwakx.py`**: Command-line wrapper script that uses JSON configuration files
+
+## Configuration File Format
+
+Create a JSON configuration file with the following structure:
+
+```json
+{
+  "inputFolder": "/path/to/input/dicom/files",
+  "outputDeidentified_folder": "/path/to/output/directory",
+  "outputPrivateMappingFolder": "/path/to/output/directory/privateMapping",
+  "recipesFolder": "./scripts/anonymization_recipes",
+  "recipes": ["remove_private_tags"],
+  "output_folder_hierarchy": "copy_from_input",
+  "encryption_root": "your_encryption_key"
+}
+```
+
+### Configuration Parameters
+
+- **`inputFolder`**: Path to input DICOM file or directory
+- **`outputDeidentified_folder`**: Output directory for anonymized files
+- **`outputPrivateMappingFolder`**: Directory for private tag mappings
+- **`recipesFolder`**: Directory containing deid recipe files
+- **`recipes`**: List of recipe names to apply (e.g., `["remove_private_tags", "retain_safe_private_tags"]`)
+- **`output_folder_hierarchy`**: How to structure output (`"copy_from_input"` or `"flat"`)
+- **`encryption_root`**: Encryption key for anonymization
+
+### Built-in Recipes
+
+- **`remove_private_tags`**: Removes all private DICOM tags
+- **`retain_safe_private_tags`**: Keeps safe private tags while removing others
 
 ## Usage
 
-Run the script using the following command:
+### Command Line Interface
+
+Run the script using a JSON configuration file:
 
 ```bash
-python anonymize.py --base <input_path> --output <output_path> [options]
+python luwakx.py --config_path /path/to/config.json
 ```
 
-### Arguments
+### Programmatic Interface
 
-- `--base`: Path to the input DICOM file or directory containing DICOM files. (Default: `/path/to/default/input`)
-- `--output`: Path to the output directory where anonymized files will be saved. (Default: `~/luwak_output_files`)
-- `--deid_recipe`: Path to the deid recipe file. (Default: `deid.dicom`)
-- `--safe_private_tags`: Path to the safe private tags recipe file. (Default: `./scripts/anonymization_recipes/deid.dicom.safe-private-tags`)
-- `--retain_safe_private_tags`: Whether to retain safe private tags. Accepts `True` or `False`. (Default: `True`)
+Use the `LuwakAnonymizer` class directly in your Python code:
 
-### Example
+```python
+from anonymize import LuwakAnonymizer
 
-To anonymize a single DICOM file and retain safe private tags:
+# Initialize with config file
+anonymizer = LuwakAnonymizer("/path/to/config.json")
 
-```bash
-python anonymize.py \
-  --base /path/to/dicom/file.dcm \
-  --output /path/to/output/directory \
-  --retain_safe_private_tags True
+# Run anonymization
+result = anonymizer.anonymize()
 ```
 
-To anonymize all DICOM files in a directory and remove all private tags:
+### Example Configurations
 
-```bash
-python anonymize.py \
-  --base /path/to/dicom/directory \
-  --output /path/to/output/directory \
-  --retain_safe_private_tags False
+**Remove all private tags:**
+```json
+{
+  "inputFolder": "/data/dicom_files",
+  "outputDeidentified_folder": "/data/anonymized",
+  "outputPrivateMappingFolder": "/data/anonymized/privateMapping",
+  "recipesFolder": "./scripts/anonymization_recipes",
+  "recipes": ["remove_private_tags"],
+  "output_folder_hierarchy": "copy_from_input",
+  "encryption_root": "my_secure_key"
+}
 ```
+
+**Retain safe private tags:**
+```json
+{
+  "inputFolder": "/data/dicom_files",
+  "outputDeidentified_folder": "/data/anonymized",
+  "outputPrivateMappingFolder": "/data/anonymized/privateMapping",
+  "recipesFolder": "./scripts/anonymization_recipes",
+  "recipes": ["retain_safe_private_tags"],
+  "output_folder_hierarchy": "copy_from_input",
+  "encryption_root": "my_secure_key"
+}
+```
+
+## Features
+
+- **Config-driven architecture**: Use JSON files for flexible configuration
+- **Multiple recipe support**: Apply multiple anonymization recipes simultaneously
+- **Path resolution**: Supports both relative and absolute paths with `{shared_config}` placeholders
+- **Hierarchical output**: Preserve or flatten directory structures
+- **Performance optimized**: Efficient processing of large DICOM datasets
+- **Test coverage**: Comprehensive test suite with automated CI/CD
 
 ## Notes
 
-- The script supports both single DICOM files and directories containing multiple DICOM files.
-- If the output directory does not exist, it will be created automatically.
-- Ensure the `safe_private_tags` recipe is correctly configured to retain the desired private tags.
+- The script supports both single DICOM files and directories containing multiple DICOM files
+- Output directories are created automatically if they don't exist
+- Recipe files are located in `./scripts/anonymization_recipes/` by default
+- The system supports both string and list formats for recipe specifications
+- Path resolution allows for relocatable configurations using placeholders
+
+## Testing
+
+Run the test suite to validate functionality:
+
+```bash
+# Run all tests
+python -m unittest discover test -v
+
+# Run specific test
+python -m unittest test.test_anonymize.TestAnonymizeScript.test_private_tags_removed -v
+```
 
 ## Troubleshooting
 
-- If the script fails to run, ensure all dependencies are installed and the `deid` repository is properly set up.
-- Check the console output for error messages and verify the input paths and arguments.
+- **Missing dependencies**: Ensure all requirements are installed with `pip install -r requirements.txt`
+- **Path issues**: Use absolute paths in configuration files or ensure relative paths are correct
+- **Recipe errors**: Verify recipe files exist in the specified `recipesFolder`
+- **Permission errors**: Ensure write permissions for output directories
+- **Performance issues**: For large datasets, monitor the `replace_identifiers` operation which can be time-intensive
 
 ## License
 

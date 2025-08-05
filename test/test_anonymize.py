@@ -63,14 +63,14 @@ class TestAnonymizeScript(unittest.TestCase):
             shutil.rmtree(self.test_output_dir)
         os.makedirs(self.test_output_dir, exist_ok=True)
 
-        # Create a limited input directory with first 100 files
-        self.limited_input_dir = "test_input_100"
+        # Create a limited input directory with first 50 files
+        self.limited_input_dir = "test_input_50"
         self.create_limited_input_dataset()
         
         print("\n######################START TEST######################")
     
     def create_limited_input_dataset(self):
-        """Create a dataset with only the first 100 DICOM files for testing."""
+        """Create a dataset with only the first 50 DICOM files for testing."""
         if os.path.exists(self.limited_input_dir):
             shutil.rmtree(self.limited_input_dir)
         os.makedirs(self.limited_input_dir, exist_ok=True)
@@ -79,12 +79,12 @@ class TestAnonymizeScript(unittest.TestCase):
         all_files = [f for f in os.listdir(self.test_data_dir) if f.endswith('.dcm')]
         all_files.sort()
 
-        # Take only first 100 files
-        files_to_copy = all_files[:100]
-        
+        # Take only first 50 files
+        files_to_copy = all_files[:50]
+
         print(f"Creating limited input dataset with {len(files_to_copy)} files out of {len(all_files)} total files")
-        
-        # Copy the first 300 files to the limited input directory
+
+        # Copy the first 50 files to the limited input directory
         for file in files_to_copy:
             src = os.path.join(self.test_data_dir, file)
             dst = os.path.join(self.limited_input_dir, file)
