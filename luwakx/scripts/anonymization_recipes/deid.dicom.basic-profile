@@ -1,0 +1,7 @@
+FORMAT dicom
+
+%header
+
+REPLACE StudyInstanceUID func:generate_uid
+REPLACE SeriesInstanceUID func:generate_uid
+REPLACE SOPInstanceUID func:generate_uid

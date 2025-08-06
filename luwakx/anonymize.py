@@ -7,6 +7,11 @@ import sys
 import os
 import argparse
 import json
+import hashlib
+import csv
+import pydicom
+import pandas as pd
+from datetime import datetime
 
 def setup_deid_repo():
     repo_url = "https://github.com/Simlomb/deid.git"
@@ -57,46 +62,85 @@ class LuwakAnonymizer:
         """Check if a DICOM tag is private."""
         return field.element.is_private and (field.element.private_creator is not None)
     
+
     def generate_uid(self, item, value, field, dicom):
-        """Custom wrapper around pydicom_uuid with mapping storage."""
-        # Use deid's pydicom_uuid for proper UID generation
-        kwargs = {
-            'extras': 'prefix=2.25. stable_remapping=true'  # or false for random UIDs
-        }
-        new_uid = pydicom_uuid(item, value, field, **kwargs)
+        """Custom UID generation using combined salt as root for randomization."""
+        
+        #print(f"DEBUG: generate_uid called for item={item}, value={value}, field={field}")
+        
+        # Extract the original UID value from the DICOM field
+        try:
+            # The actual original UID should be in the field element's value
+            if hasattr(field, 'element') and hasattr(field.element, 'value'):
+                original_uid = str(field.element.value)
+            elif hasattr(field, 'value'):
+                original_uid = str(field.value)
+            else:
+                # Fallback to the value parameter, but warn about it
+                original_uid = str(value) if value else "unknown"
+        except Exception as e:
+            print(f"  ERROR extracting original UID: {e}")
+            original_uid = str(value) if value else "unknown"
+        
+        # Combine encryption_root and original UID as salt for deterministic generation
+        combined_salt = f"{self.encryption_root}.{original_uid}"
+        
+        # Create a deterministic hash from the combined salt
+        salt_hash = hashlib.sha256(combined_salt.encode()).hexdigest()
+        
+        # Use the hash as the root for UID generation
+        # Take chunks of the hash and convert to decimal segments
+        hash_segments = []
+        for i in range(0, min(32, len(salt_hash)), 8):
+            segment = salt_hash[i:i+8]
+            # Convert hex to decimal and limit size for UID component
+            decimal_val = int(segment, 16) % 999999999  # Keep it reasonable for UID
+            hash_segments.append(str(decimal_val))
+        
+        # Create UID with our custom root prefix and hash-based segments
+        new_uid = f"5.25.{'.'.join(hash_segments[:4])}"  # Use first 4 segments
+        
+        # Ensure UID doesn't exceed 64 character limit
+        if len(new_uid) > 64:
+            new_uid = new_uid[:64]
         
         # Store the mapping for this file (will be saved later)
-        file_path = item  # item is the file path
+        # Extract file path from the dicom dataset filename attribute
+        file_path = getattr(dicom, 'filename', str(dicom))
         if file_path not in self.current_file_mappings:
             self.current_file_mappings[file_path] = {}
         
-        self.current_file_mappings[file_path][field.keyword] = {
-            'original': value,
+        # Get field keyword from the element
+        field_keyword = getattr(field.element, 'keyword', field.element.tag)
+        self.current_file_mappings[file_path][field_keyword] = {
+            'original': original_uid,  # Use the extracted original UID
             'anonymized': new_uid
         }
-        
-        print(f"UID mapping stored: {field.keyword} {value} -> {new_uid}")
         
         return new_uid
     
     def save_all_uid_mappings(self):
         """Save all UID mappings to CSV file with one row per DICOM file."""
-        import csv
-        import os
-        from datetime import datetime
         
         mapping_file = os.path.join(self.private_map_folder, "uid_mappings.csv")
         
         # Check if file exists to determine if we need to write headers
         file_exists = os.path.exists(mapping_file)
         
-        # Define all possible UID fields
-        uid_fields = ['StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID']
+        # Dynamically discover all modified fields across all files
+        all_modified_fields = set()
+        for file_path, mappings in self.current_file_mappings.items():
+            all_modified_fields.update(mappings.keys())
         
-        # Create column headers
-        fieldnames = ['timestamp', 'file_path']
-        for field in uid_fields:
+        # Sort the fields for consistent column ordering
+        sorted_fields = sorted(all_modified_fields)
+        
+        # Create column headers dynamically
+        fieldnames = ['file_path']
+        for field in sorted_fields:
             fieldnames.extend([f'{field}_original', f'{field}_anonymized'])
+        
+        print(f"Dynamically detected {len(sorted_fields)} modified fields: {sorted_fields}")
         
         # Open file in append mode
         with open(mapping_file, 'a', newline='') as csvfile:
@@ -109,23 +153,23 @@ class LuwakAnonymizer:
             # Write one row per file
             for file_path, mappings in self.current_file_mappings.items():
                 row = {
-                    'timestamp': datetime.now().isoformat(),
                     'file_path': os.path.basename(file_path)  # Just filename for readability
                 }
                 
-                # Add mapping data for each UID field
-                for field in uid_fields:
+                # Add mapping data for each modified field
+                for field in sorted_fields:
                     if field in mappings:
                         row[f'{field}_original'] = mappings[field]['original']
                         row[f'{field}_anonymized'] = mappings[field]['anonymized']
                     else:
-                        # Field not present in this file
+                        # Field not modified in this particular file
                         row[f'{field}_original'] = ''
                         row[f'{field}_anonymized'] = ''
                 
                 writer.writerow(row)
         
         print(f"\nUID mappings saved for {len(self.current_file_mappings)} files to: {mapping_file}")
+        print(f"CSV contains mappings for {len(sorted_fields)} different field types")
         
         # Clear the mappings for next run
         self.current_file_mappings = {}
@@ -133,17 +177,13 @@ class LuwakAnonymizer:
     def extract_dicom_metadata(self, dicom_file, anonymized_file_path):
         """Extract metadata from DICOM file for Parquet export - only retained tags."""
         try:
-            import pydicom
-            from datetime import datetime
             
             # Read the anonymized DICOM file
             ds = pydicom.dcmread(anonymized_file_path, force=True)
             
-            # Start with file tracking information
+            # Start with minimal file tracking information
             metadata = {
-                'FilePath': os.path.basename(dicom_file),
                 'AnonymizedFilePath': os.path.basename(anonymized_file_path),
-                'ProcessingTimestamp': datetime.now().isoformat(),
             }
             
             # Dynamically extract all retained DICOM tags using their keyword names
@@ -175,20 +215,49 @@ class LuwakAnonymizer:
                         value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['IS']:  # Integer String
                         try:
-                            value = int(elem.value) if elem.value else 0
+                            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                                # Multi-value integer field - convert to string list
+                                value = str(list(elem.value)) if elem.value else ''
+                            else:
+                                value = int(elem.value) if elem.value else 0
                         except (ValueError, TypeError):
                             value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['DS']:  # Decimal String
                         try:
-                            value = float(elem.value) if elem.value else 0.0
+                            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                                # Multi-value decimal field - convert to string list
+                                value = str(list(elem.value)) if elem.value else ''
+                            else:
+                                value = float(elem.value) if elem.value else 0.0
                         except (ValueError, TypeError):
                             value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['US', 'SS']:  # Unsigned/Signed Short
-                        value = int(elem.value) if elem.value is not None else 0
+                        try:
+                            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                                # Multi-value field - convert to string list
+                                value = str(list(elem.value)) if elem.value else ''
+                            else:
+                                value = int(elem.value) if elem.value is not None else 0
+                        except (ValueError, TypeError):
+                            value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['UL', 'SL']:  # Unsigned/Signed Long
-                        value = int(elem.value) if elem.value is not None else 0
+                        try:
+                            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                                # Multi-value field - convert to string list
+                                value = str(list(elem.value)) if elem.value else ''
+                            else:
+                                value = int(elem.value) if elem.value is not None else 0
+                        except (ValueError, TypeError):
+                            value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['FL', 'FD']:  # Float/Double
-                        value = float(elem.value) if elem.value is not None else 0.0
+                        try:
+                            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                                # Multi-value field - convert to string list
+                                value = str(list(elem.value)) if elem.value else ''
+                            else:
+                                value = float(elem.value) if elem.value is not None else 0.0
+                        except (ValueError, TypeError):
+                            value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['SQ']:  # Sequence - skip for now
                         continue
                     elif hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
@@ -215,8 +284,6 @@ class LuwakAnonymizer:
     def export_metadata_to_parquet(self):
         """Export all collected metadata to Parquet file with dynamic schema based on retained tags."""
         try:
-            import pandas as pd
-            from datetime import datetime
             
             if not self.dicom_metadata:
                 print("No metadata to export")
@@ -231,7 +298,7 @@ class LuwakAnonymizer:
             # We'll infer types dynamically since we don't know which columns will exist
             for col in df.columns:
                 # Skip our fixed tracking columns
-                if col in ['FilePath', 'AnonymizedFilePath', 'ProcessingTimestamp']:
+                if col in ['AnonymizedFilePath']:
                     df[col] = df[col].astype('string')
                     continue
                 
@@ -298,32 +365,6 @@ class LuwakAnonymizer:
             # Print schema summary for verification
             print(f"\nDynamic Parquet Schema Summary:")
             print(f"- Total columns: {len(df.columns)}")
-            
-            # Show data type distribution
-            type_counts = df.dtypes.value_counts()
-            for dtype, count in type_counts.items():
-                print(f"- {dtype}: {count} columns")
-            
-            # Show sample of retained DICOM tag columns (excluding our tracking columns)
-            dicom_columns = [col for col in df.columns if col not in 
-                           ['FilePath', 'AnonymizedFilePath', 'ProcessingTimestamp', 
-                            'OriginalFileSizeBytes', 'AnonymizedFileSizeBytes',
-                            'HasPixelData', 'IsMultiFrame', 'IsColor', 'IsEnhanced']]
-            
-            if dicom_columns:
-                print(f"\nRetained DICOM tag columns ({len(dicom_columns)} total):")
-                # Show first 10 columns as sample
-                sample_columns = dicom_columns[:10]
-                print(f"Sample columns: {', '.join(sample_columns)}")
-                if len(dicom_columns) > 10:
-                    print(f"... and {len(dicom_columns) - 10} more")
-                
-                # Show sample data for a few key columns if they exist
-                key_columns = [col for col in ['StudyDate', 'Modality', 'PatientSex', 'BodyPartExamined'] 
-                              if col in df.columns]
-                if key_columns:
-                    print(f"\nSample data for key retained tags:")
-                    print(df[key_columns].head(3).to_string())
             
             # Clear metadata for next run
             self.dicom_metadata = []
@@ -498,7 +539,9 @@ class LuwakAnonymizer:
         
         # Build full paths for each recipe
         for recipe in recipes_to_process:
+            print(f"Processing recipe: {recipe}")
             if recipe == 'dicom_basic_profile':
+                
                 recipe_file = os.path.join(self.recipes_folder, 'deid.dicom.basic-profile')
                 recipe_paths.append(recipe_file)
                 self.remove_private = True  # Basic profile removes private tags
@@ -509,6 +552,7 @@ class LuwakAnonymizer:
                 # Look for recipe file in recipes folder
                 recipe_paths.append(os.path.join(self.recipes_folder, 'deid.dicom.safe-private-tags'))
                 recipe_paths.append(os.path.join(self.recipes_folder, 'deid.dicom.remove-private-tags'))
+                print("Using recipe to retain safe private tags and remove others", recipe_paths)
             elif recipe == 'retain_uids':
                 # Look for UID retention recipe
                 recipe_file = os.path.join(self.recipes_folder, 'deid.dicom.retain-uids')
@@ -545,6 +589,8 @@ class LuwakAnonymizer:
         else:
             recipe = DeidRecipe(deid=recipe_paths[0], base=True)
 
+        print(f"DEBUG: Created recipe with paths: {recipe_paths}")
+        print(f"DEBUG: Recipe content: {recipe}")
         return recipe
     
     def anonymize(self):
@@ -568,16 +614,9 @@ class LuwakAnonymizer:
         print("Creating anonymization recipe...")
         recipe = self.create_deid_recipe()
         
-        # Set private tag handling and UID generation for specific UID fields
-        uid_fields = ['StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID']
-        
         for item in items:
             items[item]["is_private"] = self.is_tag_private
-            
-            # Only apply UID generation to Study, Series, and SOP Instance UIDs
-            for field_name in uid_fields:
-                if field_name in items[item]:
-                    items[item][field_name]["generate_uid"] = self.generate_uid
+            items[item]["generate_uid"] = self.generate_uid
         
         # Perform anonymization
         print("Performing anonymization...")

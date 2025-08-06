@@ -2,5 +2,6 @@ pydicom
 requests
 beautifulsoup4
 pandas
+pyarrow
 argparse
 git+https://github.com/Simlomb/deid.git@enhversion

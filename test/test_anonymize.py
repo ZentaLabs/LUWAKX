@@ -99,7 +99,7 @@ class TestAnonymizeScript(unittest.TestCase):
             shutil.rmtree(self.limited_input_dir)
         print("\n######################END TEST######################")
 
-    def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None):
+    def create_test_config(self, input_folder, output_folder, recipes=None, encryption_root=None, recipes_folder=None):
         """Helper method to create a temporary config file for testing."""
         if recipes is None:
             recipes = ""
@@ -118,7 +118,7 @@ class TestAnonymizeScript(unittest.TestCase):
             "recipesFolder": recipes_folder or os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes"),
             "recipes": recipes,
             "output_folder_hierarchy": "copy_from_input",
-            "encryption_root": "test_encryption_key"
+            "encryption_root": encryption_root or "test_encryption_key"
         }
         
         # Create temporary config file
@@ -190,7 +190,7 @@ class TestAnonymizeScript(unittest.TestCase):
 
     def test_keep_specific_private_tags_should_be_original_value(self):
         """Test KEEP private tags using retain_safe_private_tags recipe."""
-        print("Test KEEP private tags with retain_safe_private_tags recipe (first 300 input files)")
+        print("Test KEEP private tags with retain_safe_private_tags recipe (first 50 input files)")
         
         # Create test config with retain_safe_private_tags recipe
         config_path = self.create_test_config(
@@ -220,7 +220,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 ds = pydicom.dcmread(anonymized_file)
                 
                 for tag_str, expected_creator in expected_private_tags.items():
-                    tag = pydicom.tag.Tag(tag_str.lower())
+                    tag = pydicom.tag.Tag(f"0x{tag_str}")
                     # Check if the private tag exists in files that originally had it
                     self.assertIn(tag, ds)
                     element = ds[tag]
@@ -249,6 +249,10 @@ class TestAnonymizeScript(unittest.TestCase):
                 "python", script_path,
                 "--config_path", config_path
             ], capture_output=True, text=True)
+            
+            # Print the captured output to see deid prints
+            #print("STDOUT:", result.stdout)
+            #print("STDERR:", result.stderr)
 
             # Check if the script ran without errors  
             self.assertEqual(result.returncode, 0, f"luwakx.py failed with error: {result.stderr}")
@@ -257,6 +261,67 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
             self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found from luwakx.py")
             
+        finally:
+            # Clean up config file
+            os.unlink(config_path)
+
+    def test_uid_generation(self):
+        """Test the generation of new UIDs for StudyInstanceUID, SeriesInstanceUID, and SOPInstanceUID."""
+        print("Test UID generation on first file")
+        
+        # First, read the original file to get the original UIDs
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        
+        original_ds = pydicom.dcmread(original_file)
+        original_uids = {
+            'StudyInstanceUID': getattr(original_ds, 'StudyInstanceUID', None),
+            'SeriesInstanceUID': getattr(original_ds, 'SeriesInstanceUID', None),
+            'SOPInstanceUID': getattr(original_ds, 'SOPInstanceUID', None)
+        }
+        
+        # Verify original file has the UIDs we want to test
+        for uid_name, uid_value in original_uids.items():
+            self.assertIsNotNone(uid_value, f"Original file missing {uid_name}")
+
+        # Create test config with basic profile (which should trigger UID generation)
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["dicom_basic_profile"],  # Use basic profile recipe which should trigger UID generation
+            encryption_root="test_mapping_key"
+        )
+
+        try:
+            # Run the anonymize script
+            anonymizer = LuwakAnonymizer(config_path)
+            result = anonymizer.anonymize()
+
+            # Check if the anonymized file was created
+            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
+            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
+
+            # Read the anonymized file and check that UIDs have been changed
+            anonymized_ds = pydicom.dcmread(anonymized_file)
+            anonymized_uids = {
+                'StudyInstanceUID': getattr(anonymized_ds, 'StudyInstanceUID', None),
+                'SeriesInstanceUID': getattr(anonymized_ds, 'SeriesInstanceUID', None),
+                'SOPInstanceUID': getattr(anonymized_ds, 'SOPInstanceUID', None)
+            }
+            
+            # Verify that UIDs have been changed
+            for uid_name in ['StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID']:
+                original_uid = original_uids[uid_name]
+                anonymized_uid = anonymized_uids[uid_name]
+                
+                self.assertIsNotNone(anonymized_uid, f"Anonymized file missing {uid_name}")
+                self.assertNotEqual(original_uid, anonymized_uid, 
+                                  f"{uid_name} was not changed during anonymization")
+
+                # Check if the anonymized UID follows the expected format
+                self.assertTrue(anonymized_uid.startswith('5.25.'),
+                                f"{uid_name} doesn't have expected 5.25. prefix: {anonymized_uid}")
+
         finally:
             # Clean up config file
             os.unlink(config_path)
