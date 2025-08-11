@@ -542,7 +542,7 @@ class LuwakAnonymizer:
             print(f"Processing recipe: {recipe}")
             if recipe == 'dicom_basic_profile':
                 
-                recipe_file = os.path.join(self.recipes_folder, 'deid.dicom.basic-profile')
+                recipe_file = os.path.join(self.recipes_folder, 'deid.dicom.basic-profile-2')
                 recipe_paths.append(recipe_file)
                 self.remove_private = True  # Basic profile removes private tags
             elif recipe == 'remove_private_tags':
@@ -615,7 +615,7 @@ class LuwakAnonymizer:
         recipe = self.create_deid_recipe()
         
         for item in items:
-            items[item]["is_private"] = self.is_tag_private
+            items[item]["is_tag_private"] = self.is_tag_private
             items[item]["generate_uid"] = self.generate_uid
         
         # Perform anonymization

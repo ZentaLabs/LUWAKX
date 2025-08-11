@@ -2,4 +2,4 @@ FORMAT dicom
 
 %header
 
-REMOVE ALL func:is_private
+REMOVE ALL func:is_tag_private

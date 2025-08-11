@@ -36,13 +36,13 @@ class TestExports(unittest.TestCase):
             archive_path = "test-dicom-files-2.tar.gz"
             urllib.request.urlretrieve(test_data_url, archive_path)
 
-            # Extract the archive
+            # Extract the archive with data filter for security
             with tarfile.open(archive_path, "r:gz") as tar:
                 # Extract all files directly into the test_data_dir
                 for member in tar.getmembers():
                     # Remove the top-level folder from the path
                     member.path = os.path.relpath(member.path, start="test-dicom-files-2")
-                    tar.extract(member, path=cls.test_data_dir)
+                    tar.extract(member, path=cls.test_data_dir, filter='data')
 
             # Clean up the downloaded archive
             os.remove(archive_path)
