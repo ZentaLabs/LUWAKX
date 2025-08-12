@@ -326,6 +326,144 @@ class TestAnonymizeScript(unittest.TestCase):
             # Clean up config file
             os.unlink(config_path)
 
+    def test_date_shift_generation(self):
+        """Test the date shift functionality for DA, DT, and TM fields."""
+        print("Test date shift generation and application")
+        
+        # Use the first file for testing
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        
+        # Read original file to get date/time values
+        original_ds = pydicom.dcmread(original_file)
+        original_values = {}
+        # TODO
+          
+
+    def test_dummy_datetime_generation(self):
+        """Test the dummy datetime generation for DA, DT, and TM VR types."""
+        print("Test dummy datetime generation for different VR types")
+        
+        # Use the first file for testing
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        
+        original_ds = pydicom.dcmread(original_file)
+        
+        # Create test config 
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["dicom_basic_profile"],
+            encryption_root="dummy_datetime_test_key"
+        )
+
+        try:
+            # Initialize anonymizer to test dummy datetime generation
+            anonymizer = LuwakAnonymizer(config_path)
+            
+            # Test DA (Date) VR
+            print("  Testing DA (Date) VR...")
+            # Create mock field with actual DICOM date value in element
+            mock_da_field = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'DA',
+                    'value': '20240315'  # Original DICOM date value
+                })()
+            })()
+            
+            # The value parameter should be the recipe string, not the original value
+            dummy_da = anonymizer.generate_dummy_datetime("item1", "func:generate_dummy_datetime", mock_da_field, original_ds)
+            self.assertEqual(dummy_da, "00010101", f"DA dummy should be '00010101', got '{dummy_da}'")
+            
+            # Test DT (DateTime) VR
+            print("  Testing DT (DateTime) VR...")
+            mock_dt_field = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'DT',
+                    'value': '20240315143022.123456+0200'  # Original DICOM datetime value
+                })()
+            })()
+            
+            dummy_dt = anonymizer.generate_dummy_datetime("item1", "func:generate_dummy_datetime", mock_dt_field, original_ds)
+            expected_dt = "00010101010101.000000+0000"
+            self.assertEqual(dummy_dt, expected_dt, f"DT dummy should be '{expected_dt}', got '{dummy_dt}'")
+            
+            # Test TM (Time) VR
+            print("  Testing TM (Time) VR...")
+            mock_tm_field = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'TM',
+                    'value': '143022.123'  # Original DICOM time value
+                })()
+            })()
+            
+            dummy_tm = anonymizer.generate_dummy_datetime("item1", "func:generate_dummy_datetime", mock_tm_field, original_ds)
+            expected_tm = "000000.00"
+            self.assertEqual(dummy_tm, expected_tm, f"TM dummy should be '{expected_tm}', got '{dummy_tm}'")
+            
+            print("  All dummy datetime generation tests passed!")
+            print(f"    - DA (Date): '{dummy_da}'")
+            print(f"    - DT (DateTime): '{dummy_dt}'") 
+            print(f"    - TM (Time): '{dummy_tm}'")
+            
+        finally:
+            # Clean up config file
+            os.unlink(config_path)
+
+    def test_dummy_datetime_with_dicom_basic_profile_recipe(self):
+        """Test dummy datetime generation when running full anonymization with DICOM basic profile recipe."""
+        print("Test dummy datetime generation with DICOM basic profile recipe")
+        '''
+        # Use the first file for testing
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        
+        # Read original file to get date/time values
+        original_ds = pydicom.dcmread(original_file)
+        print(f"  Checking for date/time fields that use generate_dummy_datetime in basic-profile-2...")
+        
+        # DICOM tag keywords from deid.dicom.basic-profile-2 that use func:generate_dummy_datetime
+        # These correspond to the actual tags from the recipe file
+        datetime_fields_to_check = ['StudyDate', 'StudyTime', '(0040,A13A)']
+        
+        # Check which fields exist in the original file
+        print('  Original file contains the following date/time fields:', original_ds.StudyDate, original_ds.StudyTime)
+        for field_info in datetime_fields_to_check:
+            if hasattr(original_ds, field_info):
+                print(f"  Found field: {field_info} (VR: {original_ds.data_element(field_info).VR})")
+        # Create test config using dicom_basic_profile recipe which includes basic-profile-2
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=['dicom_basic_profile'],
+            encryption_root="dummy_datetime_recipe_test"
+        )
+
+        try:
+            # Run full anonymization
+            anonymizer = LuwakAnonymizer(config_path)
+            result = anonymizer.anonymize()
+            
+            # Check if the anonymized file was created
+            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
+            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
+            
+            # Read the anonymized file and check specific fields
+            anonymized_ds = pydicom.dcmread(anonymized_file)
+            
+            # Check date fields (DA VR) - should be "00010101"
+            self.assertEqual(anonymized_ds['00080020'], "00010101", f"DA dummy should be '00010101', got '{anonymized_ds['00080020']}'")
+            # Check datetime fields (DT VR) - should be "00010101010101.000000+0000"
+            self.assertEqual(anonymized_ds['0040A13A'], "00010101010101.000000+0000", f"DT dummy should be '00010101010101.000000+0000', got '{anonymized_ds['0040A13A']}'")
+            # Check time fields (TM VR) - should be "000000.00" if using dummy generation
+            self.assertEqual(anonymized_ds['00080030'], "000000.00", f"TM dummy should be '000000.00', got '{anonymized_ds['00080030']}'")
+
+        finally:
+            # Clean up files
+            os.unlink(config_path)
+        '''
+
 
 
 if __name__ == "__main__":

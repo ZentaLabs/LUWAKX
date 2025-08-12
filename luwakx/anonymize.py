@@ -56,18 +56,129 @@ class LuwakAnonymizer:
         self.current_file_mappings = {}
         # Initialize metadata storage for Parquet export
         self.dicom_metadata = []
+        # Initialize single date shift for entire job run
+        self._job_date_shift = None
     
     @staticmethod
     def is_tag_private(dicom, value, field, item):
-        """Check if a DICOM tag is private."""
+        """Check if a DICOM tag is private.
+        
+        Args:
+            dicom: PyDicom dataset object containing DICOM data
+            value: Recipe string or value from recipe processing - not the actual DICOM value
+            field: DICOM field element containing tag information
+            item: Item identifier from deid processing
+            
+        Returns:
+            bool: True if the tag is private (has private creator), False otherwise
+            
+        Note:
+            The 'value' parameter contains recipe-related data, not the actual DICOM field value.
+            The actual determination is based on field.element.is_private and private_creator.
+        """
         return field.element.is_private and (field.element.private_creator is not None)
+    
+    def generate_modified_datetime(self, item, value, field, dicom):
+        """Generate single date/time shift value for entire anonymization job.
+        
+        Args:
+            item: Item identifier from deid processing
+            value: Recipe string (e.g., "func:generate_modified_datetime") - not the actual DICOM value
+            field: DICOM field element containing the date/time tag
+            dicom: PyDicom dataset object
+            
+        Returns:
+            int: Number of days to shift backward (0-1095 days, consistent for entire job)
+            
+        Side Effects:
+            - Uses self.encryption_root to generate single shift for entire job run
+            - Lazy initialization - calculates shift only once per job
+            - Prints shift value on first calculation
+            
+        Note:
+            This method only returns the shift amount. The actual date manipulation
+            should be handled by the DEID recipe or calling code.
+            The 'value' parameter contains the recipe string, not the actual DICOM value.
+        """
+        try:
+            # Generate single shift for entire job run (lazy initialization)
+            if self._job_date_shift is None:
+                # Use encryption_root to generate consistent shift for this job
+                job_salt = f"{self.encryption_root}"
+                salt_hash = hashlib.sha256(job_salt.encode()).hexdigest()
+                hash_int = int(salt_hash[:8], 16)  # Use first 8 hex chars
+                self._job_date_shift = hash_int % (3 * 365 + 1)  # 0-1095 days
+                print(f"Generated job-wide date shift: {self._job_date_shift} days backward")
+            
+            return self._job_date_shift
+            
+        except Exception as e:
+            print(f"Error in date shift generation: {e}")
+            return 0  # Return 0 days shift on error
+    
+    def generate_dummy_datetime(self, item, value, field, dicom):
+        """Generate dummy date/time values based on VR type for anonymization.
+        
+        Args:
+            item: Item identifier from deid processing (not used)
+            value: Recipe string (e.g., "func:generate_dummy_datetime") - not the actual DICOM value
+            field: DICOM field element containing the date/time tag
+            dicom: PyDicom dataset object
+            
+        Returns:
+            str: Dummy date/time value based on VR type
+            
+        VR-specific Output:
+            - DA (Date): Returns "00010101" (January 1, year 1)
+            - DT (DateTime): Returns "00010101010101.000000+0000" (January 1, year 1, 01:01:01.000000 UTC)
+            - TM (Time): Returns "000000.00" (00:00:00.00)
+            
+        Note:
+            This method provides consistent dummy values for anonymization
+            when actual date shifting is not desired.
+            The 'value' parameter contains the recipe string, not the actual DICOM value.
+        """
+        try:
+            # Get the VR type from the field
+            vr = field.element.VR if hasattr(field, 'element') else None
+            
+            if vr == 'DA':  # Date format: YYYYMMDD
+                return "00010101"
+            elif vr == 'DT':  # DateTime format: YYYYMMDDHHMMSS.FFFFFF&ZZXX
+                return "00010101010101.000000+0000"
+            elif vr == 'TM':  # Time format: HHMMSS.FFFFFF
+                return "000000.00"
+            else:
+                # For unknown VR, return the original value
+                return original_datetime_value if original_datetime_value is not None else ""
+                
+        except Exception as e:
+            print(f"Error in dummy datetime generation: {e}")
+            return ""
     
 
     def generate_uid(self, item, value, field, dicom):
-        """Custom UID generation using combined salt as root for randomization."""
+        """Custom UID generation using combined salt as root for deterministic randomization.
         
-        #print(f"DEBUG: generate_uid called for item={item}, value={value}, field={field}")
+        Args:
+            item: Item identifier from deid processing
+            value: Recipe string (e.g., "func:generate_uid") - not the actual DICOM UID
+            field: DICOM field element containing the UID tag
+            dicom: PyDicom dataset object
+            
+        Returns:
+            str: New anonymized UID in format "5.25.xxx.xxx.xxx.xxx" (max 64 chars)
+            
+        Side Effects:
+            - Stores original->anonymized UID mapping in self.current_file_mappings
+            - Uses self.encryption_root as salt for deterministic generation
+            
+        Note:
+            The 'value' parameter contains the recipe string, not the actual DICOM UID.
+            The actual UID is extracted from field.element.value.
+        """
         
+    
         # Extract the original UID value from the DICOM field
         try:
             # The actual original UID should be in the field element's value
@@ -120,7 +231,25 @@ class LuwakAnonymizer:
         return new_uid
     
     def save_all_uid_mappings(self):
-        """Save all UID mappings to CSV file with one row per DICOM file."""
+        """Save all UID mappings to CSV file with one row per DICOM file.
+        
+        Args:
+            None (uses self.current_file_mappings and self.private_map_folder)
+            
+        Returns:
+            None
+            
+        Side Effects:
+            - Creates/appends to uid_mappings.csv in private mapping folder
+            - CSV format: file_path, {field}_original, {field}_anonymized columns
+            - Dynamically detects all modified UID fields across all processed files
+            - Clears self.current_file_mappings after saving
+            
+        Output File:
+            - CSV with headers: file_path, StudyInstanceUID_original, StudyInstanceUID_anonymized, etc.
+            - One row per processed DICOM file
+            - Empty cells for fields not present in specific files
+        """
         
         mapping_file = os.path.join(self.private_map_folder, "uid_mappings.csv")
         
@@ -175,7 +304,30 @@ class LuwakAnonymizer:
         self.current_file_mappings = {}
     
     def extract_dicom_metadata(self, dicom_file, anonymized_file_path):
-        """Extract metadata from DICOM file for Parquet export - only retained tags."""
+        """Extract metadata from anonymized DICOM file for Parquet export - only retained tags.
+        
+        Args:
+            dicom_file (str): Path to original DICOM file (for reference/logging)
+            anonymized_file_path (str): Path to anonymized DICOM file to extract from
+            
+        Returns:
+            None
+            
+        Side Effects:
+            - Reads anonymized DICOM file and extracts all retained DICOM elements
+            - Appends metadata dict to self.dicom_metadata list
+            - Skips file meta information (group 0x0002) and pixel data
+            - Converts DICOM values to appropriate Python types based on VR
+            
+        Extracted Data:
+            - AnonymizedFilePath: basename of anonymized file
+            - All DICOM elements with keywords (private tags without keywords skipped)
+            - Type conversion: PN/DA/TM/etc->str, IS->int, DS->float, multi-value->list
+            
+        Error Handling:
+            - Continues processing if individual elements fail
+            - Prints warning if entire file extraction fails
+        """
         try:
             
             # Read the anonymized DICOM file
@@ -282,7 +434,35 @@ class LuwakAnonymizer:
             print(f"Warning: Could not extract metadata from {dicom_file}: {e}")
     
     def export_metadata_to_parquet(self):
-        """Export all collected metadata to Parquet file with dynamic schema based on retained tags."""
+        """Export all collected metadata to Parquet file with dynamic schema based on retained tags.
+        
+        Args:
+            None (uses self.dicom_metadata and self.private_map_folder)
+            
+        Returns:
+            str: Path to created Parquet file, or None if export failed
+            
+        Side Effects:
+            - Creates metadata.parquet in private mapping folder
+            - Optimizes data types: integers->Int64, floats->float64, strings->string
+            - Converts DICOM dates (YYYYMMDD) to pandas datetime objects
+            - Clears self.dicom_metadata after successful export
+            
+        Output File:
+            - Parquet format with Snappy compression
+            - Dynamic schema based on retained DICOM tags after anonymization
+            - One row per processed DICOM file
+            - Columns: AnonymizedFilePath + all retained DICOM element keywords
+            
+        Performance Optimizations:
+            - Uses dictionary encoding for repeated values
+            - 10k row groups for analytics workloads
+            - Automatic type inference and optimization
+            
+        Error Handling:
+            - Returns None if pandas/pyarrow not available
+            - Prints warnings for import or export errors
+        """
         try:
             
             if not self.dicom_metadata:
@@ -377,7 +557,33 @@ class LuwakAnonymizer:
             print(f"Error exporting metadata to Parquet: {e}")
     
     def load_config(self):
-        """Load and parse the JSON configuration file."""
+        """Load and parse the JSON configuration file.
+        
+        Args:
+            None (uses self.config_path)
+            
+        Returns:
+            None
+            
+        Side Effects:
+            - Sets instance attributes from JSON config with fallback defaults
+            - Prints configuration summary and warnings for missing keys
+            - Exits program if config file not found or invalid JSON
+            
+        Configuration Keys Loaded:
+            - inputFolder: Source directory/file for DICOM files
+            - outputDeidentified_folder: Destination for anonymized files  
+            - outputPrivateMappingFolder: Destination for mappings/metadata
+            - recipesFolder: Directory containing deid recipe files
+            - recipes: List/string of recipe names to apply
+            - encryption_root: Salt for deterministic UID generation
+            - output_folder_hierarchy: How to structure output folders
+            
+        Error Handling:
+            - FileNotFoundError: Exits with error message
+            - JSONDecodeError: Exits with parse error details
+            - Other exceptions: Exits with generic error message
+        """
         try:
             with open(self.config_path, 'r') as f:
                 config = json.load(f)
@@ -438,7 +644,35 @@ class LuwakAnonymizer:
             sys.exit(1)
     
     def setup_paths(self):
-        """Resolve and setup all paths relative to the config file location."""
+        """Resolve and setup all paths relative to the config file location.
+        
+        Args:
+            None (uses loaded config attributes)
+            
+        Returns:
+            None
+            
+        Side Effects:
+            - Converts relative paths to absolute paths relative to config file directory
+            - Expands user directories (~) in output paths
+            - Creates output directories if they don't exist
+            - Replaces {shared_config} placeholder with config directory
+            - Validates that input and recipes folders exist (warnings if missing)
+            
+        Path Resolution Rules:
+            - Already absolute paths: Keep as-is (expand ~ for output paths)
+            - Relative paths: Make absolute relative to config file directory
+            - Output paths with ~: Expand user directory first
+            - {shared_config}: Replace with config file directory
+            
+        Created Directories:
+            - self.output_directory: For anonymized DICOM files
+            - self.private_map_folder: For mappings and metadata exports
+            
+        Validation:
+            - Prints warnings if input_folder or recipes_folder don't exist
+            - Does not exit on missing folders (allows processing to continue)
+        """
         # Get config directory for resolving relative paths
         config_dir = os.path.dirname(os.path.abspath(self.config_path))
         
@@ -500,7 +734,26 @@ class LuwakAnonymizer:
             print(f"  Make sure recipe files are available at this location or adjust the config.")
     
     def get_dicom_files(self):
-        """Get all DICOM files from the input folder."""
+        """Get all DICOM files from the input folder.
+        
+        Args:
+            None (uses self.input_folder)
+            
+        Returns:
+            list[str]: List of absolute paths to all files found
+            
+        Behavior:
+            - If input_folder is a file: Returns single-item list with that file
+            - If input_folder is a directory: Recursively finds all files in subdirectories
+            - No DICOM format validation (processes all files found)
+            
+        Error Handling:
+            - Exits program if input_folder doesn't exist
+            - Prints count of files found for verification
+            
+        Note:
+            Returns all files, not just .dcm files. DICOM validation happens during processing.
+        """
         if not os.path.exists(self.input_folder):
             print(f"ERROR: Input folder does not exist: {self.input_folder}")
             sys.exit(1)
@@ -519,7 +772,36 @@ class LuwakAnonymizer:
         return dicom_files
     
     def create_deid_recipe(self):
-        """Create the deid recipe based on the recipes list."""
+        """Create the deid recipe based on the recipes list.
+        
+        Args:
+            None (uses self.recipes_list, self.recipes_folder)
+            
+        Returns:
+            DeidRecipe: Configured deid recipe object for anonymization
+            
+        Side Effects:
+            - Sets self.remove_private flag based on recipe requirements
+            - Validates recipe files exist (warnings for missing files)
+            - Resolves recipe paths relative to config or absolute
+            
+        Supported Recipe Types:
+            - 'deid.dicom': Built-in deid recipe (default)
+            - 'dicom_basic_profile': Uses deid.dicom.basic-profile + removes private tags
+            - 'remove_private_tags': Sets remove_private=True, uses default recipe
+            - 'retain_safe_private_tags': Combines safe-private-tags + remove-private-tags recipes  
+            - 'retain_uids': Uses UID retention recipe
+            - Custom recipes: Resolved as filename, relative path, or absolute path
+            
+        Path Resolution:
+            - Absolute paths: Used as-is
+            - Relative paths (with /): Made relative to config file directory  
+            - Filenames only: Looked up in recipes_folder
+            
+        Error Handling:
+            - Missing recipe files: Prints warnings but continues with available recipes
+            - Invalid recipe types: Treated as custom recipe filenames
+        """
         recipe_paths = []
         config_dir = os.path.dirname(os.path.abspath(self.config_path))
         self.remove_private = False # Default to not removing private tags unless specified in recipes
@@ -541,8 +823,7 @@ class LuwakAnonymizer:
         for recipe in recipes_to_process:
             print(f"Processing recipe: {recipe}")
             if recipe == 'dicom_basic_profile':
-                
-                recipe_file = os.path.join(self.recipes_folder, 'deid.dicom.basic-profile-2')
+                recipe_file = os.path.join(self.recipes_folder, 'deid.dicom.basic-profile')
                 recipe_paths.append(recipe_file)
                 self.remove_private = True  # Basic profile removes private tags
             elif recipe == 'remove_private_tags':
@@ -552,6 +833,7 @@ class LuwakAnonymizer:
                 # Look for recipe file in recipes folder
                 recipe_paths.append(os.path.join(self.recipes_folder, 'deid.dicom.safe-private-tags'))
                 recipe_paths.append(os.path.join(self.recipes_folder, 'deid.dicom.remove-private-tags'))
+                self.remove_private = False
                 print("Using recipe to retain safe private tags and remove others", recipe_paths)
             elif recipe == 'retain_uids':
                 # Look for UID retention recipe
@@ -594,7 +876,45 @@ class LuwakAnonymizer:
         return recipe
     
     def anonymize(self):
-        """Perform the anonymization process."""
+        """Perform the complete DICOM anonymization process.
+        
+        Args:
+            None (uses all configured instance attributes)
+            
+        Returns:
+            list: List of processed file paths from deid replace_identifiers
+            
+        Process Flow:
+            1. Get list of DICOM files from input folder
+            2. Extract DICOM identifiers using deid library
+            3. Create anonymization recipe based on configuration
+            4. Inject custom functions (generate_uid, is_tag_private) into processing
+            5. Perform anonymization with deid replace_identifiers
+            6. Extract metadata from anonymized files for Parquet export
+            7. Save UID mappings to CSV file
+            8. Export metadata to Parquet file
+            
+        Side Effects:
+            - Creates anonymized DICOM files in output_directory
+            - Creates uid_mappings.csv in private_map_folder
+            - Creates metadata.parquet in private_map_folder
+            - Prints progress information throughout process
+            
+        Custom Processing:
+            - Injects self.generate_uid for deterministic UID replacement
+            - Injects self.is_tag_private for private tag detection
+            - Uses configured recipes and private tag removal settings
+            
+        Error Handling:
+            - Returns early if no files found to process
+            - Continues processing even if individual files fail
+            - Metadata extraction failures print warnings but don't stop process
+            
+        Output Files:
+            - Anonymized DICOMs: Same filenames in output_directory
+            - uid_mappings.csv: UID mapping table for re-identification
+            - metadata.parquet: Structured metadata for analysis
+        """
         print("\n" + "="*50)
         print("Starting DICOM anonymization process...")
         print("="*50)
@@ -617,6 +937,8 @@ class LuwakAnonymizer:
         for item in items:
             items[item]["is_tag_private"] = self.is_tag_private
             items[item]["generate_uid"] = self.generate_uid
+            items[item]["generate_modified_datetime"] = self.generate_modified_datetime
+            items[item]["generate_dummy_datetime"] = self.generate_dummy_datetime
         
         # Perform anonymization
         print("Performing anonymization...")
