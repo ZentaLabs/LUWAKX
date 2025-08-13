@@ -39,7 +39,6 @@ class TestPaths(unittest.TestCase):
         if os.path.exists(scripts_dir_correct):
             script_files = os.listdir(scripts_dir_correct)
             print(f"Files in scripts directory: {script_files}")
-            self.assertIn('deid.dicom.remove-private-tags', script_files, "remove-private-tags recipe should exist")
             self.assertIn('deid.dicom.safe-private-tags', script_files, "safe-private-tags recipe should exist")
 
         # Path to luwakx.py (using the test's approach)

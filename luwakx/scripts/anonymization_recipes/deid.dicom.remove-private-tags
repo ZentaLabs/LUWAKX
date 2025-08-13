@@ -1,5 +1,0 @@
-FORMAT dicom
-
-%header
-
-REMOVE ALL func:is_tag_private

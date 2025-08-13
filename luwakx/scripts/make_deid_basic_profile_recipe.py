@@ -158,7 +158,7 @@ def generate_basic_profile_recipe(input_csv, output_file):
 
 if __name__ == "__main__":
     input_csv = "/home/simona/Downloads/dicom_standard_tags.csv"
-    output_file = "anonymization_recipes/deid.dicom.basic-profile-2"
+    output_file = "anonymization_recipes/deid.dicom.basic-profile"
     
     print(f"Processing: {input_csv}")
     print(f"Output: {output_file}")

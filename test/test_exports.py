@@ -42,7 +42,7 @@ class TestExports(unittest.TestCase):
                 for member in tar.getmembers():
                     # Remove the top-level folder from the path
                     member.path = os.path.relpath(member.path, start="test-dicom-files-2")
-                    tar.extract(member, path=cls.test_data_dir, filter='data')
+                    tar.extract(member, path=cls.test_data_dir, filter='tar')
 
             # Clean up the downloaded archive
             os.remove(archive_path)
@@ -114,12 +114,12 @@ class TestExports(unittest.TestCase):
         # Ensure recipes is always a list or string (not converting string to list)
         config = {
             "inputFolder": input_folder,
-            "outputDeidentified_folder": output_folder,
+            "outputDeidentifiedFolder": output_folder,
             "outputPrivateMappingFolder": os.path.join(output_folder, "privateMapping"),
             "recipesFolder": recipes_folder or os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes"),
             "recipes": recipes,
-            "output_folder_hierarchy": "copy_from_input",
-            "encryption_root": encryption_root or "test_encryption_key"
+            "outputFolderHierarchy": "copy_from_input",
+            "encryptionRoot": encryption_root or "test_encryption_key"
         }
         
         # Create temporary config file

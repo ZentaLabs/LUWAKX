@@ -4,7 +4,7 @@ LuwakX is a powerful, config-driven tool for anonymizing DICOM files using the `
 
 ## Prerequisites
 
-1. **Python**: Ensure you have Python 3.7+ installed on your system.
+1. **Python**: Ensure you have Python >=3.12 installed on your system.
 2. **Dependencies**: Install the required dependencies by running:
    ```bash
    pip install -r requirements.txt
@@ -24,28 +24,28 @@ Create a JSON configuration file with the following structure:
 ```json
 {
   "inputFolder": "/path/to/input/dicom/files",
-  "outputDeidentified_folder": "/path/to/output/directory",
+  "outputDeidentifiedFolder": "/path/to/output/directory",
   "outputPrivateMappingFolder": "/path/to/output/directory/privateMapping",
   "recipesFolder": "./scripts/anonymization_recipes",
   "recipes": ["remove_private_tags"],
-  "output_folder_hierarchy": "copy_from_input",
-  "encryption_root": "your_encryption_key"
+  "outputFolderHierarchy": "copy_from_input",
+  "encryptionRoot": "your_encryption_key"
 }
 ```
 
 ### Configuration Parameters
 
 - **`inputFolder`**: Path to input DICOM file or directory
-- **`outputDeidentified_folder`**: Output directory for anonymized files
+- **`outputDeidentifiedFolder`**: Output directory for anonymized files
 - **`outputPrivateMappingFolder`**: Directory for private tag mappings
 - **`recipesFolder`**: Directory containing deid recipe files
 - **`recipes`**: List of recipe names to apply (e.g., `["remove_private_tags", "retain_safe_private_tags"]`)
-- **`output_folder_hierarchy`**: How to structure output (`"copy_from_input"` or `"flat"`)
-- **`encryption_root`**: Encryption key for anonymization
+- **`outputFolderHierarchy`**: How to structure output (`"copy_from_input"` or `"flat"`)
+- **`encryptionRoot`**: Encryption key for anonymization
 
 ### Built-in Recipes
 
-- **`remove_private_tags`**: Removes all private DICOM tags
+
 - **`retain_safe_private_tags`**: Keeps safe private tags while removing others
 
 ## Usage
@@ -74,29 +74,16 @@ result = anonymizer.anonymize()
 
 ### Example Configurations
 
-**Remove all private tags:**
-```json
-{
-  "inputFolder": "/data/dicom_files",
-  "outputDeidentified_folder": "/data/anonymized",
-  "outputPrivateMappingFolder": "/data/anonymized/privateMapping",
-  "recipesFolder": "./scripts/anonymization_recipes",
-  "recipes": ["remove_private_tags"],
-  "output_folder_hierarchy": "copy_from_input",
-  "encryption_root": "my_secure_key"
-}
-```
-
 **Retain safe private tags:**
 ```json
 {
   "inputFolder": "/data/dicom_files",
-  "outputDeidentified_folder": "/data/anonymized",
+  "outputDeidentifiedFolder": "/data/anonymized",
   "outputPrivateMappingFolder": "/data/anonymized/privateMapping",
   "recipesFolder": "./scripts/anonymization_recipes",
   "recipes": ["retain_safe_private_tags"],
-  "output_folder_hierarchy": "copy_from_input",
-  "encryption_root": "my_secure_key"
+  "outputFolderHierarchy": "copy_from_input",
+  "encryptionRoot": "my_secure_key"
 }
 ```
 

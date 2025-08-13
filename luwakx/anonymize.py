@@ -31,6 +31,8 @@ def setup_deid_repo():
             print("Updating deid repository...")
             subprocess.check_call(["git", "-C", repo_dir, "pull"])
 
+    if repo_dir not in sys.path:
+        sys.path.insert(0, repo_dir)
     # Check if the repository is installed
     try:
         import deid
@@ -46,21 +48,53 @@ from deid.dicom import get_files, get_identifiers, replace_identifiers
 from deid.dicom.actions.uids import pydicom_uuid
 
 
+class ConfigurationError(Exception):
+    """Custom exception for configuration file errors with filename context."""
+    
+    def __init__(self, message, filename=None, original_exception=None):
+        """Initialize configuration error with context.
+        
+        Args:
+            message (str): Error description
+            filename (str): Path to configuration file that caused the error
+            original_exception (Exception): Original exception that was caught
+        """
+        self.message = message
+        self.filename = filename
+        self.original_exception = original_exception
+        super().__init__(message)
+    
+    def __str__(self):
+        """Return formatted error message including filename context."""
+        if self.filename:
+            base_msg = f"Configuration error in '{self.filename}': {self.message}"
+        else:
+            base_msg = f"Configuration error: {self.message}"
+        
+        if self.original_exception:
+            base_msg += f" (Original error: {self.original_exception})"
+        
+        return base_msg
+
+
 class LuwakAnonymizer:
     def __init__(self, config_path):
         """Initialize the anonymizer with configuration from JSON file."""
         self.config_path = config_path
-        self.load_config()
-        self.setup_paths()
+        try:
+            self.load_config()
+            self.setup_paths()
+        except ConfigurationError as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
         # Initialize mapping storage for each file
         self.current_file_mappings = {}
         # Initialize metadata storage for Parquet export
         self.dicom_metadata = []
         # Initialize single date shift for entire job run
         self._job_date_shift = None
-    
-    @staticmethod
-    def is_tag_private(dicom, value, field, item):
+
+    def is_tag_private(self, dicom, value, field, item):
         """Check if a DICOM tag is private.
         
         Args:
@@ -572,12 +606,12 @@ class LuwakAnonymizer:
             
         Configuration Keys Loaded:
             - inputFolder: Source directory/file for DICOM files
-            - outputDeidentified_folder: Destination for anonymized files  
+            - outputDeidentifiedFolder: Destination for anonymized files  
             - outputPrivateMappingFolder: Destination for mappings/metadata
             - recipesFolder: Directory containing deid recipe files
             - recipes: List/string of recipe names to apply
-            - encryption_root: Salt for deterministic UID generation
-            - output_folder_hierarchy: How to structure output folders
+            - encryptionRoot: Salt for deterministic UID generation
+            - outputFolderHierarchy: How to structure output folders
             
         Error Handling:
             - FileNotFoundError: Exits with error message
@@ -594,10 +628,11 @@ class LuwakAnonymizer:
                 self.input_folder = './inputs'
                 print("WARNING: 'inputFolder' not found in config, using default: ./inputs")
             
-            self.output_directory = config.get('outputDeidentified_folder')
+            # Support both new camelCase and old snake_case for backward compatibility
+            self.output_directory = config.get('outputDeidentifiedFolder') or config.get('outputDeidentified_folder')
             if not self.output_directory:
                 self.output_directory = '~/luwak_output/deidentified'
-                print("WARNING: 'outputDeidentified_folder' not found in config, using default: ~/luwak_output/deidentified")
+                print("WARNING: 'outputDeidentifiedFolder' not found in config, using default: ~/luwak_output/deidentified")
             
             self.private_map_folder = config.get('outputPrivateMappingFolder')
             if not self.private_map_folder:
@@ -614,15 +649,17 @@ class LuwakAnonymizer:
                 self.recipes_list = 'deid.dicom'
                 print("WARNING: 'recipes' not found in config, using default: ['deid.dicom']")
             
-            self.encryption_root = config.get('encryption_root')
+            # Support both new camelCase and old snake_case for backward compatibility
+            self.encryption_root = config.get('encryptionRoot') or config.get('encryption_root')
             if not self.encryption_root:
                 self.encryption_root = ''
-                print("WARNING: 'encryption_root' not found in config, using empty string")
+                print("WARNING: 'encryptionRoot' not found in config, using empty string")
             
-            self.output_folder_hierarchy = config.get('output_folder_hierarchy')
+            # Support both new camelCase and old snake_case for backward compatibility
+            self.output_folder_hierarchy = config.get('outputFolderHierarchy') or config.get('output_folder_hierarchy')
             if not self.output_folder_hierarchy:
                 self.output_folder_hierarchy = 'copy_from_input'
-                print("WARNING: 'output_folder_hierarchy' not found in config, using default: copy_from_input")
+                print("WARNING: 'outputFolderHierarchy' not found in config, using default: copy_from_input")
             
             print(f"\nConfiguration loaded from: {self.config_path}")
             print(f"  Input folder: {self.input_folder}")
@@ -633,15 +670,24 @@ class LuwakAnonymizer:
             print(f"  Output hierarchy: {self.output_folder_hierarchy}")
             print(f"  Encryption root: {'*' * len(self.encryption_root) if self.encryption_root else 'Not set'}")
             
-        except FileNotFoundError:
-            print(f"ERROR: Configuration file not found: {self.config_path}")
-            sys.exit(1)
+        except FileNotFoundError as e:
+            raise ConfigurationError(
+                f"Configuration file not found",
+                filename=self.config_path,
+                original_exception=e
+            )
         except json.JSONDecodeError as e:
-            print(f"ERROR: Invalid JSON in configuration file: {e}")
-            sys.exit(1)
+            raise ConfigurationError(
+                f"Invalid JSON format - {e.msg} at line {e.lineno}, column {e.colno}",
+                filename=self.config_path,
+                original_exception=e
+            )
         except Exception as e:
-            print(f"ERROR: Failed to load configuration: {e}")
-            sys.exit(1)
+            raise ConfigurationError(
+                f"Failed to load configuration",
+                filename=self.config_path,
+                original_exception=e
+            )
     
     def setup_paths(self):
         """Resolve and setup all paths relative to the config file location.
@@ -781,14 +827,12 @@ class LuwakAnonymizer:
             DeidRecipe: Configured deid recipe object for anonymization
             
         Side Effects:
-            - Sets self.remove_private flag based on recipe requirements
             - Validates recipe files exist (warnings for missing files)
             - Resolves recipe paths relative to config or absolute
             
         Supported Recipe Types:
             - 'deid.dicom': Built-in deid recipe (default)
             - 'dicom_basic_profile': Uses deid.dicom.basic-profile + removes private tags
-            - 'remove_private_tags': Sets remove_private=True, uses default recipe
             - 'retain_safe_private_tags': Combines safe-private-tags + remove-private-tags recipes  
             - 'retain_uids': Uses UID retention recipe
             - Custom recipes: Resolved as filename, relative path, or absolute path
@@ -804,7 +848,6 @@ class LuwakAnonymizer:
         """
         recipe_paths = []
         config_dir = os.path.dirname(os.path.abspath(self.config_path))
-        self.remove_private = False # Default to not removing private tags unless specified in recipes
         
         # Handle single string recipe by converting to list
         if isinstance(self.recipes_list, str):
@@ -825,15 +868,9 @@ class LuwakAnonymizer:
             if recipe == 'dicom_basic_profile':
                 recipe_file = os.path.join(self.recipes_folder, 'deid.dicom.basic-profile')
                 recipe_paths.append(recipe_file)
-                self.remove_private = True  # Basic profile removes private tags
-            elif recipe == 'remove_private_tags':
-                self.remove_private = True
-                return DeidRecipe()
             elif recipe == 'retain_safe_private_tags':
                 # Look for recipe file in recipes folder
                 recipe_paths.append(os.path.join(self.recipes_folder, 'deid.dicom.safe-private-tags'))
-                recipe_paths.append(os.path.join(self.recipes_folder, 'deid.dicom.remove-private-tags'))
-                self.remove_private = False
                 print("Using recipe to retain safe private tags and remove others", recipe_paths)
             elif recipe == 'retain_uids':
                 # Look for UID retention recipe
@@ -867,9 +904,9 @@ class LuwakAnonymizer:
         
         # Create the DeidRecipe
         if len(recipe_paths) > 1:
-            recipe = DeidRecipe(deid=recipe_paths, base=True)
+            recipe = DeidRecipe(deid=recipe_paths)
         else:
-            recipe = DeidRecipe(deid=recipe_paths[0], base=True)
+            recipe = DeidRecipe(deid=recipe_paths[0])
 
         print(f"DEBUG: Created recipe with paths: {recipe_paths}")
         print(f"DEBUG: Recipe content: {recipe}")
@@ -947,7 +984,7 @@ class LuwakAnonymizer:
             deid=recipe, 
             strip_sequences=False,
             ids=items,
-            remove_private=self.remove_private,  # Let recipes handle private tag removal
+            remove_private=False,  # Let recipes handle private tag removal
             save=True, 
             output_folder=self.output_directory,
             overwrite=True,

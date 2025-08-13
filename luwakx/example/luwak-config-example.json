@@ -1,9 +1,0 @@
-{
-  "inputFolder": "../../../../Downloads/input_data_2/1104142010/3.1.363.1.0.6227606.3.741.1202632684086966693/3.1.363.1.0.6227606.3.741.1212668621585478698/00000001.dcm",
-  "outputDeidentified_folder": "~/luwak_output/deidentified",
-  "outputPrivateMappingFolder": "~/luwak_output/privateMapping",
-  "recipesFolder": "../scripts/anonymization_recipes",
-  "recipes": "",
-  "output_folder_hierarchy": "copy_from_input",
-   "encryption_root": "7f4fsui293asdf"
-}
