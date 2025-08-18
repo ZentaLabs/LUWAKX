@@ -41,7 +41,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 for member in tar.getmembers():
                     # Remove the top-level folder from the path
                     member.path = os.path.relpath(member.path, start="test-dicom-files-2")
-                    tar.extract(member, path=cls.test_data_dir)
+                    tar.extract(member, path=cls.test_data_dir, filter='data')
 
             # Clean up the downloaded archive
             os.remove(archive_path)
@@ -99,7 +99,7 @@ class TestAnonymizeScript(unittest.TestCase):
             shutil.rmtree(self.limited_input_dir)
         print("\n######################END TEST######################")
 
-    def create_test_config(self, input_folder, output_folder, recipes=None, encryption_root=None, recipes_folder=None):
+    def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None):
         """Helper method to create a temporary config file for testing."""
         if recipes is None:
             recipes = ""
@@ -109,23 +109,23 @@ class TestAnonymizeScript(unittest.TestCase):
             input_folder = os.path.abspath(input_folder)
         if not os.path.isabs(output_folder):
             output_folder = os.path.abspath(output_folder)
-        
-        # Ensure recipes is always a list or string (not converting string to list)
+        # Recipes folder default
+        recipes_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes")
+
+        # Output mapping folder
+        output_private_mapping_folder = os.path.join(output_folder, "private")
+        # Fill in all config keys
         config = {
             "inputFolder": input_folder,
             "outputDeidentifiedFolder": output_folder,
-            "outputPrivateMappingFolder": os.path.join(output_folder, "privateMapping"),
-            "recipesFolder": recipes_folder or os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes"),
-            "recipes": recipes or ["basic"],
-            "outputFolderHierarchy": "copy_from_input",
-            "encryptionRoot": encryption_root or "test_encryption_key"
+            "outputPrivateMappingFolder": output_private_mapping_folder,
+            "recipesFolder": recipes_folder,
+            "recipes": recipes if recipes is not None else "deid.dicom",
         }
-        
         # Create temporary config file
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
         json.dump(config, config_file, indent=2)
         config_file.close()
-        
         return config_file.name
 
     def test_script_runs_on_first_file(self):
@@ -257,7 +257,6 @@ class TestAnonymizeScript(unittest.TestCase):
             input_folder=original_file,
             output_folder=self.test_output_dir,
             recipes=["dicom_basic_profile"],  # Use basic profile recipe which should trigger UID generation
-            encryption_root="test_mapping_key"
         )
 
         try:
@@ -284,10 +283,6 @@ class TestAnonymizeScript(unittest.TestCase):
                 self.assertIsNotNone(anonymized_uid, f"Anonymized file missing {uid_name}")
                 self.assertNotEqual(original_uid, anonymized_uid, 
                                   f"{uid_name} was not changed during anonymization")
-
-                # Check if the anonymized UID follows the expected format
-                self.assertTrue(anonymized_uid.startswith('5.25.'),
-                                f"{uid_name} doesn't have expected 5.25. prefix: {anonymized_uid}")
 
         finally:
             # Clean up config file
@@ -322,7 +317,6 @@ class TestAnonymizeScript(unittest.TestCase):
             input_folder=original_file,
             output_folder=self.test_output_dir,
             recipes=["dicom_basic_profile"],
-            encryption_root="dummy_datetime_test_key"
         )
 
         try:
@@ -340,7 +334,7 @@ class TestAnonymizeScript(unittest.TestCase):
             })()
             
             # The value parameter should be the recipe string, not the original value
-            dummy_da = anonymizer.generate_dummy_datetime("item1", "func:generate_dummy_datetime", mock_da_field, original_ds)
+            dummy_da = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_da_field, original_ds)
             self.assertEqual(dummy_da, "00010101", f"DA dummy should be '00010101', got '{dummy_da}'")
             
             # Test DT (DateTime) VR
@@ -352,7 +346,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 })()
             })()
             
-            dummy_dt = anonymizer.generate_dummy_datetime("item1", "func:generate_dummy_datetime", mock_dt_field, original_ds)
+            dummy_dt = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_dt_field, original_ds)
             expected_dt = "00010101010101.000000+0000"
             self.assertEqual(dummy_dt, expected_dt, f"DT dummy should be '{expected_dt}', got '{dummy_dt}'")
             
@@ -365,7 +359,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 })()
             })()
             
-            dummy_tm = anonymizer.generate_dummy_datetime("item1", "func:generate_dummy_datetime", mock_tm_field, original_ds)
+            dummy_tm = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_tm_field, original_ds)
             expected_tm = "000000.00"
             self.assertEqual(dummy_tm, expected_tm, f"TM dummy should be '{expected_tm}', got '{dummy_tm}'")
             
@@ -388,9 +382,9 @@ class TestAnonymizeScript(unittest.TestCase):
 
         # Read original file to get date/time values
         original_ds = pydicom.dcmread(original_file)
-        print(f"  Checking for date/time fields that use generate_dummy_datetime in basic-profile-2...")
+        print(f"  Checking for date/time fields that use set_fixed_datetime in basic-profile-2...")
         
-        # DICOM tag keywords from deid.dicom.basic-profile-2 that use func:generate_dummy_datetime
+        # DICOM tag keywords from deid.dicom.basic-profile-2 that use func:set_fixed_datetime
         # These correspond to the actual tags from the recipe file
         datetime_fields_to_check = ['StudyDate', 'StudyTime']
         
@@ -399,7 +393,6 @@ class TestAnonymizeScript(unittest.TestCase):
             input_folder=original_file,
             output_folder=self.test_output_dir,
             recipes=['dicom_basic_profile'],
-            encryption_root="dummy_datetime_recipe_test"
         )
 
         try:

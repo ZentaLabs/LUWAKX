@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Luwak DICOM Anonymizer Configuration",
+  "description": "Configuration schema for the Luwak DICOM anonymization pipeline.",
+  "type": "object",
+  "properties": {
+    "inputFolder": {
+      "type": "string",
+      "description": "Source directory or file for DICOM files to be anonymized.",
+      "default": "./inputs",
+      "examples": ["/data/dicom", "input/file.dcm"]
+    },
+    "outputDeidentifiedFolder": {
+      "type": "string",
+      "description": "Destination directory for anonymized DICOM files.",
+      "default": "./deidentified",
+      "examples": ["./deidentified"]
+    },
+    "outputPrivateMappingFolder": {
+      "type": "string",
+      "description": "Destination directory for UID mappings and metadata exports.",
+      "default": "./private",
+      "examples": ["./private"]
+    },
+    "recipesFolder": {
+      "type": "string",
+      "description": "Directory containing deid recipe files.",
+      "default": "./scripts/anonymization_recipes",
+      "examples": ["./scripts/anonymization_recipes"]
+    },
+    "recipes": {
+      "oneOf": [
+        {"type": "string"},
+        {"type": "array", "items": {"type": "string"}}
+      ],
+      "description": "List or single string of recipe names to apply. Can be built-in or custom recipe files.",
+      "default": "deid.dicom",
+      "examples": ["deid.dicom", ["deid.dicom.basic-profile", "deid.dicom.safe-private-tags"]]
+    },
+    "projectHashRoot": {
+      "type": "string",
+      "description": "Salt for deterministic UID generation and date shifting.",
+      "default": "myproject2025",
+      "examples": ["myproject2025"]
+    },
+    "outputFolderHierarchy": {
+      "type": "string",
+      "description": "How to structure output folders. E.g., 'copy_from_input' to mirror input structure.",
+      "default": "copy_from_input",
+      "examples": ["copy_from_input"]
+    },
+    "maxDateShiftDays": {
+      "type": "integer",
+      "description": "Maximum number of days for date shifting (default 1095).",
+      "default": 1095,
+      "minimum": 0,
+      "examples": [365, 1095]
+    },
+    "excludedTagsFromParquet": {
+      "type": "array",
+      "description": "List of DICOM tags to exclude from Parquet export. Accepts integer or string formats (e.g., 2145386512, '7FE0,0010', '(7FE0,0010)').",
+      "items": {
+        "oneOf": [
+          {"type": "integer"},
+          {"type": "string"}
+        ]
+      },
+      "default": ["(7FE0,0010)"],
+      "examples": [[2145386512, "7FE0,0010", "(7FE0,0010)"]]
+    }
+  },
+  "required": [
+    "inputFolder",
+    "outputDeidentifiedFolder",
+    "outputPrivateMappingFolder",
+    "recipesFolder",
+    "recipes"
+  ],
+  "additionalProperties": false
+}

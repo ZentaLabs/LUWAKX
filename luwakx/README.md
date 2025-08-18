@@ -29,7 +29,7 @@ Create a JSON configuration file with the following structure:
   "recipesFolder": "./scripts/anonymization_recipes",
   "recipes": ["remove_private_tags"],
   "outputFolderHierarchy": "copy_from_input",
-  "encryptionRoot": "your_encryption_key"
+  "projectHashRoot": "your_encryption_key"
 }
 ```
 
@@ -41,7 +41,7 @@ Create a JSON configuration file with the following structure:
 - **`recipesFolder`**: Directory containing deid recipe files
 - **`recipes`**: List of recipe names to apply (e.g., `["remove_private_tags", "retain_safe_private_tags"]`)
 - **`outputFolderHierarchy`**: How to structure output (`"copy_from_input"` or `"flat"`)
-- **`encryptionRoot`**: Encryption key for anonymization
+- **`projectHashRoot`**: Encryption key for anonymization
 
 ### Built-in Recipes
 
@@ -83,7 +83,7 @@ result = anonymizer.anonymize()
   "recipesFolder": "./scripts/anonymization_recipes",
   "recipes": ["retain_safe_private_tags"],
   "outputFolderHierarchy": "copy_from_input",
-  "encryptionRoot": "my_secure_key"
+  "projectHashRoot": "my_secure_key"
 }
 ```
 

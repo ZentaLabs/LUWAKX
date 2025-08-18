@@ -4,6 +4,8 @@
   "outputPrivateMappingFolder": "./outputs/privateMapping",
   "recipesFolder": "{shared_config}/recipes",
   "recipes": ["dicom_basic_profile", "retain_safe_private_tags", "retain_uids"],
+  "maxDateShiftDays": 1095,
+  "excludedTagsFromParquet":  ["(7FE0,0010)"],
   "outputFolderHierarchy": "copy_from_input",
-   "encryptionRoot": "7f4fsui293asdf"
+   "projectHashRoot": "7f4fsui293asdf"
 }

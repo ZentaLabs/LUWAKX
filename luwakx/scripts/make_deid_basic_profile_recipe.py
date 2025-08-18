@@ -1,6 +1,20 @@
 import csv
 import os
-from pydicom.datadict import get_entry
+from pydicom.datadict import get_entry, description_for_tag
+
+def get_name_for_tag(tag_str):
+    """Get the DICOM attribute name (description) for a tag string like (0010,0010) or 0010,0010."""
+    try:
+        tag_str = tag_str.strip('()')
+        group_str, elem_str = tag_str.split(',')
+        group = int(group_str, 16)
+        elem = int(elem_str, 16)
+        tag_int = (group << 16) | elem
+        name = description_for_tag(tag_int)
+        return name if name else ""
+    except Exception as e:
+        print(f"Could not determine name for tag {tag_str}: {e}")
+        return ""
 
 def get_vr_for_tag(tag_str):
     """Get the VR (Value Representation) for a DICOM tag."""
@@ -56,33 +70,35 @@ def generate_basic_profile_recipe(input_csv, output_file):
                 if not tag:
                     continue
                 
+                name = get_name_for_tag(tag)
+                comment = f" # {name}" if name else ""
                 if basic_profile == 'X':
                     # REMOVE for X values
-                    line = f"REMOVE {tag}\n"
+                    line = f"REMOVE {tag}{comment}\n"
                     outfile.write(line)
                     processed_count['X'] += 1
                 elif basic_profile == 'K':
                     # KEEP for K values
-                    line = f"KEEP {tag}\n"
+                    line = f"KEEP {tag}{comment}\n"
                     outfile.write(line)
                     processed_count['K'] += 1
                 elif basic_profile == 'U':
                     # Check if VR is UI for UID replacement
                     vr = get_vr_for_tag(tag)
                     if vr == 'UI':
-                        line = f"REPLACE {tag} func:generate_uid\n"
+                        line = f"REPLACE {tag} func:generate_hashuid{comment}\n"
                         outfile.write(line)
                         processed_count['U'] += 1
                 elif basic_profile == 'D':
                     # Check if VR is date/time related for date replacement
                     vr = get_vr_for_tag(tag)
                     if vr in ['DA', 'DT', 'TM']:
-                        line = f"REPLACE {tag} func:generate_dummy_datetime\n"
+                        line = f"REPLACE {tag} func:set_fixed_datetime{comment}\n"
                         outfile.write(line)
                         processed_count['D'] += 1
                     elif vr in ['UI']:
                         # D but UI VR
-                        line = f"REPLACE {tag} func:generate_uid\n"
+                        line = f"REPLACE {tag} func:generate_hashuid{comment}\n"
                         outfile.write(line)
                         processed_count['D'] += 1
                     else:
@@ -93,16 +109,16 @@ def generate_basic_profile_recipe(input_csv, output_file):
                     # Check if VR is date/time related for date replacement
                     vr = get_vr_for_tag(tag)
                     if vr in ['DA', 'DT', 'TM']:
-                        line = f"REPLACE {tag} func:generate_dummy_datetime\n"
+                        line = f"REPLACE {tag} func:set_fixed_datetime{comment}\n"
                         outfile.write(line)
                         processed_count['Z'] += 1
                     else:
                         # Z but not date/time VR
-                        line = f"BLANK {tag}\n"
+                        line = f"BLANK {tag}{comment}\n"
                         outfile.write(line)
                         processed_count['other_Z'] += 1
                 elif basic_profile == 'Z/D':
-                    # Handle Z/D combination - clean or replace with dummy value
+                    # Handle Z/D combination - clean or replace with fixed value
                     vr = get_vr_for_tag(tag)
                     if vr in ['DA', 'DT', 'TM']:
                         # line = f"# TODO: Handle 'Z/D' (date/time) for {tag} (VR: {vr})\n"
@@ -115,29 +131,29 @@ def generate_basic_profile_recipe(input_csv, output_file):
                         processed_count['Z/D'] += 1
                 elif basic_profile == 'X/Z':
                     # Handle X/Z combination - remove or clean
-                    line = f"REMOVE {tag}\n"
+                    line = f"REMOVE {tag}{comment}\n"
                     outfile.write(line)
                     processed_count['X/Z'] += 1
                 elif basic_profile == 'X/D':
                     # Handle X/D combination - remove or clean
-                    line = f"REMOVE {tag}\n"
+                    line = f"REMOVE {tag}{comment}\n"
                     outfile.write(line)
                     processed_count['X/D'] += 1
                 elif basic_profile == 'X/Z/D':
                     # Handle X/Z/D combination - remove or clean
-                    line = f"REMOVE {tag}\n"
+                    line = f"REMOVE {tag}{comment}\n"
                     outfile.write(line)
                     processed_count['X/Z/D'] += 1
                 elif basic_profile == 'X/Z/U*':
                     # Handle X/Z/U* combination - remove or replace UID
                     vr = get_vr_for_tag(tag)
                     if vr == 'UI':
-                        line = f"REPLACE {tag} func:generate_uid\n"
+                        line = f"REPLACE {tag} func:generate_hashuid{comment}\n"
                         outfile.write(line)
                         processed_count['X/Z/U*'] += 1
                     else:
                         # Not UI VR, treat as remove
-                        line = f"REMOVE {tag}\n"
+                        line = f"REMOVE {tag}{comment}\n"
                         outfile.write(line)
                         processed_count['X/Z/U*'] += 1
     

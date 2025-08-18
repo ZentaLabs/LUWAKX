@@ -100,7 +100,7 @@ class TestExports(unittest.TestCase):
             shutil.rmtree(self.limited_input_dir)
         print("\n######################END EXPORT TEST######################")
 
-    def create_test_config(self, input_folder, output_folder, recipes=None, encryption_root=None, recipes_folder=None):
+    def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None):
         """Helper method to create a temporary config file for testing."""
         if recipes is None:
             recipes = ""
@@ -110,23 +110,22 @@ class TestExports(unittest.TestCase):
             input_folder = os.path.abspath(input_folder)
         if not os.path.isabs(output_folder):
             output_folder = os.path.abspath(output_folder)
-        
-        # Ensure recipes is always a list or string (not converting string to list)
+        # Recipes folder default
+        recipes_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes")
+        # Output mapping folder
+        output_private_mapping_folder = os.path.join(output_folder, "private")
+        # Fill in all config keys
         config = {
             "inputFolder": input_folder,
             "outputDeidentifiedFolder": output_folder,
-            "outputPrivateMappingFolder": os.path.join(output_folder, "privateMapping"),
-            "recipesFolder": recipes_folder or os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes"),
+            "outputPrivateMappingFolder": output_private_mapping_folder,
+            "recipesFolder": recipes_folder,
             "recipes": recipes,
-            "outputFolderHierarchy": "copy_from_input",
-            "encryptionRoot": encryption_root or "test_encryption_key"
         }
-        
         # Create temporary config file
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
         json.dump(config, config_file, indent=2)
         config_file.close()
-        
         return config_file.name
 
     def test_uid_mapping_file_creation(self):
@@ -149,8 +148,7 @@ class TestExports(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"],
-            encryption_root="test_mapping_key"
+            recipes=["dicom_basic_profile"]
         )
 
         try:
@@ -159,14 +157,14 @@ class TestExports(unittest.TestCase):
             result = anonymizer.anonymize()
             
             # Check that the mapping file was created - use absolute path to match what anonymizer uses
-            mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "privateMapping", "uid_mappings.csv")
+            mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "uid_mappings.csv")
             
             # List all files in the privateMapping directory
-            private_mapping_dir = os.path.join(os.path.abspath(self.test_output_dir), "privateMapping")
+            private_mapping_dir = os.path.join(os.path.abspath(self.test_output_dir), "private")
             if os.path.exists(private_mapping_dir):
                 files_in_dir = os.listdir(private_mapping_dir)
             else:
-                print("privateMapping directory doesn't exist")
+                print("private directory doesn't exist")
             
             self.assertTrue(os.path.exists(mapping_file), "UID mapping CSV file was not created")
 
@@ -227,8 +225,7 @@ class TestExports(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"],
-            encryption_root="test_parquet_key"
+            recipes=["dicom_basic_profile"]
         )
 
         try:
@@ -237,7 +234,7 @@ class TestExports(unittest.TestCase):
             result = anonymizer.anonymize()
 
             # Check that the Parquet file was created
-            parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "privateMapping", "metadata.parquet")
+            parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "metadata.parquet")
             self.assertTrue(os.path.exists(parquet_file), "Parquet metadata file was not created")
 
             # Read and verify the Parquet file content
@@ -294,8 +291,7 @@ class TestExports(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=self.limited_input_dir,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"],
-            encryption_root="test_multi_parquet_key"
+            recipes=["dicom_basic_profile"]
         )
 
         try:
@@ -304,7 +300,7 @@ class TestExports(unittest.TestCase):
             result = anonymizer.anonymize()
 
             # Check that the Parquet file was created
-            parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "privateMapping", "metadata.parquet")
+            parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "metadata.parquet")
             self.assertTrue(os.path.exists(parquet_file), "Parquet metadata file was not created")
 
             # Count expected files in input directory
@@ -372,8 +368,7 @@ class TestExports(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=self.limited_input_dir,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"],
-            encryption_root="test_consistency_key"
+            recipes=["dicom_basic_profile"]
         )
 
         try:
@@ -382,8 +377,8 @@ class TestExports(unittest.TestCase):
             result = anonymizer.anonymize()
 
             # Check that both files were created
-            mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "privateMapping", "uid_mappings.csv")
-            parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "privateMapping", "metadata.parquet")
+            mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "uid_mappings.csv")
+            parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "metadata.parquet")
             
             self.assertTrue(os.path.exists(mapping_file), "CSV mapping file was not created")
             self.assertTrue(os.path.exists(parquet_file), "Parquet metadata file was not created")
