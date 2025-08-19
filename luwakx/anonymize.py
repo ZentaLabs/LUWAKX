@@ -13,6 +13,7 @@ import csv
 import pydicom
 import pandas as pd
 from datetime import datetime
+from pydicom.datadict import add_private_dict_entry
 
 def setup_deid_repo():
     repo_url = "https://github.com/Simlomb/deid.git"
@@ -46,6 +47,30 @@ setup_deid_repo()
 
 from deid.config import DeidRecipe
 from deid.dicom import get_files, get_identifiers, replace_identifiers
+
+def tag_str_to_int(tag_str, xx_value):
+    """Convert a DICOM tag string like (0010,0010) or 0010,0010 to an integer."""
+    m = re.match(r'\((\w{4}),xx(\w{2})\)', tag_str)
+    if not m:
+        raise ValueError(f"Invalid tag format: {tag_str}")
+    group = int(m.group(1), 16)
+    element = int(xx_value + m.group(2), 16)
+    return (group << 16) | element
+
+def register_private_tags_from_csv(csv_path, xx_value):
+    """Register private DICOM tags from a CSV file."""
+    
+    with open(csv_path, newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        header = next(reader)  # Skip header if present
+        for row in reader:
+            tag_str, private_creator, vr, vm, description = row[:5]
+            try:
+                tag = tag_str_to_int(tag_str, xx_value)
+            except Exception as e:
+                print(f"Skipping row {row}: {e}")
+                continue
+            add_private_dict_entry(private_creator, tag, vr, vm, description)
 
 
 class ConfigurationError(Exception):
@@ -93,6 +118,8 @@ class LuwakAnonymizer:
         self.dicom_metadata = []
         # Initialize single date shift for entire project run
         self._project_date_shift = None
+        # Register private tags from CSV
+        register_private_tags_from_csv("/path/to/DICOM_SAFE_PRIVATE_TAGS.csv", "10")
 
     def is_tag_private(self, dicom, value, field, item):
         """Check if a DICOM tag is private.
