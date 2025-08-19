@@ -229,7 +229,7 @@ class LuwakAnonymizer:
         return new_uid
     
     def save_all_uid_mappings(self):
-        """Save all UID mappings to CSV file with one row per DICOM file.
+        """Save all UID mappings to CSV file with one row per DICOM file, including patient info columns.
         
         Args:
             None (uses self.current_file_mappings and private_map_folder)
@@ -250,39 +250,51 @@ class LuwakAnonymizer:
         """
         private_map_folder = self.config.get('outputPrivateMappingFolder')
         mapping_file = os.path.join(private_map_folder, "uid_mappings.csv")
-        
+
         # Check if file exists to determine if we need to write headers
         file_exists = os.path.exists(mapping_file)
-        
+
         # Dynamically discover all modified fields across all files
         all_modified_fields = set()
         for file_path, mappings in self.current_file_mappings.items():
             all_modified_fields.update(mappings.keys())
-        
+
         # Sort the fields for consistent column ordering
         sorted_fields = sorted(all_modified_fields)
-        
-        # Create column headers dynamically
-        fieldnames = ['file_path']
+
+        # Add patient info columns
+        patient_columns = ['PatientName', 'PatientID', 'PatientBirthDate']
+        fieldnames = ['file_path'] + patient_columns
         for field in sorted_fields:
             fieldnames.extend([f'{field}_original', f'{field}_anonymized'])
-        
+
         print(f"Dynamically detected {len(sorted_fields)} modified fields: {sorted_fields}")
-        
+
         # Open file in append mode
         with open(mapping_file, 'a', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            
+
             # Write header if file is new
             if not file_exists:
                 writer.writeheader()
-            
+
             # Write one row per file
             for file_path, mappings in self.current_file_mappings.items():
                 row = {
-                    'file_path': os.path.basename(file_path)  # Just filename for readability
+                    'file_path': os.path.basename(file_path)
                 }
-                
+
+                # Try to read patient info from the DICOM file
+                try:
+                    ds = pydicom.dcmread(file_path, stop_before_pixels=True)
+                    row['PatientName'] = str(getattr(ds, 'PatientName', ''))
+                    row['PatientID'] = str(getattr(ds, 'PatientID', ''))
+                    row['PatientBirthDate'] = str(getattr(ds, 'PatientBirthDate', ''))
+                except Exception as e:
+                    row['PatientName'] = ''
+                    row['PatientID'] = ''
+                    row['PatientBirthDate'] = ''
+
                 # Add mapping data for each modified field
                 for field in sorted_fields:
                     if field in mappings:
@@ -292,12 +304,12 @@ class LuwakAnonymizer:
                         # Field not modified in this particular file
                         row[f'{field}_original'] = ''
                         row[f'{field}_anonymized'] = ''
-                
+
                 writer.writerow(row)
-        
+
         print(f"\nUID mappings saved for {len(self.current_file_mappings)} files to: {mapping_file}")
         print(f"CSV contains mappings for {len(sorted_fields)} different field types")
-        
+
         # Clear the mappings for next run
         self.current_file_mappings = {}
     
