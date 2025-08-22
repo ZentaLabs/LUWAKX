@@ -4,593 +4,638 @@ FORMAT dicom
 
 ADD PatientIdentityRemoved YES
 
-REMOVE (0020,000D)
-BLANK (0008,0050)
-REMOVE (0018,4000)
-REMOVE (0040,0555)
-REMOVE (0008,0022)
-REMOVE (0008,002A)
-REMOVE (0018,1400)
-REMOVE (0018,9424)
-REMOVE (0008,0032)
-REPLACE (0008,0017) func:generate_hashuid
-REMOVE (0040,4035)
-REMOVE (0010,21B0)
-REMOVE (0040,A353)
-REMOVE (0038,0010)
-REMOVE (0038,0020)
-REMOVE (0008,1084)
-REMOVE (0008,1080)
-REMOVE (0038,0021)
-REMOVE (0000,1000)
-REMOVE (0010,2110)
-REMOVE (0040,B034)
-REMOVE (006A,0006)
-REPLACE (006A,0003) func:generate_hashuid
-REMOVE (0044,0004)
-REMOVE (4000,0010)
-REPLACE (0044,0104) func:set_fixed_datetime
-REMOVE (0044,0105)
-REPLACE (0400,0562) func:set_fixed_datetime
-REMOVE (0040,A078)
-REMOVE (2200,0005)
-REMOVE (300A,00C3)
-REPLACE (300C,0127) func:set_fixed_datetime
-REMOVE (300A,00DD)
-REMOVE (0010,1081)
-REMOVE (0014,407E)
-REPLACE (0018,1203) func:set_fixed_datetime
-REMOVE (0014,407C)
-REMOVE (0016,004D)
-REMOVE (0018,1007)
-REMOVE (0400,0310)
-BLANK (0012,0060)
-REMOVE (0012,0082)
-BLANK (0012,0021)
-REMOVE (0012,0072)
-REMOVE (0012,0071)
-BLANK (0012,0030)
-BLANK (0012,0031)
-REMOVE (0012,0051)
-BLANK (0012,0050)
-REMOVE (0040,0310)
-REMOVE (0040,0280)
-REMOVE (300A,02EB)
-REPLACE (0020,9161) func:generate_hashuid
-BLANK (3010,000F)
-BLANK (3010,0017)
-REPLACE (3010,0006) func:generate_hashuid
-REMOVE (0040,3001)
-REPLACE (3010,0013) func:generate_hashuid
-BLANK (0008,009C)
-REMOVE (0008,009D)
-REMOVE (0050,001B)
-REMOVE (0040,051A)
-REMOVE (0070,0086)
-REPLACE (0008,0107) func:set_fixed_datetime
-REPLACE (0008,0106) func:set_fixed_datetime
-REMOVE (0018,1042)
-REMOVE (0018,1043)
-REMOVE (0018,A002)
-REMOVE (0018,A003)
-REMOVE (0010,2150)
-REMOVE (2100,0040)
-REMOVE (2100,0050)
-REMOVE (0040,A307)
-REMOVE (0038,0300)
-REMOVE (50xx,xxxx)
-REMOVE (0008,0025)
-REMOVE (0008,0035)
-REMOVE (0040,A07C)
-REMOVE (FFFC,FFFC)
-REPLACE (0040,A121) func:set_fixed_datetime
-REMOVE (0040,A110)
-REMOVE (0018,1205)
-REMOVE (0018,1200)
-REMOVE (0018,700C)
-REMOVE (0018,1204)
-REMOVE (0018,1012)
-REPLACE (0040,A120) func:set_fixed_datetime
-REMOVE (0018,1202)
-REPLACE (0018,9701) func:set_fixed_datetime
-REMOVE (0018,937F)
-REMOVE (0008,2111)
-REMOVE (0018,700A)
-BLANK (3010,001B)
-REMOVE (0050,0020)
-REMOVE (0018,1000)
-REMOVE (0016,004B)
-REPLACE (0018,1002) func:generate_hashuid
-REPLACE (0400,0105) func:set_fixed_datetime
-REMOVE (FFFA,FFFA)
-REPLACE (0400,0100) func:generate_hashuid
-REPLACE (0020,9164) func:generate_hashuid
-REMOVE (0038,0030)
-REMOVE (0038,0040)
-REMOVE (0038,0032)
-REMOVE (300A,079A)
-REMOVE (4008,011A)
-REMOVE (4008,0119)
-REMOVE (300A,0016)
-REPLACE (300A,0013) func:generate_hashuid
-REPLACE (3010,006E) func:generate_hashuid
-REPLACE (0068,6226) func:set_fixed_datetime
-REMOVE (0040,A034)
-REMOVE (0040,A035)
-REMOVE (0018,9517)
-REMOVE (3010,0037)
-REMOVE (3010,0036)
-REMOVE (300A,0676)
-REMOVE (0012,0087)
-REMOVE (0012,0086)
-REMOVE (0010,2160)
-REMOVE (0010,2161)
-REMOVE (0010,2162)
-REPLACE (0018,9804) func:set_fixed_datetime
-REMOVE (0040,4011)
-REPLACE (0008,0058) func:generate_hashuid
-REPLACE (0070,031A) func:generate_hashuid
-BLANK (0040,2017)
-REMOVE (003A,032B)
-REMOVE (0040,A023)
-REMOVE (0040,A024)
-REMOVE (3008,0054)
-REMOVE (300A,0196)
-BLANK (3010,007F)
-REMOVE (300A,0072)
-REPLACE (0018,9074) func:set_fixed_datetime
-REMOVE (0020,9158)
-REPLACE (0020,0052) func:generate_hashuid
-REPLACE (0018,9151) func:set_fixed_datetime
-REPLACE (0018,9623) func:set_fixed_datetime
-REMOVE (0018,1008)
-REMOVE (0010,0044)
-REMOVE (0010,0045)
-REMOVE (0010,0041)
-REMOVE (0018,1005)
-REMOVE (0016,0076)
-REMOVE (0016,0075)
-REMOVE (0016,008C)
-REMOVE (0016,008D)
-REMOVE (0016,0088)
-REMOVE (0016,0087)
-REMOVE (0016,008A)
-REMOVE (0016,0089)
-REMOVE (0016,0084)
-REMOVE (0016,0083)
-REMOVE (0016,0086)
-REMOVE (0016,0085)
-REMOVE (0016,008E)
-REMOVE (0016,007B)
-REMOVE (0016,0081)
-REMOVE (0016,0080)
-REMOVE (0016,0072)
-REMOVE (0016,0071)
-REMOVE (0016,0074)
-REMOVE (0016,0073)
-REMOVE (0016,0082)
-REMOVE (0016,007A)
-REMOVE (0016,008B)
-REMOVE (0016,0078)
-REMOVE (0016,007D)
-REMOVE (0016,007C)
-REMOVE (0016,0079)
-REMOVE (0016,0077)
-REMOVE (0016,007F)
-REMOVE (0016,007E)
-REMOVE (0016,0070)
-REPLACE (0072,000A) func:set_fixed_datetime
-REMOVE (0018,1011)
-REMOVE (0008,1304)
-REMOVE (0040,E004)
-REMOVE (0040,4037)
-REMOVE (0040,4036)
-REMOVE (0088,0200)
-REMOVE (0008,4000)
-REMOVE (0020,4000)
-REMOVE (0028,4000)
-REMOVE (0040,2400)
-REPLACE (003A,0314) func:set_fixed_datetime
-REMOVE (4008,0300)
-REPLACE (0068,6270) func:set_fixed_datetime
-REMOVE (0008,0015)
-REMOVE (0008,0012)
-REMOVE (0008,0013)
-REPLACE (0008,0014) func:generate_hashuid
-REMOVE (0400,0600)
-REMOVE (0008,0081)
-REMOVE (0008,1040)
-REMOVE (0008,1041)
-REMOVE (0008,0082)
-REMOVE (0008,0080)
-REMOVE (0010,1050)
-REMOVE (3010,0085)
-REMOVE (3010,004D)
-REMOVE (3010,004C)
-REMOVE (0040,1011)
-REPLACE (300A,0741) func:set_fixed_datetime
-REMOVE (4008,0112)
-REMOVE (4008,0113)
-REMOVE (4008,0111)
-REMOVE (4008,010C)
-REMOVE (4008,0115)
-REMOVE (4008,0200)
-REMOVE (4008,0202)
-REMOVE (4008,0100)
-REMOVE (4008,0101)
-REMOVE (4008,0102)
-REMOVE (4008,010B)
-REMOVE (4008,010A)
-REMOVE (4008,0108)
-REMOVE (4008,0109)
-REMOVE (0018,0035)
-REMOVE (0018,0027)
-REPLACE (0008,3010) func:generate_hashuid
-REMOVE (0040,2004)
-REMOVE (0038,0011)
-REMOVE (0038,0014)
-REMOVE (0012,0022)
-REMOVE (0012,0073)
-REMOVE (0012,0032)
-REMOVE (0012,0041)
-REMOVE (0012,0043)
-REMOVE (0012,0055)
-REMOVE (0010,0021)
-REMOVE (0038,0061)
-REMOVE (0038,0064)
-BLANK (0040,0513)
-BLANK (0040,0562)
-REMOVE (0040,2005)
-REMOVE (2200,0002)
-REPLACE (0028,1214) func:generate_hashuid
-REMOVE (0010,21D0)
-REMOVE (0016,004F)
-REMOVE (0016,0050)
-REMOVE (0016,0051)
-REMOVE (0016,004E)
-REMOVE (0050,0021)
-REMOVE (0400,0404)
-REMOVE (0016,002B)
-REPLACE (0018,100B) func:generate_hashuid
-BLANK (3010,0043)
-REPLACE (0002,0003) func:generate_hashuid
-REMOVE (0010,2000)
-REMOVE (0010,1090)
-REMOVE (0010,1080)
-REMOVE (0400,0550)
-REMOVE (0020,3403)
-REMOVE (0020,3406)
-REMOVE (0020,3405)
-REMOVE (0020,3401)
-REMOVE (0040,B03F)
-REMOVE (0040,B03B)
-REMOVE (3008,0056)
-REMOVE (0018,937B)
-REPLACE (003A,0310) func:generate_hashuid
-REMOVE (0008,1060)
-REMOVE (0040,1010)
-REMOVE (0010,0012)
-REMOVE (0010,0013)
-REMOVE (0008,1000)
-REMOVE (0400,0552)
-REMOVE (0400,0551)
-REMOVE (0040,A192)
-REMOVE (0040,A032)
-REMOVE (0040,A033)
-REPLACE (0040,A402) func:generate_hashuid
-REMOVE (0040,A193)
-REPLACE (0040,A171) func:generate_hashuid
-REMOVE (0010,2180)
-REMOVE (0008,1072)
-REMOVE (0008,1070)
-REMOVE (0040,2010)
-REMOVE (0040,2011)
-REMOVE (0040,2008)
-REMOVE (0040,2009)
-REMOVE (0400,0561)
-REMOVE (2100,0070)
-REMOVE (0012,0023)
-REMOVE (0010,1000)
-REMOVE (0010,1002)
-REMOVE (0010,1001)
-REMOVE (60xx,4000)
-REMOVE (60xx,3000)
-REMOVE (0008,0024)
-REMOVE (0008,0034)
-REPLACE (300A,0760) func:set_fixed_datetime
-REPLACE (0028,1199) func:generate_hashuid
-REMOVE (0040,A07A)
-REPLACE (0040,A082) func:set_fixed_datetime
-REMOVE (0010,1040)
-REMOVE (0010,1010)
-REPLACE (0010,0030) func:set_fixed_datetime
-REMOVE (0010,1005)
-REMOVE (0010,0032)
-REMOVE (0038,0400)
-REMOVE (0010,0050)
-REMOVE (0010,1060)
-BLANK (0010,0010)
-REMOVE (0010,0101)
-REMOVE (0010,0102)
-REMOVE (0010,21F0)
-BLANK (0010,0040)
-REMOVE (0010,2203)
-REMOVE (0010,1020)
-REMOVE (0010,2155)
-REMOVE (0010,2154)
-REMOVE (0010,1030)
-REMOVE (0010,4000)
-REMOVE (300A,0794)
-REPLACE (300A,0650) func:generate_hashuid
-REMOVE (0038,0500)
-REMOVE (0040,1004)
-REMOVE (300A,0792)
-REMOVE (300A,078E)
-REMOVE (0040,0243)
-REMOVE (0040,0254)
-REMOVE (0040,0250)
-REMOVE (0040,4051)
-REMOVE (0040,0251)
-REMOVE (0040,0253)
-REMOVE (0040,0244)
-REMOVE (0040,4050)
-REMOVE (0040,0245)
-REMOVE (0040,0241)
-REMOVE (0040,4030)
-REMOVE (0040,0242)
-REMOVE (0040,4028)
-REMOVE (0008,1050)
-REMOVE (0008,1052)
-REMOVE (0040,1102)
-REMOVE (0040,1104)
-REMOVE (0040,1103)
-REMOVE (0010,0011)
-REMOVE (0008,1048)
-REMOVE (0008,1049)
-REMOVE (0008,1062)
-REMOVE (4008,0114)
-BLANK (0040,2016)
-REMOVE (0018,1004)
-REMOVE (3002,0123)
-REMOVE (3002,0121)
-REMOVE (0010,21C0)
-REMOVE (0040,0012)
-REMOVE (300A,000E)
-BLANK (3010,007B)
-BLANK (3010,0081)
-REMOVE (0070,0082)
-REMOVE (0070,0083)
-REPLACE (0070,1101) func:generate_hashuid
-REPLACE (0070,1102) func:generate_hashuid
-REMOVE (0008,1302)
-REMOVE (0008,1301)
-REMOVE (3010,0061)
-REMOVE (gggg,eeee) where gggg is odd
-REMOVE (0040,4052)
-REMOVE (0044,000B)
-REMOVE (0010,0015)
-REMOVE (0010,0016)
-REMOVE (0018,1030)
-REMOVE (0008,1088)
-REMOVE (0020,0027)
-REPLACE (0008,0019) func:generate_hashuid
-BLANK (300A,067D)
-REMOVE (0018,1078)
-REMOVE (0018,1072)
-REMOVE (0018,1079)
-REMOVE (0018,1073)
-REMOVE (300C,0113)
-REMOVE (0040,100A)
-REMOVE (0032,1030)
-BLANK (3010,005C)
-REMOVE (0040,2001)
-REMOVE (0040,1002)
-REMOVE (0032,1066)
-REMOVE (0032,1067)
-REMOVE (0074,1234)
-REPLACE (300A,073A) func:set_fixed_datetime
-REPLACE (3010,000B) func:generate_hashuid
-REPLACE (0040,A13A) func:set_fixed_datetime
-REMOVE (0400,0402)
-REPLACE (300A,0083) func:generate_hashuid
-REPLACE (3010,006F) func:generate_hashuid
-REPLACE (3010,0031) func:generate_hashuid
-REPLACE (3006,0024) func:generate_hashuid
-REPLACE (0040,4023) func:generate_hashuid
-REMOVE (0008,1140)
-REPLACE (0040,A172) func:generate_hashuid
-REMOVE (0038,0004)
-REMOVE (0010,1100)
-REMOVE (0008,1120)
-REMOVE (0008,1111)
-REMOVE (0400,0403)
-REPLACE (0008,1155) func:generate_hashuid
-REPLACE (0004,1511) func:generate_hashuid
-REMOVE (0008,1110)
-REPLACE (300A,0785) func:generate_hashuid
-REMOVE (0008,0092)
-BLANK (0008,0090)
-REMOVE (0008,0094)
-REMOVE (0008,0096)
-REMOVE (0010,2152)
-REPLACE (3006,00C2) func:generate_hashuid
-REMOVE (0040,0275)
-REMOVE (0032,1070)
-REMOVE (0040,1400)
-REMOVE (0032,1060)
-REMOVE (0040,1001)
-REMOVE (0040,1005)
-REMOVE (0018,9937)
-REPLACE (0000,1001) func:generate_hashuid
-REMOVE (0074,1236)
-REMOVE (0032,1032)
-REMOVE (0032,1033)
-REMOVE (0018,9185)
-REMOVE (0010,2299)
-REMOVE (0010,2297)
-REMOVE (4008,4000)
-REMOVE (4008,0118)
-REMOVE (4008,0040)
-REMOVE (4008,0042)
-REMOVE (0008,0054)
-REPLACE (300E,0004) func:set_fixed_datetime
-REMOVE (300E,0008)
-REPLACE (300E,0005) func:set_fixed_datetime
-REMOVE (3006,004D)
-REMOVE (3006,002D)
-REMOVE (3006,0028)
-REMOVE (3006,0038)
-BLANK (3006,00A6)
-REMOVE (3006,004E)
-BLANK (3006,0026)
-REMOVE (3006,002E)
-REMOVE (3006,0088)
-REMOVE (3006,0085)
-BLANK (300A,0615)
-BLANK (300A,0611)
-BLANK (3010,005A)
-REMOVE (300A,0006)
-REMOVE (300A,0004)
-REMOVE (300A,0003)
-REMOVE (300A,0007)
-REMOVE (3010,0056)
-REPLACE (3010,003B) func:generate_hashuid
-REPLACE (3008,0162) func:set_fixed_datetime
-REPLACE (3008,0164) func:set_fixed_datetime
-REPLACE (3008,0166) func:set_fixed_datetime
-REPLACE (3008,0168) func:set_fixed_datetime
-REMOVE (0038,001A)
-REMOVE (0038,001B)
-REMOVE (0038,001C)
-REMOVE (0038,001D)
-REMOVE (0040,4034)
-REMOVE (0038,001E)
-REMOVE (0040,0006)
-REMOVE (0040,000B)
-REMOVE (0040,0007)
-REMOVE (0040,0004)
-REMOVE (0040,0005)
-REMOVE (0040,4008)
-REMOVE (0040,0009)
-REMOVE (0040,0011)
-REMOVE (0040,4010)
-REMOVE (0040,0002)
-REMOVE (0040,4005)
-REMOVE (0040,0003)
-REMOVE (0040,0001)
-REMOVE (0040,4027)
-REMOVE (0040,0010)
-REMOVE (0040,4025)
-REMOVE (0032,1020)
-REMOVE (0032,1021)
-REMOVE (0032,1000)
-REMOVE (0032,1001)
-REMOVE (0032,1010)
-REMOVE (0032,1011)
-REMOVE (0018,1010)
-REMOVE (0008,1303)
-REMOVE (0040,B036)
-REPLACE (0072,0061) func:set_fixed_datetime
-REPLACE (0072,0063) func:set_fixed_datetime
-REPLACE (0072,006B) func:set_fixed_datetime
-REMOVE (0008,0021)
-REMOVE (0008,103E)
-REPLACE (0020,000E) func:generate_hashuid
-REMOVE (0008,0031)
-REMOVE (0038,0062)
-REMOVE (0038,0060)
-REMOVE (300A,01B2)
-REMOVE (0010,0046)
-REMOVE (0010,0042)
-REMOVE (0010,0047)
-REMOVE (0010,0043)
-REMOVE (300A,01A6)
-REMOVE (0040,06FA)
-REMOVE (0010,21A0)
-REMOVE (0100,0420)
-REPLACE (0008,0018) func:generate_hashuid
-REPLACE (3010,0015) func:generate_hashuid
-REPLACE (0018,936A) func:set_fixed_datetime
-REPLACE (0064,0003) func:generate_hashuid
-REMOVE (0008,2112)
-REMOVE (300A,0216)
-BLANK (0400,0564)
-REMOVE (3008,0105)
-REPLACE (0018,9369) func:set_fixed_datetime
-REPLACE (300A,022C) func:set_fixed_datetime
-REPLACE (300A,022E) func:set_fixed_datetime
-REMOVE (0038,0050)
-REMOVE (0040,050A)
-REMOVE (0040,0602)
-BLANK (0040,0610)
-REMOVE (0040,0600)
-REPLACE (0040,0554) func:generate_hashuid
-REMOVE (0018,9516)
-REMOVE (0008,0055)
-REMOVE (0008,1010)
-REPLACE (0088,0140) func:generate_hashuid
-REPLACE (3006,0008) func:set_fixed_datetime
-REMOVE (3006,0006)
-REMOVE (3006,0004)
-REPLACE (3006,0009) func:set_fixed_datetime
-REMOVE (0032,1040)
-REMOVE (0032,1041)
-REMOVE (0032,4000)
-REMOVE (0032,1050)
-REMOVE (0032,1051)
-REPLACE (0008,0020) func:set_fixed_datetime
-REMOVE (0008,1030)
-BLANK (0020,0010)
-REMOVE (0032,0012)
-REPLACE (0020,000D) func:generate_hashuid
-REMOVE (0032,0034)
-REMOVE (0032,0035)
-REPLACE (0008,0030) func:set_fixed_datetime
-REMOVE (0032,0032)
-REMOVE (0032,0033)
-REMOVE (0044,0010)
-REPLACE (0020,0200) func:generate_hashuid
-REPLACE (300A,0054) func:generate_hashuid
-REPLACE (0018,2042) func:generate_hashuid
-REMOVE (0040,A354)
-REPLACE (0040,DB0D) func:generate_hashuid
-REPLACE (0040,DB0C) func:generate_hashuid
-REMOVE (0040,DB07)
-REMOVE (0040,DB06)
-REMOVE (4000,4000)
-REMOVE (2030,0020)
-REMOVE (0010,0014)
-REPLACE (0040,A122) func:set_fixed_datetime
-REMOVE (0040,A112)
-REMOVE (0018,1201)
-REMOVE (0018,700E)
-REMOVE (0018,1014)
-REMOVE (0008,0201)
-REMOVE (0088,0910)
-REMOVE (0088,0912)
-REMOVE (0088,0906)
-REMOVE (0088,0904)
-REPLACE (0062,0021) func:generate_hashuid
-REPLACE (0008,1195) func:generate_hashuid
-REMOVE (0018,5011)
-REPLACE (3008,0024) func:set_fixed_datetime
-REPLACE (3008,0025) func:set_fixed_datetime
-REMOVE (3008,0250)
-REMOVE (300A,00B2)
-REPLACE (300A,0609) func:generate_hashuid
-REPLACE (300A,0700) func:generate_hashuid
-REMOVE (3010,0077)
-REMOVE (300A,000B)
-BLANK (3010,007A)
-REMOVE (3008,0251)
-REPLACE (300A,0736) func:set_fixed_datetime
-REMOVE (0018,100A)
-REPLACE (0040,A124) func:generate_hashuid
-REMOVE (0018,1009)
-REMOVE (0040,A352)
-REMOVE (0040,A358)
-REPLACE (0040,A030) func:set_fixed_datetime
-BLANK (0040,A088)
-REMOVE (0038,4000)
-REMOVE (003A,0329)
-REMOVE (0018,9373)
+REMOVE (0000,1000) # Affected SOP Instance UID
+REPLACE (0000,1001) func:generate_hashuid # Requested SOP Instance UID
+REPLACE (0002,0003) func:generate_hashuid # Media Storage SOP Instance UID
+REPLACE (0004,1511) func:generate_hashuid # Referenced SOP Instance UID in File
+REPLACE (0008,0012) func:hash_increment_date # Instance Creation Date
+REMOVE (0008,0013) # Instance Creation Time retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+REPLACE (0008,0014) func:generate_hashuid # Instance Creator UID
+REMOVE (0008,0015) # Instance Coercion DateTime
+REPLACE (0008,0017) func:generate_hashuid # Acquisition UID
+REPLACE (0008,0018) func:generate_hashuid # SOP Instance UID
+REPLACE (0008,0019) func:generate_hashuid # Pyramid UID
+REPLACE (0008,0020) func:set_fixed_datetime # Study Date
+REPLACE (0008,0021) func:hash_increment_date # Series Date
+REPLACE (0008,0022) func:hash_increment_date # Acquisition Date
+REPLACE (0008,0023) func:hash_increment_date # Content Date
+REMOVE (0008,0024) # Overlay Date
+REMOVE (0008,0025) # Curve Date
+REPLACE (0008,002A) func:hash_increment_date # Acquisition DateTime
+REPLACE (0008,0030) func:set_fixed_datetime # Study Time
+REMOVE (0008,0031) # Series Time retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+REMOVE (0008,0032) # Acquisition Time retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+BLANK (0008,0033) # Content Time retained by TCIA profile, arbitrarily chose to have Z. MUST BE REVIEWED 
+REMOVE (0008,0034) # Overlay Time
+REMOVE (0008,0035) # Curve Time
+BLANK (0008,0050) # Accession Number
+REMOVE (0008,0054) # Retrieve AE Title
+REMOVE (0008,0055) # Station AE Title
+REPLACE (0008,0058) func:generate_hashuid # Failed SOP Instance UID List
+REMOVE (0008,0080) # Institution Name
+REMOVE (0008,0081) # Institution Address
+REMOVE (0008,0082) # Institution Code Sequence
+BLANK (0008,0090) # Referring Physician's Name
+REMOVE (0008,0092) # Referring Physician's Address
+REMOVE (0008,0094) # Referring Physician's Telephone Numbers
+REMOVE (0008,0096) # Referring Physician Identification Sequence
+BLANK (0008,009C) # Consulting Physician's Name
+REMOVE (0008,009D) # Consulting Physician Identification Sequence
+REPLACE (0008,0106) func:set_fixed_datetime # Context Group Version
+REPLACE (0008,0107) func:set_fixed_datetime # Context Group Local Version
+REMOVE (0008,0201) # Timezone Offset From UTC
+REMOVE (0008,1000) # Network ID
+REMOVE (0008,1010) # Station Name
+REMOVE (0008,1030) # Study Description
+REMOVE (0008,103E) # Series Description
+REMOVE (0008,1040) # Institutional Department Name
+REMOVE (0008,1041) # Institutional Department Type Code Sequence
+REMOVE (0008,1048) # Physician(s) of Record
+REMOVE (0008,1049) # Physician(s) of Record Identification Sequence
+REMOVE (0008,1050) # Performing Physician's Name
+REMOVE (0008,1052) # Performing Physician Identification Sequence
+REMOVE (0008,1060) # Name of Physician(s) Reading Study
+REMOVE (0008,1062) # Physician(s) Reading Study Identification Sequence
+REMOVE (0008,1070) # Operators' Name
+REMOVE (0008,1072) # Operator Identification Sequence
+REMOVE (0008,1080) # Admitting Diagnoses Description
+REMOVE (0008,1084) # Admitting Diagnoses Code Sequence
+REMOVE (0008,1088) # Pyramid Description
+REMOVE (0008,1110) # Referenced Study Sequence
+REMOVE (0008,1111) # Referenced Performed Procedure Step Sequence
+REMOVE (0008,1120) # Referenced Patient Sequence
+REMOVE (0008,1140) # Referenced Image Sequence
+REPLACE (0008,1155) func:generate_hashuid # Referenced SOP Instance UID
+REPLACE (0008,1195) func:generate_hashuid # Transaction UID
+REMOVE (0008,1301) # Principal Diagnosis Code Sequence
+REMOVE (0008,1302) # Primary Diagnosis Code Sequence
+REMOVE (0008,1303) # Secondary Diagnoses Code Sequence
+REMOVE (0008,1304) # Histological Diagnoses Code Sequence
+REMOVE (0008,2111) # Derivation Description
+REPLACE (0008,2112) func:generate_hashuid # Source Image Sequence
+REPLACE (0008,3010) func:generate_hashuid # Irradiation Event UID
+REMOVE (0008,4000) # Identifying Comments
+BLANK (0010,0010) # Patient's Name
+REMOVE (0010,0011) # Person Names to Use Sequence
+REMOVE (0010,0012) # Name to Use
+REMOVE (0010,0013) # Name to Use Comment
+REMOVE (0010,0014) # Third Person Pronouns Sequence
+REMOVE (0010,0015) # Pronoun Code Sequence
+REMOVE (0010,0016) # Pronoun Comment
+REMOVE (0010,0021) # Issuer of Patient ID
+REPLACE (0010,0030) func:set_fixed_datetime # Patient's Birth Date
+REMOVE (0010,0032) # Patient's Birth Time
+BLANK (0010,0040) # Patient's Sex
+REMOVE (0010,0041) # Gender Identity Sequence
+REMOVE (0010,0042) # Sex Parameters for Clinical Use Category Comment
+REMOVE (0010,0043) # Sex Parameters for Clinical Use Category Sequence
+REMOVE (0010,0044) # Gender Identity Code Sequence
+REMOVE (0010,0045) # Gender Identity Comment
+REMOVE (0010,0046) # Sex Parameters for Clinical Use Category Code Sequence
+REMOVE (0010,0047) # Sex Parameters for Clinical Use Category Reference
+REMOVE (0010,0050) # Patient's Insurance Plan Code Sequence
+REMOVE (0010,0101) # Patient's Primary Language Code Sequence
+REMOVE (0010,0102) # Patient's Primary Language Modifier Code Sequence
+REMOVE (0010,1000) # Other Patient IDs
+REMOVE (0010,1001) # Other Patient Names
+REMOVE (0010,1002) # Other Patient IDs Sequence
+REMOVE (0010,1005) # Patient's Birth Name
+REMOVE (0010,1010) # Patient's Age
+REMOVE (0010,1020) # Patient's Size
+REMOVE (0010,1030) # Patient's Weight
+REMOVE (0010,1040) # Patient's Address
+REMOVE (0010,1050) # Insurance Plan Identification
+REMOVE (0010,1060) # Patient's Mother's Birth Name
+REMOVE (0010,1080) # Military Rank
+REMOVE (0010,1081) # Branch of Service
+REMOVE (0010,1090) # Medical Record Locator
+REMOVE (0010,1100) # Referenced Patient Photo Sequence
+REMOVE (0010,2000) # Medical Alerts
+REMOVE (0010,2110) # Allergies
+REMOVE (0010,2150) # Country of Residence
+REMOVE (0010,2152) # Region of Residence
+REMOVE (0010,2154) # Patient's Telephone Numbers
+REMOVE (0010,2155) # Patient's Telecom Information
+REMOVE (0010,2160) # Ethnic Group
+REMOVE (0010,2161) # Ethnic Group Code Sequence
+REMOVE (0010,2162) # Ethnic Groups
+REMOVE (0010,2180) # Occupation
+REMOVE (0010,21A0) # Smoking Status
+REMOVE (0010,21B0) # Additional Patient History
+REMOVE (0010,21C0) # Pregnancy Status
+REMOVE (0010,21D0) # Last Menstrual Date
+REMOVE (0010,21F0) # Patient's Religious Preference
+REMOVE (0010,2203) # Patient's Sex Neutered retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+REMOVE (0010,2297) # Responsible Person
+REMOVE (0010,2299) # Responsible Organization
+REMOVE (0010,4000) # Patient Comments
+REPLACE (0012,0010) ANONYMIZED # Clinical Trial Sponsor Name
+REPLACE (0012,0020) ANONYMIZED # Clinical Trial Protocol ID
+BLANK (0012,0021) # Clinical Trial Protocol Name
+REMOVE (0012,0022) # Issuer of Clinical Trial Protocol ID
+REMOVE (0012,0023) # Other Clinical Trial Protocol IDs Sequence
+BLANK (0012,0030) # Clinical Trial Site ID
+BLANK (0012,0031) # Clinical Trial Site Name
+REMOVE (0012,0032) # Issuer of Clinical Trial Site ID
+REPLACE (0012,0040) ANONYMIZED # Clinical Trial Subject ID
+REMOVE (0012,0041) # Issuer of Clinical Trial Subject ID
+REPLACE (0012,0042) ANONYMIZED # Clinical Trial Subject Reading ID
+REMOVE (0012,0043) # Issuer of Clinical Trial Subject Reading ID
+BLANK (0012,0050) # Clinical Trial Time Point ID
+REMOVE (0012,0051) # Clinical Trial Time Point Description
+REMOVE (0012,0055) # Issuer of Clinical Trial Time Point ID
+BLANK (0012,0060) # Clinical Trial Coordinating Center Name
+REMOVE (0012,0071) # Clinical Trial Series ID
+REMOVE (0012,0072) # Clinical Trial Series Description
+REMOVE (0012,0073) # Issuer of Clinical Trial Series ID
+REPLACE (0012,0081) ANONYMIZED # Clinical Trial Protocol Ethics Committee Name
+REMOVE (0012,0082) # Clinical Trial Protocol Ethics Committee Approval Number
+REMOVE (0012,0086) # Ethics Committee Approval Effectiveness Start Date
+REMOVE (0012,0087) # Ethics Committee Approval Effectiveness End Date
+REMOVE (0014,407C) # Calibration Time
+REMOVE (0014,407E) # Calibration Date
+REMOVE (0016,002B) # Maker Note
+REMOVE (0016,004B) # Device Setting Description
+REMOVE (0016,004D) # Camera Owner Name
+REMOVE (0016,004E) # Lens Specification
+REMOVE (0016,004F) # Lens Make
+REMOVE (0016,0050) # Lens Model
+REMOVE (0016,0051) # Lens Serial Number
+REMOVE (0016,0070) # GPS Version ID
+REMOVE (0016,0071) # GPS Latitude​ Ref
+REMOVE (0016,0072) # GPS Latitude​
+REMOVE (0016,0073) # GPS Longitude Ref
+REMOVE (0016,0074) # GPS Longitude
+REMOVE (0016,0075) # GPS Altitude​ Ref
+REMOVE (0016,0076) # GPS Altitude​
+REMOVE (0016,0077) # GPS Time​ Stamp
+REMOVE (0016,0078) # GPS Satellites
+REMOVE (0016,0079) # GPS Status
+REMOVE (0016,007A) # GPS Measure ​Mode
+REMOVE (0016,007B) # GPS DOP
+REMOVE (0016,007C) # GPS Speed​ Ref
+REMOVE (0016,007D) # GPS Speed​
+REMOVE (0016,007E) # GPS Track ​Ref
+REMOVE (0016,007F) # GPS Track
+REMOVE (0016,0080) # GPS Img​ Direction Ref
+REMOVE (0016,0081) # GPS Img ​Direction
+REMOVE (0016,0082) # GPS Map​ Datum
+REMOVE (0016,0083) # GPS Dest​ Latitude Ref
+REMOVE (0016,0084) # GPS Dest​ Latitude
+REMOVE (0016,0085) # GPS Dest ​Longitude Ref
+REMOVE (0016,0086) # GPS Dest ​Longitude
+REMOVE (0016,0087) # GPS Dest​ Bearing Ref
+REMOVE (0016,0088) # GPS Dest ​Bearing
+REMOVE (0016,0089) # GPS Dest ​Distance Ref
+REMOVE (0016,008A) # GPS Dest ​Distance
+REMOVE (0016,008B) # GPS Processing​ Method
+REMOVE (0016,008C) # GPS Area ​Information
+REMOVE (0016,008D) # GPS Date​ Stamp
+REMOVE (0016,008E) # GPS Differential
+BLANK (0018,0010) # Contrast/Bolus Agent retained by TCIA profile, arbitrarily chose to have Z. MUST BE REVIEWED 
+REMOVE (0018,0027) # Intervention Drug Stop Time
+REMOVE (0018,0035) # Intervention Drug Start Time
+REMOVE (0018,1000) # Device Serial Number
+REPLACE (0018,1002) func:generate_hashuid # Device UID
+REMOVE (0018,1004) # Plate ID
+REMOVE (0018,1005) # Generator ID
+REMOVE (0018,1007) # Cassette ID
+REMOVE (0018,1008) # Gantry ID
+REMOVE (0018,1009) # Unique Device Identifier
+REMOVE (0018,100A) # UDI Sequence
+REPLACE (0018,100B) func:generate_hashuid # Manufacturer's Device Class UID
+REMOVE (0018,1010) # Secondary Capture Device ID
+REMOVE (0018,1011) # Hardcopy Creation Device ID
+REMOVE (0018,1012) # Date of Secondary Capture
+REMOVE (0018,1014) # Time of Secondary Capture
+REMOVE (0018,1030) # Protocol Name retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+REMOVE (0018,1042) # Contrast/Bolus Start Time
+REMOVE (0018,1043) # Contrast/Bolus Stop Time
+REMOVE (0018,1072) # Radiopharmaceutical Start Time
+REMOVE (0018,1073) # Radiopharmaceutical Stop Time
+REMOVE (0018,1078) # Radiopharmaceutical Start DateTime
+REMOVE (0018,1079) # Radiopharmaceutical Stop DateTime
+REPLACE (0018,11BB) ANONYMIZED # Acquisition Field Of View Label
+REMOVE (0018,1200) # Date of Last Calibration
+REMOVE (0018,1201) # Time of Last Calibration
+REMOVE (0018,1202) # DateTime of Last Calibration
+REPLACE (0018,1203) func:set_fixed_datetime # Calibration DateTime
+REMOVE (0018,1204) # Date of Manufacture
+REMOVE (0018,1205) # Date of Installation
+REMOVE (0018,1400) # Acquisition Device Processing Description retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+REPLACE (0018,2042) func:generate_hashuid # Target UID
+REMOVE (0018,4000) # Acquisition Comments
+REMOVE (0018,5011) # Transducer Identification Sequence
+REMOVE (0018,700A) # Detector ID
+REPLACE (0018,700C) func:hash_increment_date # Date of Last Detector Calibration
+REMOVE (0018,700E) # Time of Last Detector Calibration retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+REPLACE (0018,9074) func:set_fixed_datetime # Frame Acquisition DateTime
+REPLACE (0018,9151) func:set_fixed_datetime # Frame Reference DateTime
+REMOVE (0018,9185) # Respiratory Motion Compensation Technique Description
+REPLACE (0018,9367) ANONYMIZED # X-Ray Source ID
+REPLACE (0018,9369) func:set_fixed_datetime # Source Start DateTime
+REPLACE (0018,936A) func:set_fixed_datetime # Source End DateTime
+REPLACE (0018,9371) ANONYMIZED # X-Ray Detector ID
+REMOVE (0018,9373) # X-Ray Detector Label
+REMOVE (0018,937B) # Multi-energy Acquisition Description
+REMOVE (0018,937F) # Decomposition Description
+REMOVE (0018,9424) # Acquisition Protocol Description
+REPLACE (0018,9516) func:hash_increment_date # Start Acquisition DateTime
+REPLACE (0018,9517) func:hash_increment_date # End Acquisition DateTime
+REPLACE (0018,9623) func:set_fixed_datetime # Functional Sync Pulse
+REPLACE (0018,9701) func:set_fixed_datetime # Decay Correction DateTime
+REPLACE (0018,9804) func:set_fixed_datetime # Exclusion Start DateTime
+REPLACE (0018,9919) func:hash_increment_date # Instruction Performed DateTime
+REMOVE (0018,9937) # Requested Series Description
+REMOVE (0018,A002) # Contribution DateTime
+REMOVE (0018,A003) # Contribution Description
+REPLACE (0020,000D) func:generate_hashuid # Study Instance UID
+REPLACE (0020,000E) func:generate_hashuid # Series Instance UID
+BLANK (0020,0010) # Study ID
+REMOVE (0020,0027) # Pyramid Label
+REPLACE (0020,0052) func:generate_hashuid # Frame of Reference UID
+REPLACE (0020,0200) func:generate_hashuid # Synchronization Frame of Reference UID
+REMOVE (0020,3401) # Modifying Device ID
+REMOVE (0020,3403) # Modified Image Date
+REMOVE (0020,3405) # Modified Image Time
+REMOVE (0020,3406) # Modified Image Description
+REMOVE (0020,4000) # Image Comments
+REMOVE (0020,9158) # Frame Comments
+REPLACE (0020,9161) func:generate_hashuid # Concatenation UID
+REPLACE (0020,9164) func:generate_hashuid # Dimension Organization UID
+REPLACE (0028,1199) func:generate_hashuid # Palette Color Lookup Table UID
+REPLACE (0028,1214) func:generate_hashuid # Large Palette Color Lookup Table UID
+REMOVE (0028,4000) # Image Presentation Comments
+REMOVE (0032,0012) # Study ID Issuer
+REMOVE (0032,0032) # Study Verified Date
+REMOVE (0032,0033) # Study Verified Time
+REMOVE (0032,0034) # Study Read Date
+REMOVE (0032,0035) # Study Read Time
+REMOVE (0032,1000) # Scheduled Study Start Date
+REMOVE (0032,1001) # Scheduled Study Start Time
+REMOVE (0032,1010) # Scheduled Study Stop Date
+REMOVE (0032,1011) # Scheduled Study Stop Time
+REMOVE (0032,1020) # Scheduled Study Location
+REMOVE (0032,1021) # Scheduled Study Location AE Title
+REMOVE (0032,1030) # Reason for Study
+REMOVE (0032,1032) # Requesting Physician
+REMOVE (0032,1033) # Requesting Service
+REMOVE (0032,1040) # Study Arrival Date
+REMOVE (0032,1041) # Study Arrival Time
+REMOVE (0032,1050) # Study Completion Date
+REMOVE (0032,1051) # Study Completion Time
+REMOVE (0032,1060) # Requested Procedure Description retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+REMOVE (0032,1066) # Reason for Visit
+REMOVE (0032,1067) # Reason for Visit Code Sequence
+REMOVE (0032,1070) # Requested Contrast Agent
+REMOVE (0032,4000) # Study Comments
+REMOVE (0038,0004) # Referenced Patient Alias Sequence
+REMOVE (0038,0010) # Admission ID
+REMOVE (0038,0011) # Issuer of Admission ID
+REMOVE (0038,0014) # Issuer of Admission ID Sequence
+REMOVE (0038,001A) # Scheduled Admission Date
+REMOVE (0038,001B) # Scheduled Admission Time
+REMOVE (0038,001C) # Scheduled Discharge Date
+REMOVE (0038,001D) # Scheduled Discharge Time
+REMOVE (0038,001E) # Scheduled Patient Institution Residence
+REMOVE (0038,0020) # Admitting Date
+REMOVE (0038,0021) # Admitting Time
+REMOVE (0038,0030) # Discharge Date
+REMOVE (0038,0032) # Discharge Time
+REMOVE (0038,0040) # Discharge Diagnosis Description
+REMOVE (0038,0050) # Special Needs
+REMOVE (0038,0060) # Service Episode ID
+REMOVE (0038,0061) # Issuer of Service Episode ID
+REMOVE (0038,0062) # Service Episode Description
+REMOVE (0038,0064) # Issuer of Service Episode ID Sequence
+REMOVE (0038,0300) # Current Patient Location
+REMOVE (0038,0400) # Patient's Institution Residence
+REMOVE (0038,0500) # Patient State
+REMOVE (0038,4000) # Visit Comments
+REPLACE (003A,0310) func:generate_hashuid # Multiplex Group UID
+REPLACE (003A,0314) func:set_fixed_datetime # Impedance Measurement DateTime
+REMOVE (003A,0329) # ​Waveform Filter Description
+REMOVE (003A,032B) # Filter Lookup Table Description
+REMOVE (0040,0001) # Scheduled Station AE Title
+REMOVE (0040,0002) # Scheduled Procedure Step Start Date
+REMOVE (0040,0003) # Scheduled Procedure Step Start Time
+REMOVE (0040,0004) # Scheduled Procedure Step End Date
+REMOVE (0040,0005) # Scheduled Procedure Step End Time
+REMOVE (0040,0006) # Scheduled Performing Physician's Name
+REMOVE (0040,0007) # Scheduled Procedure Step Description
+REMOVE (0040,0009) # Scheduled Procedure Step ID
+REMOVE (0040,000B) # Scheduled Performing Physician Identification Sequence
+REMOVE (0040,0010) # Scheduled Station Name
+REMOVE (0040,0011) # Scheduled Procedure Step Location
+REMOVE (0040,0012) # Pre-Medication
+REMOVE (0040,0241) # Performed Station AE Title
+REMOVE (0040,0242) # Performed Station Name
+REMOVE (0040,0243) # Performed Location
+REMOVE (0040,0244) # Performed Procedure Step Start Date
+REMOVE (0040,0245) # Performed Procedure Step Start Time
+REMOVE (0040,0250) # Performed Procedure Step End Date
+REMOVE (0040,0251) # Performed Procedure Step End Time
+REMOVE (0040,0253) # Performed Procedure Step ID
+REMOVE (0040,0254) # Performed Procedure Step Description
+REMOVE (0040,0275) # Request Attributes Sequence
+REMOVE (0040,0280) # Comments on the Performed Procedure Step
+REMOVE (0040,0310) # Comments on Radiation Dose
+REMOVE (0040,050A) # Specimen Accession Number
+REPLACE (0040,0512) ANONYMIZED # Container Identifier
+BLANK (0040,0513) # Issuer of the Container Identifier Sequence
+REMOVE (0040,051A) # Container Description
+REPLACE (0040,0551) ANONYMIZED # Specimen Identifier
+REPLACE (0040,0554) func:generate_hashuid # Specimen UID
+REPLACE (0040,0555) func:generate_hashuid # Acquisition Context Sequence
+BLANK (0040,0562) # Issuer of the Specimen Identifier Sequence
+REMOVE (0040,0600) # Specimen Short Description
+REMOVE (0040,0602) # Specimen Detailed Description
+BLANK (0040,0610) # Specimen Preparation Sequence
+REMOVE (0040,06FA) # Slide Identifier
+REMOVE (0040,1001) # Requested Procedure ID
+REMOVE (0040,1002) # Reason for the Requested Procedure
+REMOVE (0040,1004) # Patient Transport Arrangements
+REMOVE (0040,1005) # Requested Procedure Location
+REMOVE (0040,100A) # Reason for Requested Procedure Code Sequence
+REMOVE (0040,1010) # Names of Intended Recipients of Results
+REMOVE (0040,1011) # Intended Recipients of Results Identification Sequence
+REMOVE (0040,1102) # Person's Address
+REMOVE (0040,1103) # Person's Telephone Numbers
+REMOVE (0040,1104) # Person's Telecom Information
+REMOVE (0040,1400) # Requested Procedure Comments
+REMOVE (0040,2001) # Reason for the Imaging Service Request
+REMOVE (0040,2004) # Issue Date of Imaging Service Request
+REMOVE (0040,2005) # Issue Time of Imaging Service Request
+REMOVE (0040,2008) # Order Entered By
+REMOVE (0040,2009) # Order Enterer's Location
+REMOVE (0040,2010) # Order Callback Phone Number
+REMOVE (0040,2011) # Order Callback Telecom Information
+BLANK (0040,2016) # Placer Order Number / Imaging Service Request
+BLANK (0040,2017) # Filler Order Number / Imaging Service Request
+REMOVE (0040,2400) # Imaging Service Request Comments
+REMOVE (0040,3001) # Confidentiality Constraint on Patient Data Description
+REMOVE (0040,4005) # Scheduled Procedure Step Start DateTime
+REMOVE (0040,4008) # Scheduled Procedure Step Expiration DateTime
+REMOVE (0040,4010) # Scheduled Procedure Step Modification DateTime
+REMOVE (0040,4011) # Expected Completion DateTime
+REPLACE (0040,4023) func:generate_hashuid # Referenced General Purpose Scheduled Procedure Step Transaction UID
+REMOVE (0040,4025) # Scheduled Station Name Code Sequence
+REMOVE (0040,4027) # Scheduled Station Geographic Location Code Sequence
+REMOVE (0040,4028) # Performed Station Name Code Sequence
+REMOVE (0040,4030) # Performed Station Geographic Location Code Sequence
+REMOVE (0040,4034) # Scheduled Human Performers Sequence
+REMOVE (0040,4035) # Actual Human Performers Sequence
+REMOVE (0040,4036) # Human Performer's Organization
+REMOVE (0040,4037) # Human Performer's Name
+REMOVE (0040,4050) # Performed Procedure Step Start DateTime
+REMOVE (0040,4051) # Performed Procedure Step End DateTime
+REMOVE (0040,4052) # Procedure Step Cancellation DateTime
+REMOVE (0040,A023) # Findings Group Recording Date (Trial)
+REMOVE (0040,A024) # Findings Group Recording Time (Trial)
+REPLACE (0040,A027) ANONYMIZED # Verifying Organization
+REPLACE (0040,A030) func:set_fixed_datetime # Verification DateTime
+REPLACE (0040,A032) func:hash_increment_date # Observation DateTime
+REMOVE (0040,A033) # Observation Start DateTime
+REMOVE (0040,a034) # Effective Start DateTime
+REMOVE (0040,a035) # Effective Stop DateTime
+REPLACE (0040,A075) ANONYMIZED # Verifying Observer Name
+REMOVE (0040,A078) # Author Observer Sequence
+REMOVE (0040,A07A) # Participant Sequence
+REMOVE (0040,A07C) # Custodial Organization Sequence
+REPLACE (0040,A082) func:set_fixed_datetime # Participation DateTime
+BLANK (0040,A088) # Verifying Observer Identification Code Sequence
+REMOVE (0040,A110) # Date of Document or Verbal Transaction (Trial)
+REMOVE (0040,A112) # Time of Document Creation or Verbal Transaction (Trial)
+REPLACE (0040,A120) func:set_fixed_datetime # DateTime
+REPLACE (0040,A121) func:set_fixed_datetime # Date
+REPLACE (0040,A122) func:set_fixed_datetime # Time
+REPLACE (0040,A123) ANONYMIZED # Person Name
+REPLACE (0040,A124) func:generate_hashuid # UID
+REPLACE (0040,A13A) func:set_fixed_datetime # Referenced DateTime
+REPLACE (0040,A171) func:generate_hashuid # Observation UID
+REPLACE (0040,A172) func:generate_hashuid # Referenced Observation UID (Trial)
+REMOVE (0040,A192) # Observation Date (Trial)
+REMOVE (0040,A193) # Observation Time (Trial)
+REMOVE (0040,A307) # Current Observer (Trial)
+REMOVE (0040,A352) # Verbal Source (Trial)
+REMOVE (0040,A353) # Address (Trial)
+REMOVE (0040,A354) # Telephone Number (Trial)
+REMOVE (0040,A358) # Verbal Source Identifier Code Sequence (Trial)
+REPLACE (0040,A402) func:generate_hashuid # Observation Subject UID (Trial)
+REMOVE (0040,b034) # Annotation DateTime
+REMOVE (0040,b036) # Segment Definition DateTime
+REMOVE (0040,b03b) # Montage Name
+REMOVE (0040,b03f) # Montage Channel Label
+REMOVE (0040,DB06) # Template Version
+REMOVE (0040,DB07) # Template Local Version
+REPLACE (0040,DB0C) func:generate_hashuid # Template Extension Organization UID
+REPLACE (0040,DB0D) func:generate_hashuid # Template Extension Creator UID
+REMOVE (0040,E004) # HL7 Document Effective Time
+REMOVE (0044,0004) # Approval Status DateTime
+REMOVE (0044,000B) # Product Expiration DateTime
+REMOVE (0044,0010) # Substance Administration DateTime
+REPLACE (0044,0104) func:set_fixed_datetime # Assertion DateTime
+REMOVE (0044,0105) # Assertion Expiration DateTime
+REMOVE (0050,001B) # Container Component ID
+REMOVE (0050,0020) # Device Description
+REMOVE (0050,0021) # Long Device Description
+REPLACE (0062,0021) func:generate_hashuid # Tracking UID
+REPLACE (0064,0003) func:generate_hashuid # Source Frame of Reference UID
+REPLACE (0068,6226) func:set_fixed_datetime # Effective DateTime
+REPLACE (0068,6270) func:set_fixed_datetime # Information Issue DateTime
+REPLACE (006A,0003) func:generate_hashuid # Annotation Group UID
+REPLACE (006A,0005) ANONYMIZED # Annotation Group Label
+REMOVE (006A,0006) # Annotation Group Description
+REMOVE (0070,0082) # Presentation Creation Date
+REMOVE (0070,0083) # Presentation Creation Time
+BLANK (0070,0084) # Content Creator's Name
+REMOVE (0070,0086) # Content Creator's Identification Code Sequence
+REPLACE (0070,031A) func:generate_hashuid # Fiducial UID
+REPLACE (0070,1101) func:generate_hashuid # Presentation Display Collection UID
+REPLACE (0070,1102) func:generate_hashuid # Presentation Sequence Collection UID
+REPLACE (0072,000A) func:set_fixed_datetime # Hanging Protocol Creation DateTime
+REPLACE (0072,005E) ANONYMIZED # Selector AE Value
+REPLACE (0072,005F) 030Y # Selector AS Value NEED to BE REVIEWED
+REPLACE (0072,0061) func:set_fixed_datetime # Selector DA Value
+REPLACE (0072,0063) func:set_fixed_datetime # Selector DT Value
+REPLACE (0072,0066) ANONYMIZED # Selector LO Value
+REPLACE (0072,0068) ANONYMIZED # Selector LT Value
+REPLACE (0072,006A) ANONYMIZED # Selector PN Value
+REPLACE (0072,006B) func:set_fixed_datetime # Selector TM Value
+REPLACE (0072,006C) ANONYMIZED # Selector SH Value
+REPLACE (0072,006D) b'Anonymized' # Selector UN Value
+REPLACE (0072,006E) ANONYMIZED # Selector ST Value
+REPLACE (0072,0070) ANONYMIZED # Selector UT Value
+REPLACE (0072,0071) ANONYMIZED # Selector UR Value
+REMOVE (0074,1234) # Receiving AE
+REMOVE (0074,1236) # Requesting AE
+REPLACE (0088,0140) func:generate_hashuid # Storage Media File-set UID
+REMOVE (0088,0200) # Icon Image Sequence(see Note 11)
+REMOVE (0088,0904) # Topic Title
+REMOVE (0088,0906) # Topic Subject
+REMOVE (0088,0910) # Topic Author
+REMOVE (0088,0912) # Topic Keywords
+REMOVE (0100,0420) # SOP Authorization DateTime
+REPLACE (0400,0100) func:generate_hashuid # Digital Signature UID
+REPLACE (0400,0105) func:set_fixed_datetime # Digital Signature DateTime
+REMOVE (0400,0310) # Certified Timestamp
+REMOVE (0400,0402) # Referenced Digital Signature Sequence
+REMOVE (0400,0403) # Referenced SOP Instance MAC Sequence
+REMOVE (0400,0404) # MAC
+REMOVE (0400,0550) # Modified Attributes Sequence
+REMOVE (0400,0551) # Nonconforming Modified Attributes Sequence
+REMOVE (0400,0552) # Nonconforming Data Element Value
+REMOVE (0400,0561) # Original Attributes Sequence
+REPLACE (0400,0562) func:set_fixed_datetime # Attribute Modification DateTime
+REPLACE (0400,0563) ANONYMIZED # Modifying System
+BLANK (0400,0564) # Source of Previous Values
+REPLACE (0400,0565) ANONYMIZED # Reason for the Attribute Modification
+REMOVE (0400,0600) # Instance Origin Status
+REMOVE (2030,0020) # Text String
+REMOVE (2100,0040) # Creation Date
+REMOVE (2100,0050) # Creation Time
+REMOVE (2100,0070) # Originator
+REPLACE (2100,0140) ANONYMIZED # Destination AE
+REMOVE (2200,0002) # Label Text retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+BLANK (2200,0005) # Barcode Value
+REMOVE (3002,0121) # Position Acquisition Template Name
+REMOVE (3002,0123) # Position Acquisition Template Description
+REPLACE (3006,0002) ANONYMIZED # Structure Set Label
+REMOVE (3006,0004) # Structure Set Name
+REMOVE (3006,0006) # Structure Set Description
+REPLACE (3006,0008) func:set_fixed_datetime # Structure Set Date
+REPLACE (3006,0009) func:set_fixed_datetime # Structure Set Time
+REPLACE (3006,0024) func:generate_hashuid # Referenced Frame of Reference UID
+BLANK (3006,0026) # ROI Name
+REMOVE (3006,0028) # ROI Description
+REMOVE (3006,002d) # ROI DateTime
+REMOVE (3006,002e) # ROI Observation DateTime
+REMOVE (3006,0038) # ROI Generation Description
+REMOVE (3006,004d) # ROI Creator Sequence
+REMOVE (3006,004e) # ROI Interpreter Sequence
+REMOVE (3006,0085) # ROI Observation Label
+REMOVE (3006,0088) # ROI Observation Description
+BLANK (3006,00A6) # ROI Interpreter
+REPLACE (3006,00C2) func:generate_hashuid # Related Frame of Reference UID
+REPLACE (3008,0024) func:set_fixed_datetime # Treatment Control Point Date
+REPLACE (3008,0025) func:set_fixed_datetime # Treatment Control Point Time
+REPLACE (3008,0054) func:hash_increment_date # First Treatment Date
+REPLACE (3008,0056) func:hash_increment_date # Most Recent Treatment Date
+BLANK (3008,0105) # Source Serial Number
+REPLACE (3008,0162) func:set_fixed_datetime # Safe Position Exit Date
+REPLACE (3008,0164) func:set_fixed_datetime # Safe Position Exit Time
+REPLACE (3008,0166) func:set_fixed_datetime # Safe Position Return Date
+REPLACE (3008,0168) func:set_fixed_datetime # Safe Position Return Time
+REPLACE (3008,0250) func:hash_increment_date # Treatment Date
+REMOVE (3008,0251) # Treatment Time retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+REPLACE (300A,0002) ANONYMIZED # RT Plan Label
+REMOVE (300A,0003) # RT Plan Name
+REMOVE (300A,0004) # RT Plan Description
+REPLACE (300A,0006) func:hash_increment_date # RT Plan Date
+REMOVE (300A,0007) # RT Plan Time retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+REMOVE (300A,000B) # Treatment Sites
+REMOVE (300A,000E) # Prescription Description
+REPLACE (300A,0013) func:generate_hashuid # Dose Reference UID
+REMOVE (300A,0016) # Dose Reference Description
+REPLACE (300a,0054) func:generate_hashuid # Table Top Position Alignment UID
+REMOVE (300A,0072) # Fraction Group Description
+REPLACE (300A,0083) func:generate_hashuid # Referenced Dose Reference UID
+BLANK (300A,00B2) # Treatment Machine Name
+REMOVE (300A,00C3) # Beam Description
+REMOVE (300A,00DD) # Bolus Description
+REMOVE (300A,0196) # Fixation Device Description
+REMOVE (300A,01A6) # Shielding Device Description
+REMOVE (300A,01B2) # Setup Technique Description
+REMOVE (300A,0216) # Source Manufacturer
+REPLACE (300A,022C) func:set_fixed_datetime # Source Strength Reference Date
+REPLACE (300A,022E) func:set_fixed_datetime # Source Strength Reference Time
+REMOVE (300A,02EB) # Compensator Description
+REPLACE (300A,0608) ANONYMIZED # Treatment Position Group Label
+REPLACE (300A,0609) func:generate_hashuid # Treatment Position Group UID
+BLANK (300A,0611) # RT Accessory Holder Slot ID
+BLANK (300A,0615) # RT Accessory Device Slot ID
+REPLACE (300A,0619) ANONYMIZED # Radiation Dose Identification Label
+REPLACE (300A,0623) ANONYMIZED # Radiation Dose In-Vivo Measurement Label
+REPLACE (300A,062A) ANONYMIZED # RT Tolerance Set Label
+REPLACE (300A,0650) func:generate_hashuid # Patient Setup UID
+REMOVE (300A,0676) # Equipment Frame of Reference Description
+REPLACE (300A,067C) ANONYMIZED # Radiation Generation Mode Label
+BLANK (300A,067D) # Radiation Generation Mode Description
+REPLACE (300A,0700) func:generate_hashuid # Treatment Session UID
+REPLACE (300A,0734) ANONYMIZED # Treatment Tolerance Violation Description
+REPLACE (300A,0736) func:set_fixed_datetime # Treatment Tolerance Violation DateTime
+REPLACE (300A,073A) func:set_fixed_datetime # Recorded RT Control Point DateTime
+REPLACE (300A,0741) func:set_fixed_datetime # Interlock DateTime
+REPLACE (300A,0742) ANONYMIZED # Interlock Description
+REPLACE (300A,0760) func:set_fixed_datetime # Override DateTime
+REPLACE (300A,0783) ANONYMIZED # Interlock Origin Description
+REPLACE (300A,0785) func:generate_hashuid # Referenced Treatment Position Group UID
+REMOVE (300A,078E) # Patient Treatment Preparation Procedure Parameter Description
+REMOVE (300A,0792) # Patient Treatment Preparation Method Description
+REMOVE (300A,0794) # Patient Setup Photo Description
+REMOVE (300A,079A) # Displacement Reference Label
+REMOVE (300C,0113) # Reason for Omission Description
+REPLACE (300C,0127) func:set_fixed_datetime # Beam Hold Transition DateTime
+REPLACE (300E,0004) func:set_fixed_datetime # Review Date
+REPLACE (300E,0005) func:set_fixed_datetime # Review Time
+REPLACE (3010,0006) func:generate_hashuid # Conceptual Volume UID
+REPLACE (3010,000B) func:generate_hashuid # Referenced Conceptual Volume UID
+BLANK (3010,000F) # Conceptual Volume Combination Description
+REPLACE (3010,0013) func:generate_hashuid # Constituent Conceptual Volume UID
+REPLACE (3010,0015) func:generate_hashuid # Source Conceptual Volume UID
+BLANK (3010,0017) # Conceptual Volume Description
+BLANK (3010,001B) # Device Alternate Identifier
+REPLACE (3010,002D) ANONYMIZED # Device Label
+REPLACE (3010,0031) func:generate_hashuid # Referenced Fiducials UID
+REPLACE (3010,0033) ANONYMIZED # User Content Label
+REPLACE (3010,0034) ANONYMIZED # User Content Long Label
+REPLACE (3010,0035) ANONYMIZED # Entity Label
+REMOVE (3010,0036) # Entity Name
+REMOVE (3010,0037) # Entity Description
+REPLACE (3010,0038) ANONYMIZED # Entity Long Label
+REPLACE (3010,003B) func:generate_hashuid # RT Treatment Phase UID
+BLANK (3010,0043) # Manufacturer's Device Identifier
+REPLACE (3010,004C) func:hash_increment_date # Intended Phase Start Date
+REPLACE (3010,004D) func:hash_increment_date # Intended Phase End Date
+REPLACE (3010,0054) ANONYMIZED # RT Prescription Label
+REMOVE (3010,0056) # RT Treatment Approach Label retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED 
+BLANK (3010,005A) # RT Physician Intent Narrative
+BLANK (3010,005C) # Reason for Superseding
+REMOVE (3010,0061) # Prior Treatment Dose Description
+REPLACE (3010,006E) func:generate_hashuid # Dosimetric Objective UID
+REPLACE (3010,006F) func:generate_hashuid # Referenced Dosimetric Objective UID
+BLANK (3010,007A) # Treatment Technique Notes
+BLANK (3010,007B) # Prescription Notes
+BLANK (3010,007F) # Fractionation Notes
+BLANK (3010,0081) # Prescription Notes Sequence
+REMOVE (3010,0085) # Intended Fraction Start Time
+REMOVE (4000,0010) # Arbitrary
+REMOVE (4000,4000) # Text Comments
+REMOVE (4008,0040) # Results ID
+REMOVE (4008,0042) # Results ID Issuer
+REMOVE (4008,0100) # Interpretation Recorded Date
+REMOVE (4008,0101) # Interpretation Recorded Time
+REMOVE (4008,0102) # Interpretation Recorder
+REMOVE (4008,0108) # Interpretation Transcription Date
+REMOVE (4008,0109) # Interpretation Transcription Time
+REMOVE (4008,010A) # Interpretation Transcriber
+REMOVE (4008,010B) # Interpretation Text
+REMOVE (4008,010C) # Interpretation Author
+REMOVE (4008,0111) # Interpretation Approver Sequence
+REMOVE (4008,0112) # Interpretation Approval Date
+REMOVE (4008,0113) # Interpretation Approval Time
+REMOVE (4008,0114) # Physician Approving Interpretation
+REMOVE (4008,0115) # Interpretation Diagnosis Description
+REMOVE (4008,0118) # Results Distribution List Sequence
+REMOVE (4008,0119) # Distribution Name
+REMOVE (4008,011A) # Distribution Address
+REMOVE (4008,0200) # Interpretation ID
+REMOVE (4008,0202) # Interpretation ID Issuer
+REMOVE (4008,0300) # Impressions
+REMOVE (4008,4000) # Results Comments
+REMOVE CurveData # Curve Data
+REMOVE OverlayData # Overlay Data
+REMOVE OverlayComments # Overlay Comments
+REMOVE DigitalSignaturesSequence # Digital Signatures Sequence
+REMOVE DataSetTrailingPadding # Data Set Trailing Padding
+REMOVE ALL func:is_tag_private # Private Attributes
