@@ -117,9 +117,8 @@ class LuwakAnonymizer:
         # Initialize metadata storage for Parquet export
         self.dicom_metadata = []
         # Initialize single date shift for entire project run
-        self._project_date_shift = None
         # Register private tags from CSV
-        register_private_tags_from_csv("/path/to/DICOM_SAFE_PRIVATE_TAGS.csv", "10")
+        #register_private_tags_from_csv("/path/to/DICOM_SAFE_PRIVATE_TAGS.csv", "10")
 
     def is_tag_private(self, dicom, value, field, item):
         """Check if a DICOM tag is private.
@@ -160,15 +159,17 @@ class LuwakAnonymizer:
         """
         project_hash_root = self.config.get('projectHashRoot')
         try:
-            # Generate single shift for entire project run (lazy initialization)
-            if self._project_date_shift is None:
-                # Use project_hash_root to generate consistent shift for this project
-                project_salt = f"{project_hash_root}"
-                salt_hash = hashlib.sha256(project_salt.encode()).hexdigest()
-                hash_int = int(salt_hash[:8], 16)  # Use first 8 hex chars
-                # Use configurable max_date_shift_days (default 1095)
-                self._project_date_shift = hash_int % (self.config.get('maxDateShiftDays') + 1)  # 0 to max_date_shift_days
-            return self._project_date_shift
+            PatientID = dicom.get("PatientID", "")
+            PatientName = dicom.get("PatientName", "")
+            PatientBirthDate = dicom.get("PatientBirthDate", "")
+            # Generate shift for project run and patient
+            # Use project_hash_root to generate consistent shift for this project
+            project_salt = f"{project_hash_root}{PatientID}{PatientName}{PatientBirthDate}"
+            salt_hash = hashlib.sha256(project_salt.encode()).hexdigest()
+            hash_int = int(salt_hash[:8], 16)  # Use first 8 hex chars
+            # Use configurable max_date_shift_days (default 1095)
+            project_date_shift = hash_int % (self.config.get('maxDateShiftDays') + 1)  # 0 to max_date_shift_days
+            return -project_date_shift
             
         except Exception as e:
             print(f"Error in date shift generation: {e}")
@@ -935,9 +936,9 @@ class LuwakAnonymizer:
         # Create recipe
         print("Creating anonymization recipe...")
         recipe = self.create_deid_recipe()
-        
         for item in items:
             items[item]["is_tag_private"] = self.is_tag_private
+            #print(f'items[{item}]["is_tag_private"]:', items[item]["is_tag_private"])
             items[item]["generate_hashuid"] = self.generate_hashuid
             items[item]["hash_increment_date"] = self.hash_increment_date
             items[item]["set_fixed_datetime"] = self.set_fixed_datetime

@@ -68,16 +68,14 @@ def generate_basic_profile_recipe(input_csv, output_file):
                 tag = row['TCIA element_sig_pattern'].strip()
                 basic_profile = row['Basic Prof.'].strip()
                 
-                # Skip empty tags
+                # Set empty tags
                 if not tag:
                     tag = '(' + row['Group'] + ',' + row['Element'] + ')'
-                    print("empty tag, skipping", tag)
                 
                 name = row['Name']
                 comment = f" # {name}" if name else ""
                 if basic_profile == '':
                     processed_count['others'] += 1
-                    print(f"Tag {tag} has empty Basic Profile. Skipping.")
                     continue
                 if basic_profile == 'X':
                     if name == "Curve Data":
@@ -96,7 +94,7 @@ def generate_basic_profile_recipe(input_csv, output_file):
                         keyword = 'DataSetTrailingPadding'
                         line = f"REMOVE {keyword}{comment}\n"
                     elif name == "Private Attributes":
-                        line = f"REMOVE ALL func:is_tag_private{comment}\n"
+                        line = f"REMOVE ALL func:is_tag_private\n"
                     else:
                         line = f"REMOVE {tag}{comment}\n"
                     outfile.write(line)
@@ -110,7 +108,7 @@ def generate_basic_profile_recipe(input_csv, output_file):
                     # Check if VR is UI for UID replacement
                     vr = get_vr_for_tag(tag)
                     if vr == 'UI':
-                        line = f"REPLACE {tag} func:generate_hashuid{comment}\n"
+                        line = f"REPLACE {tag} func:generate_hashuid\n"
                         outfile.write(line)
                         processed_count['U'] += 1
                     else:
@@ -119,12 +117,12 @@ def generate_basic_profile_recipe(input_csv, output_file):
                     # Check if VR is date/time related for date replacement
                     vr = get_vr_for_tag(tag)
                     if vr in ['DA', 'DT', 'TM']:
-                        line = f"REPLACE {tag} func:set_fixed_datetime{comment}\n"
+                        line = f"REPLACE {tag} func:set_fixed_datetime\n"
                         outfile.write(line)
                         processed_count['D'] += 1
                     elif vr in ['UI']:
                         # D but UI VR
-                        line = f"REPLACE {tag} func:generate_hashuid{comment}\n"
+                        line = f"REPLACE {tag} func:generate_hashuid\n"
                         outfile.write(line)
                         processed_count['U'] += 1
                     elif vr in ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR"]:
@@ -148,6 +146,8 @@ def generate_basic_profile_recipe(input_csv, output_file):
                         outfile.write(line)
                         processed_count['D'] += 1
                     elif vr in ['SQ', 'OB']:
+                        #line = f"BLANK {tag}{comment} NEED to BE REVIEWED\n"
+                        #print(f"Tag {tag} with Basic Profile 'D' and VR '{vr}' needs review. Currently marked as TODO.")
                         processed_count['other_D'] += 1
                     else:
                         processed_count['other_D'] += 1
@@ -156,7 +156,7 @@ def generate_basic_profile_recipe(input_csv, output_file):
                     # Check if VR is date/time related for date replacement
                     vr = get_vr_for_tag(tag)
                     if vr in ['DA', 'DT', 'TM']:
-                        line = f"REPLACE {tag} func:set_fixed_datetime{comment}\n"
+                        line = f"REPLACE {tag} func:set_fixed_datetime\n"
                         outfile.write(line)
                         processed_count['Z'] += 1
                     else:
@@ -170,17 +170,19 @@ def generate_basic_profile_recipe(input_csv, output_file):
                             line = f"BLANK {tag}{comment} retained by TCIA profile, arbitrarily chose to have Z. MUST BE REVIEWED \n"
                             outfile.write(line)
                             processed_count['D_0'] += 1
+                            #print(f"Tag {tag} with Basic Profile 'Z/D' and Final CTP Script '@keep()' needs review. Currently set to BLANK.")
                         else:
                             line = f"REMOVE {tag}{comment} retained by TCIA profile, arbitrarily chose to have X. MUST BE REVIEWED \n"
                             outfile.write(line)
                             processed_count['D_1'] += 1
+                            #print(f"Tag {tag} with Basic Profile '{basic_profile}' and Final CTP Script '@keep()' needs review. Currently set to REMOVE.")
                     else:
                         if row['Final CTP Script']=="@hashuid(@UIDROOT,this)":
-                            line = f"REPLACE {tag} func:generate_hashuid{comment}\n"
+                            line = f"REPLACE {tag} func:generate_hashuid\n"
                             outfile.write(line)
                             processed_count['U'] += 1
                         elif row['Final CTP Script']=="@incrementdate(this,@DATEINC)":
-                            line = f"REPLACE {tag} func:hash_increment_date{comment}\n"
+                            line = f"JITTER {tag} func:hash_increment_date\n"
                             outfile.write(line)
                             processed_count['D'] += 1
                         elif row['Final CTP Script']=="@empty()":
@@ -193,20 +195,22 @@ def generate_basic_profile_recipe(input_csv, output_file):
                             processed_count['X'] += 1
                         elif row['Final CTP Script']=="@process()":
                             if vr == 'UI':
-                                line = f"REPLACE {tag} func:generate_hashuid{comment}\n"
+                                line = f"REPLACE {tag} func:generate_hashuid\n"
                                 outfile.write(line)
                                 processed_count['U'] += 1
+                                print(f"Tag {tag} with Basic Profile '{basic_profile}' and Final CTP Script '@process()' treated as REPLACE UID since VR is 'UI'.")
                             else:
                                 # Not UI VR, treat as remove
                                 line = f"REMOVE {tag}{comment}\n"
                                 outfile.write(line)
                                 processed_count['G'] += 1
+                                print(f"Tag {tag} with Basic Profile '{basic_profile}' and Final CTP Script '@process()' treated as REMOVE since VR is '{vr}'.")
                         else:
                             processed_count['others'] += 1
-                            print(f"Unrecognized Final CTP Script value '{row['Final CTP Script']}' for tag {tag}. Skipping.")
+                            #print(f"Unrecognized Final CTP Script value '{row['Final CTP Script']}' for tag {tag}. Skipping.")
                 else:
                     processed_count['others'] += 1
-                    print(f"Unrecognized Basic Profile value '{basic_profile}' for tag {tag}. Skipping.")
+                    #print(f"Unrecognized Basic Profile value '{basic_profile}' for tag {tag}. Skipping.")
     
     print(f"Recipe generated: {output_file}")
     print(f"Statistics:")

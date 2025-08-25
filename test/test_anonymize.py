@@ -166,18 +166,19 @@ class TestAnonymizeScript(unittest.TestCase):
             output_folder=self.test_output_dir,
             recipes=["retain_safe_private_tags"]  # Use the built-in retain_safe_private_tags recipe
         )
-
         try:
             # Run the anonymize script
             anonymizer = LuwakAnonymizer(config_path)
             result = anonymizer.anonymize()
-
+            
             # Define the private tags to check (using lowercase for case-insensitive comparison)
             expected_private_tags = {
                 "0019109e": "gems_acqu_01",  # lowercase hex tag and private creator
                 "00251007": "gems_sers_01"   # lowercase private creator
             }
-
+            unexpected_private_tags = {
+                "0019101b": "gems_acqu_01",  # This tag should be removed
+            }
             # Verify that the specified private tags are retained in the output files
             for file in os.listdir(self.test_output_dir):
                 if not file.endswith(".dcm"):
@@ -194,7 +195,10 @@ class TestAnonymizeScript(unittest.TestCase):
                     element = ds[tag]
                     self.assertEqual(element.private_creator.lower(), expected_creator, 
                                        f"Private creator mismatch for tag {tag_str} in file {file}.")
-                        
+                for tag_str, unexpected_creator in unexpected_private_tags.items():
+                    tag = pydicom.tag.Tag(f"0x{tag_str}")
+                    # Check that the unexpected private tag does not exist
+                    self.assertNotIn(tag, ds, f"Unexpected private tag {tag_str} found in file {file}.")      
         finally:
             # Clean up config file
             os.unlink(config_path)
@@ -263,7 +267,7 @@ class TestAnonymizeScript(unittest.TestCase):
             # Run the anonymize script
             anonymizer = LuwakAnonymizer(config_path)
             result = anonymizer.anonymize()
-
+            
             # Check if the anonymized file was created
             anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
             self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
@@ -288,7 +292,7 @@ class TestAnonymizeScript(unittest.TestCase):
             # Clean up config file
             os.unlink(config_path)
 
-    def test_date_shift_generation(self):
+    def test_hash_increment_date(self):
         """Test the date shift functionality for DA, DT, and TM fields."""
         print("Test date shift generation and application")
         
@@ -298,13 +302,31 @@ class TestAnonymizeScript(unittest.TestCase):
         
         # Read original file to get date/time values
         original_ds = pydicom.dcmread(original_file)
-        original_values = {}
-        # TODO
+        original_value = original_ds['00080021'].value
+        
+        # Create test config with basic profile (which should trigger date shifting)
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["dicom_basic_profile"],
+        )
+        try:
+            anonymizer = LuwakAnonymizer(config_path)
+            # Run anonymization
+            result = anonymizer.anonymize()
+            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
+            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
+            anonymized_ds = pydicom.dcmread(anonymized_file)
+            # Check that the SeriesDate has been shifted correctly (if present)
+            self.assertEqual(anonymized_ds.SeriesDate, '20130730',
+                        "SeriesDate should be shifted by 181 days: expected '20130730', got {anonymized_ds.SeriesDate}")
+        finally:
+            os.unlink(config_path)
           
 
-    def test_dummy_datetime_generation(self):
-        """Test the dummy datetime generation for DA, DT, and TM VR types."""
-        print("Test dummy datetime generation for different VR types")
+    def test_fixed_datetime_generation(self):
+        """Test the fixed datetime generation for DA, DT, and TM VR types."""
+        print("Test fixed datetime generation for different VR types")
         
         # Use the first file for testing
         original_file = os.path.join(self.test_data_dir, "00000001.dcm")
@@ -320,7 +342,7 @@ class TestAnonymizeScript(unittest.TestCase):
         )
 
         try:
-            # Initialize anonymizer to test dummy datetime generation
+            # Initialize anonymizer to test fixed datetime generation
             anonymizer = LuwakAnonymizer(config_path)
             
             # Test DA (Date) VR
@@ -334,8 +356,8 @@ class TestAnonymizeScript(unittest.TestCase):
             })()
             
             # The value parameter should be the recipe string, not the original value
-            dummy_da = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_da_field, original_ds)
-            self.assertEqual(dummy_da, "00010101", f"DA dummy should be '00010101', got '{dummy_da}'")
+            fixed_da = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_da_field, original_ds)
+            self.assertEqual(fixed_da, "00010101", f"DA fixed should be '00010101', got '{fixed_da}'")
             
             # Test DT (DateTime) VR
             print("  Testing DT (DateTime) VR...")
@@ -346,9 +368,9 @@ class TestAnonymizeScript(unittest.TestCase):
                 })()
             })()
             
-            dummy_dt = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_dt_field, original_ds)
+            fixed_dt = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_dt_field, original_ds)
             expected_dt = "00010101010101.000000+0000"
-            self.assertEqual(dummy_dt, expected_dt, f"DT dummy should be '{expected_dt}', got '{dummy_dt}'")
+            self.assertEqual(fixed_dt, expected_dt, f"DT fixed should be '{expected_dt}', got '{fixed_dt}'")
             
             # Test TM (Time) VR
             print("  Testing TM (Time) VR...")
@@ -359,22 +381,22 @@ class TestAnonymizeScript(unittest.TestCase):
                 })()
             })()
             
-            dummy_tm = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_tm_field, original_ds)
+            fixed_tm = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_tm_field, original_ds)
             expected_tm = "000000.00"
-            self.assertEqual(dummy_tm, expected_tm, f"TM dummy should be '{expected_tm}', got '{dummy_tm}'")
+            self.assertEqual(fixed_tm, expected_tm, f"TM fixed should be '{expected_tm}', got '{fixed_tm}'")
             
-            print("  All dummy datetime generation tests passed!")
-            print(f"    - DA (Date): '{dummy_da}'")
-            print(f"    - DT (DateTime): '{dummy_dt}'") 
-            print(f"    - TM (Time): '{dummy_tm}'")
+            print("  All fixed datetime generation tests passed!")
+            print(f"    - DA (Date): '{fixed_da}'")
+            print(f"    - DT (DateTime): '{fixed_dt}'") 
+            print(f"    - TM (Time): '{fixed_tm}'")
             
         finally:
             # Clean up config file
             os.unlink(config_path)
 
-    def test_dummy_datetime_with_dicom_basic_profile_recipe(self):
-        """Test dummy datetime generation when running full anonymization with DICOM basic profile recipe."""
-        print("Test dummy datetime generation with DICOM basic profile recipe")
+    def test_fixed_datetime_with_dicom_basic_profile_recipe(self):
+        """Test fixed datetime generation when running full anonymization with DICOM basic profile recipe."""
+        print("Test fixed datetime generation with DICOM basic profile recipe")
         
         # Use the first file for testing
         original_file = os.path.join(self.test_data_dir, "00000001.dcm")
@@ -408,11 +430,11 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymized_ds = pydicom.dcmread(anonymized_file)
             
             # Check date fields (DA VR) - should be "00010101"
-            self.assertEqual(anonymized_ds['00080020'].value, "00010101", f"DA dummy should be '00010101', got '{anonymized_ds['00080020'].value}'")
+            self.assertEqual(anonymized_ds['00080020'].value, "00010101", f"DA fixed should be '00010101', got '{anonymized_ds['00080020'].value}'")
             # Check datetime fields (DT VR) - should be "00010101010101.000000+0000"
-            #self.assertEqual(anonymized_ds['0040A13A'].value, "00010101010101.000000+0000", f"DT dummy should be '00010101010101.000000+0000', got '{anonymized_ds['0040A13A'].value}'")
-            # Check time fields (TM VR) - should be "000000.00" if using dummy generation
-            self.assertEqual(anonymized_ds['00080030'].value, "000000.00", f"TM dummy should be '000000.00', got '{anonymized_ds['00080030'].value}'")
+            #self.assertEqual(anonymized_ds['0040A13A'].value, "00010101010101.000000+0000", f"DT fixed should be '00010101010101.000000+0000', got '{anonymized_ds['0040A13A'].value}'")
+            # Check time fields (TM VR) - should be "000000.00" if using fixed generation
+            self.assertEqual(anonymized_ds['00080030'].value, "000000.00", f"TM fixed should be '000000.00', got '{anonymized_ds['00080030'].value}'")
 
         finally:
             # Clean up files
