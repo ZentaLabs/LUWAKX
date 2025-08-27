@@ -733,6 +733,8 @@ class LuwakAnonymizer:
 
         # Store the entire config as an object
         self.config = config
+        # Set config_dir for use in resolve_path
+        self.config_dir = os.path.dirname(os.path.abspath(self.config_path))
         # Excluded tags from Parquet export (list of tag ints or strings)
         excluded_tags = self.config.get('excludedTagsFromParquet')
         self.excluded_tags_from_parquet = set()
@@ -771,7 +773,8 @@ class LuwakAnonymizer:
             return os.path.expanduser(path) if is_output else path
         if is_output and path.startswith('~'):
             return os.path.expanduser(path)
-        return os.path.abspath(os.path.join(config_dir, path))
+        # Use self.config_dir set in load_config
+        return os.path.abspath(os.path.join(self.config_dir, path))
 
     
     def setup_paths(self):
