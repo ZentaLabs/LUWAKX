@@ -49,14 +49,13 @@ setup_deid_repo()
 from deid.config import DeidRecipe
 from deid.dicom import get_files, get_identifiers, replace_identifiers
 
-def tag_str_to_int(tag_str, element_high_byte):
+def tag_str_to_int(tag_str):
     """
     Convert a DICOM tag string like (0010,xx10) to an integer tag value.
     
     Args:
         tag_str (str): DICOM tag string in the format '(GGGG,xxEE)', where GGGG is the group and xxEE is the element with 'xx' as a placeholder for the private block value.
-        element_high_byte (str): Two-character hex string (e.g., '10', '20', ..., 'FF') to substitute for 'xx' in the element.
-    
+            
     Returns:
         int: Integer representation of the DICOM tag.
     
@@ -67,12 +66,31 @@ def tag_str_to_int(tag_str, element_high_byte):
     if not m:
         raise ValueError(f"Invalid tag format: {tag_str}")
     group = int(m.group(1), 16)
-    element = int(element_high_byte + m.group(2), 16)
+    element = int(m.group(2), 16)
     return (group << 16) | element
+
+def name_to_keyword(name):
+    """
+    Convert a descriptive name string to a valid DICOM keyword.
+    
+    Args:
+        name (str): The descriptive name to convert (e.g., 'Patient Age (years)').
+    
+    Returns:
+        str: DICOM keyword (e.g., 'PatientAgeYears').
+    """
+    # Remove non-alphanumeric characters, except spaces
+    cleaned = re.sub(r'[^0-9a-zA-Z ]+', '', name)
+    # Split by spaces, capitalize each word, and join
+    keyword = ''.join(word.capitalize() for word in cleaned.split())
+    # Ensure it starts with a letter (prepend 'X' if not)
+    if keyword and not keyword[0].isalpha():
+        keyword = 'X' + keyword
+    return keyword
 
 def register_private_tags_from_csv(csv_path):
     """
-    Register private DICOM tags from a CSV file for all possible element_high_byte (00-FF) combinations.
+    Register private DICOM tags from a CSV file.
     
     Args:
         csv_path (str): Path to the CSV file containing private tag definitions. The CSV should have at least five columns: tag_str, private_creator, vr, vm, description.
@@ -90,14 +108,13 @@ def register_private_tags_from_csv(csv_path):
         header = next(reader)  # Skip header if present
         for row in reader:
             tag_str, private_creator, vr, vm, description = row[:5]
-            element_high_byte = [f"{i:02X}" for i in range(256)]
-            for xx in element_high_byte:
-                try:
-                    tag = tag_str_to_int(tag_str, xx)
-                except Exception as e:
-                    print(f"Skipping row {row} with xx={xx}: {e}")
-                    continue
-                add_private_dict_entry(private_creator, tag, vr, description, vm)
+            try:
+                tag = tag_str_to_int(tag_str)
+            except Exception as e:
+                print(f"Skipping row {row}: {e}")
+                continue
+            description = name_to_keyword(description)
+            add_private_dict_entry(private_creator, tag, vr, description, vm)
 
 
 class ConfigurationError(Exception):
@@ -145,7 +162,9 @@ class LuwakAnonymizer:
         self.dicom_metadata = []
         # Initialize single date shift for entire project run
         # Register private tags from CSV
-        #register_private_tags_from_csv("/path/to/DICOM_SAFE_PRIVATE_TAGS.csv")
+        register_private_tags_from_csv(
+            os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "DICOM_SAFE_PRIVATE_TAGS.csv")
+        )
 
     def is_tag_private(self, dicom, value, field, item):
         """Check if a DICOM tag is private.
@@ -414,28 +433,26 @@ class LuwakAnonymizer:
                     continue
                 if tag_int in self.excluded_tags_from_parquet:
                     continue
-                
-                # Get the keyword name for this DICOM element
-                keyword = elem.keyword
-                if not keyword:  # Skip elements without keywords (private tags, etc.)
-                    continue
+
+                if elem.is_private and elem.private_creator:
+                    try:
+                        private_creator = elem.private_creator
+                        # Replace spaces with underscores for consistency
+                        private_creator = private_creator.replace(' ', '_')
+                        if elem.name and elem.name != "Unknown":
+                            keyword = f'{private_creator}_{elem.name[1:-1]}'
+                        else:
+                            # If name is unknown, use tag as fallback
+                            keyword = f'{private_creator}_{elem.tag.group:04X}xx{elem.tag.element & 0xFF:02X}'
+                    except Exception as e:
+                        print(f"Skipping private tag ({elem.tag}): {e}")
+                        continue
+                else:
+                    # Get the keyword name for this DICOM element
+                    keyword = elem.keyword
                 
                 # Extract the value based on element type
-                try:
-                    '''
-                    if elem.is_private:
-                        try:
-                            metadata[f'Tag{private_tag_counter}'] = f"({elem.tag.group:04X},{elem.tag.element:04X})"
-                            metadata[f'PrivateCreator{private_tag_counter}'] = getattr(elem, 'private_creator', '')
-                            metadata[f'VR{private_tag_counter}'] = elem.VR if hasattr(elem, 'VR') else ''
-                            metadata[f'Name{private_tag_counter}'] = elem.name if hasattr(elem, 'name') else ''
-                            metadata[f'VM{private_tag_counter}'] = str(elem.VM) if hasattr(elem, 'VM') else ''
-                            private_tag_counter += 1
-                        except Exception as e:
-                            print(f"Skipping private tag ({elem.tag}): {e}")
-                        continue
-                        
-                    '''
+                try:        
                     if elem.VR in ['PN']:  # Person Name
                         value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['DA']:  # Date

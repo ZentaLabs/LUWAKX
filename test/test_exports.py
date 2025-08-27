@@ -80,8 +80,8 @@ class TestExports(unittest.TestCase):
         all_files = [f for f in os.listdir(self.test_data_dir) if f.endswith('.dcm')]
         all_files.sort()
 
-        # Take only first 10 files for faster export testing
-        files_to_copy = all_files[:10]
+        # Take only first 2 files for faster export testing
+        files_to_copy = all_files[:2]
 
         print(f"Creating limited input dataset with {len(files_to_copy)} files out of {len(all_files)} total files")
 
@@ -284,14 +284,14 @@ class TestExports(unittest.TestCase):
         """Test that the Parquet metadata file is created correctly for multiple input files."""
         print("Test Parquet metadata export with multiple files")
         
-        # Use the existing limited_input_dir which already has multiple files (up to 10)
+        # Use the existing limited_input_dir which already has multiple files (up to 2)
         # This avoids unnecessary file copying and directory creation
         
         # Create test config with basic profile to trigger anonymization
         config_path = self.create_test_config(
             input_folder=self.limited_input_dir,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"]
+            recipes=["dicom_basic_profile", "retain_safe_private_tags"]
         )
 
         try:

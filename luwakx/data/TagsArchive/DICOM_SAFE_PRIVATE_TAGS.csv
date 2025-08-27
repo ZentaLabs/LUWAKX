@@ -1,0 +1,480 @@
+Data Element,Private Creator,VR,VM,Meaning
+"(7053,xx00)",Philips PET Private Group,DS,1,SUV Factor - Multiplying Stored Pixel Values by Rescale Slope then this factor results in SUVbw in g/l
+"(7053,xx09)",Philips PET Private Group,DS,1,Activity Concentration Factor - Multiplying Stored Pixel Values by Rescale Slope then this factor results in MBq/ml.
+"(00E1,xx21)",ELSCINT1,DS,1,DLP
+"(00E1,xx50)",ELSCINT1,DS,1,Acquisition Duration
+"(01E1,xx26)",ELSCINT1,CS,1,Phantom Type
+"(01F1,xx01)",ELSCINT1,CS,1,Acquisition Type
+"(01F1,xx07)",ELSCINT1,DS,1,Table Velocity
+"(01F1,xx26)",ELSCINT1,DS,1,Pitch
+"(01F1,xx27)",ELSCINT1,DS,1,Rotation Time
+"(0019,xx23)",GEMS_ACQU_01,DS,1,Table Speed [mm/rotation]
+"(0019,xx24)",GEMS_ACQU_01,DS,1,Mid Scan Time [sec]
+"(0019,xx27)",GEMS_ACQU_01,DS,1,Rotation Speed (Gantry Period)
+"(0019,xx9E)",GEMS_ACQU_01,LO,1,Internal Pulse Sequence Name
+"(0043,xx27)",GEMS_PARM_01,SH,1,"Scan Pitch Ratio in the form ""n.nnn:1"""
+"(0045,xx01)",GEMS_HELIOS_01,SS,1,Number of Macro Rows in Detector
+"(0045,xx02)",GEMS_HELIOS_01,FL,1,Macro width at ISO Center
+"(0903,xx10)",GEIIS PACS,US,1,Reject Image Flag
+"(0903,xx11)",GEIIS PACS,US,1,Significant Flag
+"(0903,xx12)",GEIIS PACS,US,1,Confidential Flag
+"(2001,xx01)",Philips Imaging DD 001,FL,1,MR Image Chemical Shift
+"(2001,xx02)",Philips Imaging DD 001,IS,1,MR Image Chemical Shift Number
+"(2001,xx03)",Philips Imaging DD 001,FL,1,MR Image Diffusion B-Factor
+"(2001,xx04)",Philips Imaging DD 001,CS,1,MR Image Diffusion Direction
+"(2001,xx05)",Philips Imaging DD 001,SS,1,Graphic Annotation Parent ID
+"(2001,xx06)",Philips Imaging DD 001,CS,1,MR Image Enhanced
+"(2001,xx07)",Philips Imaging DD 001,CS,1,MR Image Type Edes
+"(2001,xx08)",Philips Imaging DD 001,IS,1,MR Image Phase Number
+"(2001,xx09)",Philips Imaging DD 001,FL,1,MR Image Prepulse Delay
+"(2001,xx0a)",Philips Imaging DD 001,IS,1,Image Plane Number
+"(2001,xx0b)",Philips Imaging DD 001,CS,1,Image Plane Orientation
+"(2001,xx0c)",Philips Imaging DD 001,CS,1,MR Series Arrhythmia Rejection
+"(2001,xx0e)",Philips Imaging DD 001,CS,1,MR Series Cardiac Cycled
+"(2001,xx0f)",Philips Imaging DD 001,SS,1,MR Series Cardiac Gate Width
+"(2001,xx10)",Philips Imaging DD 001,CS,1,MR Series Cardiac Sync
+"(2001,xx11)",Philips Imaging DD 001,FL,1,MR Series Diffusion Echo Time
+"(2001,xx12)",Philips Imaging DD 001,CS,1,MR Series Dynamic Series
+"(2001,xx13)",Philips Imaging DD 001,SL,1,MR Series Epi Factor
+"(2001,xx14)",Philips Imaging DD 001,SL,1,MR Series Nr Of Echoes
+"(2001,xx15)",Philips Imaging DD 001,SS,1,MR Series Nr Of Locations
+"(2001,xx16)",Philips Imaging DD 001,SS,1,MR Series Nr Of Phase Contrast Directions
+"(2001,xx17)",Philips Imaging DD 001,SL,1,MR Series Nr Of Phases
+"(2001,xx18)",Philips Imaging DD 001,SL,1,MR Series Nr Of Slices
+"(2001,xx19)",Philips Imaging DD 001,CS,1,MR Series Partial Matrix Scanned
+"(2001,xx1a)",Philips Imaging DD 001,FL,3,MR Series Pc Velocity
+"(2001,xx1b)",Philips Imaging DD 001,FL,1,MR Series Prepulse Delay
+"(2001,xx1c)",Philips Imaging DD 001,CS,1,MR Series Prepulse Type
+"(2001,xx1d)",Philips Imaging DD 001,IS,1,MR Series Reconstruction Number
+"(2001,xx1e)",Philips Imaging DD 001,CS,1,MR Series Reformat Accuracy
+"(2001,xx1f)",Philips Imaging DD 001,CS,1,MR Series Respiration Sync
+"(2001,xx21)",Philips Imaging DD 001,CS,1,MR Series Sel Part Inversion Recovery
+"(2001,xx22)",Philips Imaging DD 001,FL,1,MR Series Water Fat Shift
+"(2001,xx23)",Philips Imaging DD 001,DS,1,MR Series Flip Angle
+"(2001,xx24)",Philips Imaging DD 001,CS,1,MR Series Is Interactive
+"(2001,xx25)",Philips Imaging DD 001,SH,1,MR Series Echo Time Display
+"(2001,xx26)",Philips Imaging DD 001,CS,1,Presentation State Subtraction Active
+"(2001,xx27)",Philips Imaging DD 001,CS,1,Edge Enhancement Kernel Size
+"(2001,xx28)",Philips Imaging DD 001,FL,1,Edge Enhancement Gain Factor Sub
+"(2001,xx29)",Philips Imaging DD 001,FL,1,Edge Enhancement Gain Factor
+"(2001,xx2a)",Philips Imaging DD 001,CS,1,Edge Enhancement Taste Adapt Sub
+"(2001,xx2b)",Philips Imaging DD 001,CS,1,Edge Enhancement Taste Adapt
+"(2001,xx2c)",Philips Imaging DD 001,FL,1,Harmonization Factor
+"(2001,xx2d)",Philips Imaging DD 001,SS,1,Stack Number Of Slices
+"(2001,xx2e)",Philips Imaging DD 001,CS,1,Harmonization Kernel Size
+"(2001,xx2f)",Philips Imaging DD 001,FL,1,Harmonization Gain
+"(2001,xx30)",Philips Imaging DD 001,UL,1,Log Subtraction Gain Step Taste
+"(2001,xx31)",Philips Imaging DD 001,US,1,Mixing Nr Of Mask Image Numbers
+"(2001,xx32)",Philips Imaging DD 001,FL,1,Stack Radial Angle
+"(2001,xx33)",Philips Imaging DD 001,CS,1,Stack Radial Axis
+"(2001,xx34)",Philips Imaging DD 001,CS,1,Mixing Mask Operation Type
+"(2001,xx35)",Philips Imaging DD 001,SS,1,Stack Slice Number
+"(2001,xx36)",Philips Imaging DD 001,CS,1,Stack Type
+"(2001,xx37)",Philips Imaging DD 001,CS,1,Mixing Operation Type
+"(2001,xx38)",Philips Imaging DD 001,FL,1,Overlay Mix Factor
+"(2001,xx39)",Philips Imaging DD 001,FL,1,Overscan Factor
+"(2001,xx3a)",Philips Imaging DD 001,CS,1,Pixel Shift
+"(2001,xx3b)",Philips Imaging DD 001,FL,4,Pixel Shift Split Line Coordinates
+"(2001,xx3c)",Philips Imaging DD 001,FL,2,Pixel Shift Shift Vectora
+"(2001,xx3d)",Philips Imaging DD 001,UL,1,Contour Fill Color
+"(2001,xx3e)",Philips Imaging DD 001,FL,2,Pixel Shift Shift Vectorb
+"(2001,xx3f)",Philips Imaging DD 001,CS,1,Displayed Area Zoom Interpolation Meth
+"(2001,xx40)",Philips Imaging DD 001,CS,1,Pixel Shift Split Screen
+"(2001,xx41)",Philips Imaging DD 001,FL,1,Subtraction Land Marking Factor
+"(2001,xx42)",Philips Imaging DD 001,CS,1,Subtraction Land Marking Active
+"(2001,xx43)",Philips Imaging DD 001,IS,2,Ellips Displ Shut Major Ax Frst End Pnt
+"(2001,xx44)",Philips Imaging DD 001,IS,2,Ellips Displ Shut Major Ax Scnd End Pnt
+"(2001,xx45)",Philips Imaging DD 001,IS,2,Ellips Displ Shut Other Ax Frst End Pnt
+"(2001,xx46)",Philips Imaging DD 001,CS,1,Graphic Line Style
+"(2001,xx47)",Philips Imaging DD 001,FL,1,Graphic Line Width
+"(2001,xx48)",Philips Imaging DD 001,SS,1,Graphic Annotation Id
+"(2001,xx49)",Philips Imaging DD 001,IS,1,Trace First Image
+"(2001,xx4a)",Philips Imaging DD 001,CS,1,Trace Taste
+"(2001,xx4b)",Philips Imaging DD 001,CS,1,Interpolation Method
+"(2001,xx4c)",Philips Imaging DD 001,CS,1,Poly Line Begin Point Style
+"(2001,xx4d)",Philips Imaging DD 001,CS,1,Poly Line End Point Style
+"(2001,xx4e)",Philips Imaging DD 001,CS,1,Window Smoothing Taste
+"(2001,xx4f)",Philips Imaging DD 001,FD,1,Harmonization Offset
+"(2001,xx50)",Philips Imaging DD 001,LO,1,Graphic Marker Type
+"(2001,xx51)",Philips Imaging DD 001,IS,1,Overlay Plane Id
+"(2001,xx53)",Philips Imaging DD 001,CS,1,Presentation Gl Trafo Invert
+"(2001,xx54)",Philips Imaging DD 001,FL,1,Contour Fill Transparency
+"(2001,xx55)",Philips Imaging DD 001,UL,1,Graphic Line Color
+"(2001,xx56)",Philips Imaging DD 001,CS,1,Graphic Type
+"(2001,xx57)",Philips Imaging DD 001,CS,1,Log Subtraction Taste
+"(2001,xx58)",Philips Imaging DD 001,UL,1,Series Xray Contrast Transfer Taste
+"(2001,xx59)",Philips Imaging DD 001,IS,1,Curve Id
+"(2001,xx5a)",Philips Imaging DD 001,ST,1,Graphic Annotation Model
+"(2001,xx5d)",Philips Imaging DD 001,ST,1,Measurement Text Units
+"(2001,xx5e)",Philips Imaging DD 001,ST,1,Measurement Text Type
+"(2001,xx5f)",Philips Imaging DD 001,SQ,1-n,Stack Sequence
+"(2001,xx60)",Philips Imaging DD 001,SL,1,MR Series Nr Of Stacks
+"(2001,xx61)",Philips Imaging DD 001,CS,1,Series Transmitted
+"(2001,xx62)",Philips Imaging DD 001,CS,1,Series Committed
+"(2001,xx63)",Philips Imaging DD 001,CS,1,Examination Source
+"(2001,xx64)",Philips Imaging DD 001,SH,1,Text Type
+"(2001,xx65)",Philips Imaging DD 001,SQ,1-n,Overlay Plane Sequence
+"(2001,xx66)",Philips Imaging DD 001,SQ,1-n,Image Curve
+"(2001,xx67)",Philips Imaging DD 001,CS,1,Linear Presentation Gl Trafo Shape Sub
+"(2001,xx68)",Philips Imaging DD 001,SQ,1-n,Modality Gl Trafo Sequence
+"(2001,xx69)",Philips Imaging DD 001,SQ,1-n,Display Shutter Sequence
+"(2001,xx6a)",Philips Imaging DD 001,SQ,1-n,Spatial Transformation Sequence
+"(2001,xx6b)",Philips Imaging DD 001,SQ,1-n,Edge Enhancement Sequence
+"(2001,xx6d)",Philips Imaging DD 001,LO,1,Text Font
+"(2001,xx6e)",Philips Imaging DD 001,SH,1,Series Type
+"(2001,xx6f)",Philips Imaging DD 001,SQ,1-n,Mixing Sequence
+"(2001,xx71)",Philips Imaging DD 001,CS,1,Graphic Constraint
+"(2001,xx72)",Philips Imaging DD 001,IS,2,Ellips Displ Shut Other Ax Scnd End Pnt
+"(2001,xx73)",Philips Imaging DD 001,SQ,1-n,Referenced Mask Image Sequence
+"(2001,xx74)",Philips Imaging DD 001,DS,1-n,Window Center Sub
+"(2001,xx75)",Philips Imaging DD 001,DS,1-n,Window Width Sub
+"(2001,xx76)",Philips Imaging DD 001,UL,1,Presentation State Xray Contrast Transfer Taste
+"(2001,xx77)",Philips Imaging DD 001,CS,1,Gl Trafo Type
+"(2001,xx79)",Philips Imaging DD 001,SQ,1-n,Harmonisation Sequence
+"(2001,xx7a)",Philips Imaging DD 001,FL,1,Window Rounding Factor
+"(2001,xx7b)",Philips Imaging DD 001,IS,1,MR Series Acquisition Number
+"(2001,xx7c)",Philips Imaging DD 001,UL,1,Frame Number
+"(2001,xx7d)",Philips Imaging DD 001,OW/OB,1,Frame Pixel Data
+"(2001,xx7e)",Philips Imaging DD 001,US,1,Edge Enhancement Gain Taste
+"(2001,xx7f)",Philips Imaging DD 001,US,1,Edge Enhancement Gain Taste Sub
+"(2001,xx80)",Philips Imaging DD 001,LO,1,Text Anchor Point Alignment
+"(2001,xx81)",Philips Imaging DD 001,IS,1,MR Series Nr Of Dynamic Scans
+"(2001,xx82)",Philips Imaging DD 001,IS,1,MR Series Echo Train Length
+"(2001,xx83)",Philips Imaging DD 001,DS,1,MR Series Imaging Frequency
+"(2001,xx84)",Philips Imaging DD 001,DS,1,MR Series Inversion Time
+"(2001,xx85)",Philips Imaging DD 001,DS,1,MR Series Magnetic Field Strength
+"(2001,xx86)",Philips Imaging DD 001,IS,1,MR Series Nr Of Phase Encoding Steps
+"(2001,xx87)",Philips Imaging DD 001,SH,1,MR Series Nucleus
+"(2001,xx88)",Philips Imaging DD 001,DS,1,MR Series Number Of Averages
+"(2001,xx89)",Philips Imaging DD 001,DS,1,MR Series Percent Phase Field Of View
+"(2001,xx8a)",Philips Imaging DD 001,DS,1,MR Series Percent Sampling
+"(2001,xx8b)",Philips Imaging DD 001,SH,1,MR Series Transmitting Coil
+"(2001,xx8c)",Philips Imaging DD 001,CS,0-n,Needs Processing
+"(2001,xx90)",Philips Imaging DD 001,LO,1,Text Foreground Color
+"(2001,xx91)",Philips Imaging DD 001,LO,1,Text Background Color
+"(2001,xx92)",Philips Imaging DD 001,LO,1,Text Shadow Color
+"(2001,xx93)",Philips Imaging DD 001,LO,1,Text Style
+"(2001,xx94)",Philips Imaging DD 001,LO,1,Processing Order Specialization
+"(2001,xx9a)",Philips Imaging DD 001,SQ,1-n,Graphic Number Sequence
+"(2001,xx9b)",Philips Imaging DD 001,UL,1,Graphic Number
+"(2001,xx9d)",Philips Imaging DD 001,LO,1,Subtraction Type
+"(2001,xx9f)",Philips Imaging DD 001,US,2,Pixel Processing Kernel Size
+"(2001,xxa1)",Philips Imaging DD 001,CS,1,Is Raw Image
+"(2001,xxa2)",Philips Imaging DD 001,US,1,Log Subtraction Curve Taste
+"(2001,xxa3)",Philips Imaging DD 001,UL,1,Text Color Foreground
+"(2001,xxa4)",Philips Imaging DD 001,UL,1,Text Color Background
+"(2001,xxa5)",Philips Imaging DD 001,UL,1,Text Color Shadow
+"(2001,xxc0)",Philips Imaging DD 001,UL,1,Content Item Identifier
+"(2001,xxc1)",Philips Imaging DD 001,LO,1,Nested Object Type Name
+"(2001,xxc2)",Philips Imaging DD 001,FD,1,Subtraction Rescale Factor
+"(2001,xxc3)",Philips Imaging DD 001,UL,1,Subtraction Offset
+"(2001,xxc5)",Philips Imaging DD 001,SQ,0-1,Mask Image Lut Sequence
+"(2001,xxc6)",Philips Imaging DD 001,SQ,0-1,Gain Lut Sequence
+"(2001,xxc7)",Philips Imaging DD 001,SQ,0-1,Contrast Image Lut Sequence
+"(2001,xxca)",Philips Imaging DD 001,SQ,1,Reversed Modality Lut
+"(2001,xxcb)",Philips Imaging DD 001,IS,1,Redundant Overlay Plane Id
+"(2001,xxd0)",Philips Imaging DD 001,AT,1-n,Frame Index Pointer
+"(2001,xxd1)",Philips Imaging DD 001,US,1-n,Index Number Vector
+"(2001,xxd2)",Philips Imaging DD 001,US,1,Frame Detector Number
+"(2001,xxd3)",Philips Imaging DD 001,US,1,Frame Phase Number
+"(2001,xxd4)",Philips Imaging DD 001,US,1,Frame Rotation Number
+"(2001,xxd5)",Philips Imaging DD 001,US,1,Frame Rr Interval Number
+"(2001,xxd6)",Philips Imaging DD 001,US,1,Frame Time Slot Number
+"(2001,xxd7)",Philips Imaging DD 001,US,1,Frame Slice Number
+"(2001,xxd8)",Philips Imaging DD 001,US,1,Frame Angular View Number
+"(2001,xxd9)",Philips Imaging DD 001,US,1,Frame Time Slice Number
+"(2001,xxda)",Philips Imaging DD 001,CS,1,Is Arrowhead
+"(2001,xxdb)",Philips Imaging DD 001,US,1,PET Rr Interval Index
+"(2001,xxdc)",Philips Imaging DD 001,US,1,PET Time Slot Index
+"(2001,xxdd)",Philips Imaging DD 001,US,1,PET Time Slice Index
+"(2001,xxde)",Philips Imaging DD 001,US,1,PET Slice Index
+"(2001,xxdf)",Philips Imaging DD 001,UL,1,Voxel Number
+"(2001,xxe9)",Philips Imaging DD 001,SQ,0-n,Per Frame Voxels Functional Group
+"(2001,xxf1)",Philips Imaging DD 001,FL,6,MR Image Prospective Motion Correction
+"(2001,xxf2)",Philips Imaging DD 001,FL,1-n,MR Image Retrospective Motion Correction
+"(2001,xxf3)",Philips Imaging DD 001,CS,1,Dynamic Linear Voigl Trafo
+"(2001,xxf4)",Philips Imaging DD 001,UL,1,Color Key
+"(2001,xxf5)",Philips Imaging DD 001,CS,1,Rotated Text Allowed
+"(2001,xxf6)",Philips Imaging DD 001,UL,1,Number Of Represented Images
+"(2001,xxf7)",Philips Imaging DD 001,LO,0-n,Data Type Icons
+"(2001,xxf9)",Philips Imaging DD 001,SQ,0-n,Flagging Sequence
+"(2001,xxfb)",Philips Imaging DD 001,SQ,0-1,Bookmark Sequence
+"(2001,xxfc)",Philips Imaging DD 001,SQ,0-1,Ris Code Sequence
+"(2001,xxfd)",Philips Imaging DD 001,SQ,0-n,Workflow Step Sequence
+"(2001,xxff)",Philips Imaging DD 001,OW/OB,1,Volume Pixel
+"(2001,xx01)",Philips Imaging DD 002,US,1,Edr Setgp
+"(2001,xx02)",Philips Imaging DD 002,FD,1,Edr Setsk
+"(2001,xx03)",Philips Imaging DD 002,CS,1,Um Rank Type
+"(2001,xx04)",Philips Imaging DD 002,SS,1,Um Rank Number
+"(2001,xx05)",Philips Imaging DD 002,FD,1,Um Rank Enhancement
+"(2001,xx06)",Philips Imaging DD 002,US,1,Um Kernel Size
+"(2001,xx07)",Philips Imaging DD 002,CS,1,Um Gamma Type
+"(2001,xx08)",Philips Imaging DD 002,FD,1,Um Gamma Angle
+"(2001,xx09)",Philips Imaging DD 002,FD,1,Um Gamma Shift
+"(2001,xx0a)",Philips Imaging DD 002,FD,1,Um Gamma Center
+"(2001,xx0b)",Philips Imaging DD 002,FD,1,Drr Contrast Equalization
+"(2001,xx0c)",Philips Imaging DD 002,US,1,Drr Contrast Equalization Kernel Size
+"(2001,xx0d)",Philips Imaging DD 002,CS,1,Drr Sharp Lut Type
+"(2001,xx0e)",Philips Imaging DD 002,FD,1,Drr Sharpening
+"(2001,xx0f)",Philips Imaging DD 002,US,1,Drr Sharp Kernel Size
+"(2001,xx10)",Philips Imaging DD 002,SS,1,Drr Window Width
+"(2001,xx11)",Philips Imaging DD 002,SS,1,Drr Window Level
+"(2001,xx12)",Philips Imaging DD 002,CS,1,Drr Lut Type
+"(2001,xx13)",Philips Imaging DD 002,SS,1,Unique Processing Mode
+"(2001,xx14)",Philips Imaging DD 002,FD,1,Unique Contrast Balance
+"(2001,xx15)",Philips Imaging DD 002,FD,1,Unique Center Density
+"(2001,xx16)",Philips Imaging DD 002,FD,1,Unique Bright Density
+"(2001,xx17)",Philips Imaging DD 002,FD,1,Unique Detail Contrast
+"(2001,xx18)",Philips Imaging DD 002,CS,1,Unique Density Curve
+"(2001,xx19)",Philips Imaging DD 002,FD,1,Unique Density Min
+"(2001,xx1a)",Philips Imaging DD 002,FD,1,Unique Density Max
+"(2001,xx1b)",Philips Imaging DD 002,FD,1,Unique Gamma
+"(2001,xx1c)",Philips Imaging DD 002,FD,1,Unique Gamma Min
+"(2001,xx1d)",Philips Imaging DD 002,FD,1,Unique Gamma Max
+"(2001,xx1e)",Philips Imaging DD 002,FD,1,Unique Structure Preference
+"(2001,xx1f)",Philips Imaging DD 002,FD,1,Unique Noise Limit
+"(2001,xx20)",Philips Imaging DD 002,FD,1,Unique Noise Band
+"(2001,xx21)",Philips Imaging DD 002,FD,1,Unique Noise Step
+"(2001,xx22)",Philips Imaging DD 002,FD,1,Unique Noise Compensation
+"(2001,xx23)",Philips Imaging DD 002,FD,1,Unique Structure Boost
+"(2001,xx24)",Philips Imaging DD 002,FD,1,Unique Strong Contrast Limit
+"(2001,xx25)",Philips Imaging DD 002,FD,1,Unique Strong Contrast Factor
+"(2001,xx26)",Philips Imaging DD 002,FD,1,Unique Structure Boost Offset
+"(2001,xx27)",Philips Imaging DD 002,FD,1,Unique Weak Contrast Limit
+"(2001,xx28)",Philips Imaging DD 002,US,1,Unique Smooth Gain
+"(2001,xx29)",Philips Imaging DD 002,US,1,Unique Level
+"(2001,xx2a)",Philips Imaging DD 002,US,1,Unique Gain Up Single
+"(2001,xx2b)",Philips Imaging DD 002,SS,1,Unique Smh Limit One
+"(2001,xx2c)",Philips Imaging DD 002,FD,1,Unique Film Density Min
+"(2001,xx2d)",Philips Imaging DD 002,FD,1,Unique Film Density Max
+"(2001,xx2e)",Philips Imaging DD 002,SS,1,Unique Version
+"(2001,xx2f)",Philips Imaging DD 002,SS,1,Ranger Version
+"(2001,xx30)",Philips Imaging DD 002,SS,1,Ranger Mode
+"(2001,xx31)",Philips Imaging DD 002,SS,1,Ranger Field1
+"(2001,xx32)",Philips Imaging DD 002,SS,1,Ranger Field2
+"(2001,xx33)",Philips Imaging DD 002,SS,1,Ranger Percentile Key1
+"(2001,xx34)",Philips Imaging DD 002,SS,1,Ranger Percentile Key2
+"(2001,xx35)",Philips Imaging DD 002,FD,1,Ranger Dose1
+"(2001,xx36)",Philips Imaging DD 002,FD,1,Ranger Dose2
+"(2001,xx37)",Philips Imaging DD 002,FD,1,Ranger Manual Dose1
+"(2001,xx38)",Philips Imaging DD 002,FD,1,Ranger Manual Dose2
+"(2001,xx39)",Philips Imaging DD 002,CS,1,Unique Rox Shape
+"(2001,xx3a)",Philips Imaging DD 002,SQ,1,Ranger Set Sequence
+"(2001,xx3b)",Philips Imaging DD 002,SQ,0-n,Rox Sequence
+"(2001,xx3c)",Philips Imaging DD 002,SQ,1-n,Xray Edge Enhancement Sequence
+"(2001,xx3d)",Philips Imaging DD 002,SQ,0-1,Edr Lut Sequence
+"(2001,xx3e)",Philips Imaging DD 002,SS,1,Unique Dose Decades
+"(2001,xx3f)",Philips Imaging DD 002,SS,1,Unique Dose Unit
+"(2001,xx40)",Philips Imaging DD 002,SS,1,Unique Density Unit
+"(2001,xx50)",Philips Imaging DD 002,CS,1,Workflow Status
+"(2001,xx52)",Philips Imaging DD 002,LO,1,Workflow Step Id
+"(2001,xx53)",Philips Imaging DD 002,CS,1,Workflow Step Status
+"(2001,xx57)",Philips Imaging DD 002,SQ,0-1,Workflow Step Input Sequence
+"(2001,xx58)",Philips Imaging DD 002,SQ,0-1,Workflow Step Output Sequence
+"(2001,xx5a)",Philips Imaging DD 002,LO,1,Workflow Step Type
+"(2001,xx5c)",Philips Imaging DD 002,LO,1,Workflow Id
+"(2001,xx5d)",Philips Imaging DD 002,UL,1,Pixel Data Representation Rows
+"(2001,xx5e)",Philips Imaging DD 002,UL,1,Pixel Data Representation Columns
+"(2001,xx5f)",Philips Imaging DD 002,SQ,0-1,Private Dicom Extension Sequence
+"(2001,xx63)",Philips Imaging DD 002,ST,1,Isyntax Reference
+"(2001,xx64)",Philips Imaging DD 002,SQ,0-1,Workflow Step Job Params Sequence
+"(2001,xx65)",Philips Imaging DD 002,CS,1,Preserve Aspect
+"(2001,xx66)",Philips Imaging DD 002,CS,1,Interpolated
+"(2001,xx67)",Philips Imaging DD 002,LO,1,Error Flag
+"(2001,xx68)",Philips Imaging DD 002,LO,1,Error Message Id
+"(2001,xx6b)",Philips Imaging DD 002,LO,0-n,Suitable For
+"(2001,xx71)",Philips Imaging DD 002,CS,1,Submit Mpps Job
+"(2001,xx72)",Philips Imaging DD 002,FL,2,Displayed Area Bottom Right Hand Corner Fraction
+"(2001,xx73)",Philips Imaging DD 002,FL,2,Displayed Area Top Left Hand Corner Fraction
+"(2001,xx74)",Philips Imaging DD 002,LO,1,Interpolation Mode
+"(2001,xx75)",Philips Imaging DD 002,SS,0-n,Graphic Annotation Id Reference
+"(2001,xx01)",Philips Imaging DD 097,SQ,1,View Geometry
+"(2001,xx02)",Philips Imaging DD 097,FD,3,Frame Geometry Origin
+"(2001,xx03)",Philips Imaging DD 097,FD,2,Frame Geometry Extent
+"(2001,xx04)",Philips Imaging DD 097,FD,6,Frame Geometry Orientation
+"(2001,xx05)",Philips Imaging DD 097,SQ,1-n,Visual Sequence
+"(2001,xx06)",Philips Imaging DD 097,SQ,0-n,Cut Sequence
+"(2001,xx07)",Philips Imaging DD 097,FD,1,Visual Opacity
+"(2001,xx08)",Philips Imaging DD 097,SQ,1,Opacity Map Sequence
+"(2001,xx0a)",Philips Imaging DD 097,SQ,1-n,Light Sequence
+"(2001,xx0b)",Philips Imaging DD 097,SQ,1,Color Map Sequence
+"(2001,xx0d)",Philips Imaging DD 097,FD,1,Visual Threshold
+"(2001,xx0e)",Philips Imaging DD 097,SQ,0-n,Scene Sequence
+"(2001,xx0f)",Philips Imaging DD 097,FD,2,Frame Geometry Slab
+"(2001,xx12)",Philips Imaging DD 097,SQ,1,Gradient Map Sequence
+"(2001,xx17)",Philips Imaging DD 097,US,1,Display Rows
+"(2001,xx18)",Philips Imaging DD 097,US,1,Display Columns
+"(2001,xx19)",Philips Imaging DD 097,LO,1,Frame Geometry Type
+"(2001,xx1a)",Philips Imaging DD 097,FD,1,Light Intensity
+"(2001,xx1b)",Philips Imaging DD 097,UL,1,Light Color
+"(2001,xx1c)",Philips Imaging DD 097,FD,3,Light Origin
+"(2001,xx1d)",Philips Imaging DD 097,FD,3,Light Direction
+"(2001,xx1e)",Philips Imaging DD 097,FD,4-n,Color Map Samples
+"(2001,xx1f)",Philips Imaging DD 097,FD,2-n,Opacity Map Samples
+"(2001,xx21)",Philips Imaging DD 097,UL,1,Visual Color
+"(2001,xx22)",Philips Imaging DD 097,FD,1,Illumination Ambient
+"(2001,xx23)",Philips Imaging DD 097,FD,1,Illumination Diffuse
+"(2001,xx24)",Philips Imaging DD 097,FD,1,Illumination Specular
+"(2001,xx25)",Philips Imaging DD 097,FD,1,Illumination Specular Power
+"(2001,xx26)",Philips Imaging DD 097,FD,1,Depth Cue Begin
+"(2001,xx27)",Philips Imaging DD 097,FD,1,Depth Cue Lambda
+"(2001,xx28)",Philips Imaging DD 097,LO,1,Depth Cue Function
+"(2001,xx2a)",Philips Imaging DD 097,LO,1,Cut Set Type
+"(2001,xx2b)",Philips Imaging DD 097,FD,3,Cut Plane Origin
+"(2001,xx2c)",Philips Imaging DD 097,FD,3,Cut Plane Normal
+"(2001,xx2d)",Philips Imaging DD 097,UL,1,Volume Definition Number
+"(2001,xx2e)",Philips Imaging DD 097,SQ,0-1,Volume Mask Sequence
+"(2001,xx2f)",Philips Imaging DD 097,OB,1,Volume Mask Data
+"(2001,xx30)",Philips Imaging DD 097,SL,3,Volume Mask Offset
+"(2001,xx31)",Philips Imaging DD 097,SL,3,Volume Mask Size
+"(2001,xx32)",Philips Imaging DD 097,SL,2,Volume Mask Alignment
+"(2001,xx36)",Philips Imaging DD 097,LO,1,Light Anchor
+"(2001,xx37)",Philips Imaging DD 097,FD,3,Cone Geometry Origin
+"(2001,xx38)",Philips Imaging DD 097,FD,9,Cone Geometry Orientation
+"(2001,xx39)",Philips Imaging DD 097,FD,1,Cone Geometry View Distance
+"(2001,xx3a)",Philips Imaging DD 097,FD,2,Cone Geometry Slab Extent
+"(2001,xx3b)",Philips Imaging DD 097,FD,2,Cone Geometry Field Of View
+"(2001,xx3c)",Philips Imaging DD 097,SQ,1,Intensity Map Sequence
+"(2001,xx3d)",Philips Imaging DD 097,FD,1-n,Intensity Map Samples
+"(2001,xx3e)",Philips Imaging DD 097,SQ,0-n,Mesh Sequence
+"(2001,xx40)",Philips Imaging DD 097,UL,1,Mesh Color
+"(2001,xx41)",Philips Imaging DD 097,LO,1,Mesh Draw Style
+"(2001,xx42)",Philips Imaging DD 097,SQ,0-n,Mesh Section Sequence
+"(2001,xx44)",Philips Imaging DD 097,LO,1,Mesh Section Vertex Connectivity
+"(2001,xx45)",Philips Imaging DD 097,SL,1,Mesh Section Vertex Size
+"(2001,xx46)",Philips Imaging DD 097,LO,1,Mesh Section Vertex Format
+"(2001,xx47)",Philips Imaging DD 097,OB,1-n,Mesh Section Vertex Data
+"(2001,xx49)",Philips Imaging DD 097,SQ,1,Referenced Volume Definition Sequence
+"(2001,xx4a)",Philips Imaging DD 097,OB,1-n,Mesh Section Index Data
+"(2001,xx4b)",Philips Imaging DD 097,SL,1,Mesh Section Index Size
+"(2001,xx4c)",Philips Imaging DD 097,LO,1,Shutter Interaction Type
+"(2001,xxa1)",Philips Imaging DD 097,CS,1-2,Volume Type
+"(2001,xxa2)",Philips Imaging DD 097,FD,3,Volume Origin
+"(2001,xxa3)",Philips Imaging DD 097,FD,9,Volume Axis
+"(2001,xxa4)",Philips Imaging DD 097,FD,2,Volume Pixel Spacing
+"(2001,xxa5)",Philips Imaging DD 097,FD,1-n,Volume Slice Spacing
+"(2001,xxa6)",Philips Imaging DD 097,US,1,Volume Slices
+"(2001,xxa8)",Philips Imaging DD 097,IS,1-n,Referenced Volume Definition Number
+"(2001,xxa9)",Philips Imaging DD 097,SQ,0-n,Linear Modality Gl Trafo Sequence
+"(2001,xxaa)",Philips Imaging DD 097,FD,1-n,Volume Slice Offsets
+"(2001,xxab)",Philips Imaging DD 097,IS,1,Number Of Volume Definitions
+"(2001,xx00)",Philips Imaging DD 129,SQ,1,Presentation State Sequence
+"(2001,xx01)",Philips Imaging DD 129,SQ,1,Embedded Original Presentation State Sequence
+"(2001,xx02)",Philips Imaging DD 129,SQ,0-1,Planar Intersection Sequence
+"(2001,xx03)",Philips Imaging DD 129,UL,1,Plane Separator Line Color
+"(2001,xx04)",Philips Imaging DD 129,SQ,1-n,Plane Sequence
+"(2001,xx05)",Philips Imaging DD 129,FD,4,Plane Equation
+"(2001,xx06)",Philips Imaging DD 129,FD,1,Plane Opacity
+"(2001,xx07)",Philips Imaging DD 129,CS,1,Plane Enabled
+"(2001,xx08)",Philips Imaging DD 129,CS,1,Plane Selected
+"(2001,xx09)",Philips Imaging DD 129,UL,1,Plane Highlight Color
+"(0025,xx01)",Philips ST80i,OW,1,ST80i Stress Study file data
+"(0019,xx0C)",SIEMENS MR HEADER,IS,1,B Value
+"(0019,xx0D)",SIEMENS MR HEADER,CS,1,Diffusion Directionality
+"(0019,xx0E)",SIEMENS MR HEADER,FD,3,Diffusion Gradient Direction
+"(0019,xx27)",SIEMENS MR HEADER,FD,6,B Matrix
+"(0043,xx39)",GEMS_PARM_01,IS,4,1stvalue is B Value
+"(0043,xx6F)",GEMS_PARM_01,DS,3-4,Scanner Table Entry + Gradient Coil Selected
+"(0025,xx07)",GEMS_SERS_01,SL,1,Images in Series
+"(7E01,xx01)","HOLOGIC, Inc.",LO,1,Codec Version
+"(7E01,xx02)","HOLOGIC, Inc.",SH,1,Codec Content Type
+"(7E01,xx10)","HOLOGIC, Inc.",SQ,1,High Resolution Data Sequence
+"(7E01,xx11)","HOLOGIC, Inc.",SQ,1,Low Resolution Data Sequence
+"(7E01,xx12)","HOLOGIC, Inc.",OB,1,Codec Content
+"(0099,xx01)",NQHeader,UI,1,Version
+"(0099,xx02)",NQHeader,UI,1,Analyzed Series UID
+"(0099,xx04)",NQHeader,SS,1,Return Code
+"(0099,xx05)",NQHeader,LT,1,Return Message
+"(0099,xx10)",NQHeader,FL,1,MI
+"(0099,xx20)",NQHeader,SH,1,Units
+"(0099,xx21)",NQHeader,FL,1,ICV
+"(0199,xx01)",NQLeft,FL,1,Left Cortical White Matter
+"(0199,xx02)",NQLeft,FL,1,Left Cortical Gray Matter
+"(0199,xx03)",NQLeft,FL,1,Left 3rd Ventricle
+"(0199,xx04)",NQLeft,FL,1,Left 4th Ventricle
+"(0199,xx05)",NQLeft,FL,1,Left 5th Ventricle
+"(0199,xx06)",NQLeft,FL,1,Left Lateral Ventricle
+"(0199,xx07)",NQLeft,FL,1,Left Inferior Lateral Ventricle
+"(0199,xx08)",NQLeft,FL,1,Left Inferior CSF
+"(0199,xx09)",NQLeft,FL,1,Left Cerebellar White Matter
+"(0199,xx0a)",NQLeft,FL,1,Left Cerebellar Gray Matter
+"(0199,xx0b)",NQLeft,FL,1,Left Hippocampus
+"(0199,xx0c)",NQLeft,FL,1,Left Amygdala
+"(0199,xx0d)",NQLeft,FL,1,Left Thalamus
+"(0199,xx0e)",NQLeft,FL,1,Left Caudate
+"(0199,xx0f)",NQLeft,FL,1,Left Putamen
+"(0199,xx10)",NQLeft,FL,1,Left Pallidum
+"(0199,xx11)",NQLeft,FL,1,Left Ventral Diencephalon
+"(0199,xx12)",NQLeft,FL,1,Left Nucleus Accumbens
+"(0199,xx13)",NQLeft,FL,1,Left Brain Stem
+"(0199,xx14)",NQLeft,FL,1,Left Exterior CSF
+"(0199,xx15)",NQLeft,FL,1,Left WM Hypo
+"(0199,xx16)",NQLeft,FL,1,Left Other
+"(0299,xx01)",NQRight,FL,1,Right Cortical White Matter
+"(0299,xx02)",NQRight,FL,1,Right Cortical Gray Matter
+"(0299,xx03)",NQRight,FL,1,Right 3rd Ventricle
+"(0299,xx04)",NQRight,FL,1,Right 4th Ventricle
+"(0299,xx05)",NQRight,FL,1,Right 5th Ventricle
+"(0299,xx06)",NQRight,FL,1,Right Lateral Ventricle
+"(0299,xx07)",NQRight,FL,1,Right Inferior Lateral Ventricle
+"(0299,xx08)",NQRight,FL,1,Right Inferior CSF
+"(0299,xx09)",NQRight,FL,1,Right Cerebellar White Matter
+"(0299,xx0a)",NQRight,FL,1,Right Cerebellar Gray Matter
+"(0299,xx0b)",NQRight,FL,1,Right Hippocampus
+"(0299,xx0c)",NQRight,FL,1,Right Amygdala
+"(0299,xx0d)",NQRight,FL,1,Right Thalamus
+"(0299,xx0e)",NQRight,FL,1,Right Caudate
+"(0299,xx0f)",NQRight,FL,1,Right Putamen
+"(0299,xx10)",NQRight,FL,1,Right Pallidum
+"(0299,xx11)",NQRight,FL,1,Right Ventral Diencephalon
+"(0299,xx12)",NQRight,FL,1,Right Nucleus Accumbens
+"(0299,xx13)",NQRight,FL,1,Right Brain Stem
+"(0299,xx14)",NQRight,FL,1,Right Exterior CSF
+"(0299,xx15)",NQRight,FL,1,Right WM Hypo
+"(0299,xx16)",NQRight,FL,1,Right Other
+"(2005,xx0D)",Philips MR Imaging DD 001,FL,1,Scale Intercept
+"(2005,xx0E)",Philips MR Imaging DD 001,FL,1,Scale Slope
+"(0119,xx00)",SIEMENS Ultrasound SC2000,LO,1,Acoustic Meta Information Version
+"(0119,xx01)",SIEMENS Ultrasound SC2000,OB,1,Common Acoustic Meta Information
+"(0119,xx02)",SIEMENS Ultrasound SC2000,SQ,1,Multi Stream Sequence
+"(0119,xx03)",SIEMENS Ultrasound SC2000,SQ,1,Acoustic Data Sequence
+"(0119,xx04)",SIEMENS Ultrasound SC2000,OB,1,Per Transaction Acoustic Control Information
+"(0119,xx05)",SIEMENS Ultrasound SC2000,UL,1,Acoustic Data Offset
+"(0119,xx06)",SIEMENS Ultrasound SC2000,UL,1,Acoustic Data Length
+"(0119,xx07)",SIEMENS Ultrasound SC2000,UL,1,Footer Offset
+"(0119,xx08)",SIEMENS Ultrasound SC2000,UL,1,Footer Length
+"(0119,xx09)",SIEMENS Ultrasound SC2000,SS,1,Acoustic Stream Number
+"(0119,xx10)",SIEMENS Ultrasound SC2000,SH,1,Acoustic Stream Type
+"(0119,xx11)",SIEMENS Ultrasound SC2000,,1,Stage Timer Time
+"(0119,xx12)",SIEMENS Ultrasound SC2000,,1,Stop Watch Time
+"(0119,xx13)",SIEMENS Ultrasound SC2000,IS,1,Volume Rate
+"(0119,xx21)",SIEMENS Ultrasound SC2000,SH,1,
+"(0129,xx00)",SIEMENS Ultrasound SC2000,SQ,1,MPR View Sequence
+"(0129,xx02)",SIEMENS Ultrasound SC2000,UI,1,Bookmark UID
+"(0129,xx03)",SIEMENS Ultrasound SC2000,,1,Plane Origin Vector
+"(0129,xx04)",SIEMENS Ultrasound SC2000,,1,Row Vector
+"(0129,xx05)",SIEMENS Ultrasound SC2000,,1,Column Vector
+"(0129,xx06)",SIEMENS Ultrasound SC2000,SQ,1,Visualization Sequence
+"(0129,xx07)",SIEMENS Ultrasound SC2000,UI,1,Bookmark UID
+"(0129,xx08)",SIEMENS Ultrasound SC2000,OB,1,Visualization Information
+"(0129,xx09)",SIEMENS Ultrasound SC2000,SQ,1,Application State Sequence
+"(0129,xx10)",SIEMENS Ultrasound SC2000,OB,1,Application State Information
+"(0129,xx11)",SIEMENS Ultrasound SC2000,SQ,1,Referenced Bookmark Sequence
+"(0129,xx12)",SIEMENS Ultrasound SC2000,UI,1,Referenced Bookmark UID
+"(0129,xx20)",SIEMENS Ultrasound SC2000,SQ,1,Cine Parameters Sequence
+"(0129,xx21)",SIEMENS Ultrasound SC2000,OB,1,Cine Parameters Schema
+"(0129,xx22)",SIEMENS Ultrasound SC2000,OB,1,Values of Cine Parameters
+"(0129,xx29)",SIEMENS Ultrasound SC2000,OB,1,
+"(0129,xx30)",SIEMENS Ultrasound SC2000,CS,1,Raw Data Object Type
+"(0139,xx01)",SIEMENS Ultrasound SC2000,SL,1,Physio Capture ROI
+"(0149,xx01)",SIEMENS Ultrasound SC2000,FD,1-n,Vector of BROI Points
+"(0149,xx02)",SIEMENS Ultrasound SC2000,FD,1-n,Start/End Timestamps of Strip Stream
+"(0149,xx03)",SIEMENS Ultrasound SC2000,FD,1-n,Timestamps of Visible R-waves
+"(7FD1,xx01)",SIEMENS Ultrasound SC2000,OB,1,Acoustic Image and Footer Data
+"(7FD1,xx09)",SIEMENS Ultrasound SC2000,UI,1,Volume Version ID
+"(7FD1,xx10)",SIEMENS Ultrasound SC2000,OB,1,Volume Payload
+"(7FD1,xx11)",SIEMENS Ultrasound SC2000,OB,1,After Payload
+"(7FD1,xx01)",SIEMENS SYNGO ULTRA-SOUND TOYON DATA STREAMING,OB,1,Padding
+"(7FD1,xx09)",SIEMENS SYNGO ULTRA-SOUND TOYON DATA STREAMING,UI,1,Version ID
+"(7FD1,xx10)",SIEMENS SYNGO ULTRA-SOUND TOYON DATA STREAMING,OB,1,Volume Payload
+"(7FD1,xx11)",SIEMENS SYNGO ULTRA-SOUND TOYON DATA STREAMING,OB,1,After Payload
