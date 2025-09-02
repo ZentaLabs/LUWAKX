@@ -92,7 +92,7 @@ if __name__ == "__main__":
     fpath = args.fpath
     DEV_MODE = args.dev_mode  
     print(f"Development mode: {DEV_MODE}")
-    exit()
+
     # Set up client
     client = OpenAI(base_url="http://localhost:1234/v1", api_key="")
 
