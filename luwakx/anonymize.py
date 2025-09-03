@@ -49,25 +49,26 @@ setup_deid_repo()
 from deid.config import DeidRecipe
 from deid.dicom import get_files, get_identifiers, replace_identifiers
 
-def tag_str_to_int(tag_str):
+def tag_str_to_int(group, element):
     """
     Convert a DICOM tag string like (0010,xx10) to an integer tag value.
     
     Args:
-        tag_str (str): DICOM tag string in the format '(GGGG,xxEE)', where GGGG is the group and xxEE is the element with 'xx' as a placeholder for the private block value.
-            
+        group (str): DICOM group in the format 'GGGG'.
+        element (str): DICOM element in the format 'xxEE'.
+
     Returns:
         int: Integer representation of the DICOM tag.
-    
-    Raises:
-        ValueError: If the tag_str format is invalid.
     """
-    m = re.match(r'\((\w{4}),xx(\w{2})\)', tag_str)
-    if not m:
-        raise ValueError(f"Invalid tag format: {tag_str}")
-    group = int(m.group(1), 16)
-    element = int(m.group(2), 16)
-    return (group << 16) | element
+    try:
+        group = int(group, 16)
+        if str(element).startswith('xx'):
+            element_int = int(str(element)[2:], 16)
+        else:
+            element_int = int(element, 16)
+    except ValueError:
+        raise ValueError(f"Invalid tag format: ({group},{element})")
+    return (group << 16) | element_int
 
 def name_to_keyword(name):
     """
@@ -107,9 +108,9 @@ def register_private_tags_from_csv(csv_path):
         reader = csv.reader(csvfile)
         header = next(reader)  # Skip header if present
         for row in reader:
-            tag_str, private_creator, vr, vm, description = row[:5]
+            group, element, private_creator, vr, vm, description = row[:6]
             try:
-                tag = tag_str_to_int(tag_str)
+                tag = tag_str_to_int(group, element)
             except Exception as e:
                 print(f"Skipping row {row}: {e}")
                 continue
@@ -163,7 +164,7 @@ class LuwakAnonymizer:
         # Initialize single date shift for entire project run
         # Register private tags from CSV
         register_private_tags_from_csv(
-            os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "DICOM_SAFE_PRIVATE_TAGS.csv")
+            os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "private_tags_template.csv")
         )
 
     def is_tag_private(self, dicom, value, field, item):
