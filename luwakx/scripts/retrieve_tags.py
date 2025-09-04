@@ -3,6 +3,7 @@ import argparse
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+from pydicom.datadict import get_entry
 
 def read_tcia_csv(tcia_csv_path, tcia_url=None):
     foldername = os.path.dirname(tcia_csv_path) or '.'
@@ -264,6 +265,92 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
         dicom_std_not_in_tcia_out.to_csv(dicom_std_not_in_tcia_path, index=False)
         print(f"Saved dicom_std rows not in tcia_df to {dicom_std_not_in_tcia_path}.")
 
+def fetch_tcia_table1(url, output_csv=None, save_csv=False):
+    """
+    Scrape Table 1 from TCIA Submission and De-identification Overview or load from CSV if present.
+
+    Args:
+        url (str): URL of the TCIA wiki page.
+        output_csv (str, optional): Path to save or load the CSV file.
+        save_csv (bool): If True, save the scraped data to CSV.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the table data.
+    """
+    response = requests.get(url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.content, "html.parser")
+    tables = soup.find_all("table")
+    if not tables:
+        raise ValueError("No tables found on the page.")
+    table = tables[0]
+    # Try to get headers from <th>, fallback to first row if needed
+    headers = [th.text.strip() for th in table.find_all("th")]
+    all_rows = table.find_all("tr")
+    rows = []
+    for tr in all_rows:
+        cells = [td.text.strip() for td in tr.find_all(["td", "th"])]
+        if cells:
+            rows.append(cells)
+    if not headers and rows:
+        headers = rows[0]
+        rows = rows[1:]
+    df = pd.DataFrame(rows, columns=headers)
+    if save_csv:
+        df.to_csv(output_csv, index=False)
+        print(f"Saved TCIA Table 1 to {output_csv}")
+    return df
+
+def fetch_dicom_table_e1(url, output_csv=None, save_csv=False):
+    """
+    Scrape Table E.1-1 from DICOM part 15 or load from CSV if present.
+
+    Args:
+        url (str): URL of the DICOM part 15 page.
+        output_csv (str, optional): Path to save or load the CSV file.
+        save_csv (bool): If True, save the scraped data to CSV.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the table data.
+    """
+    page = requests.get(url)
+    soup = BeautifulSoup(page.content, "html.parser")
+    table_anchor = soup.find(attrs={"id": "table_E.1-1"})
+    if not table_anchor:
+        raise ValueError("Could not find Table E.1-1 by id.")
+    table = table_anchor.parent.find("table")
+    if not table:
+        raise ValueError("Could not find table element for Table E.1-1.")
+
+    # Get headers
+    thead = table.find("thead")
+    if thead:
+        headers = [th.get_text(strip=True) for th in thead.find_all("th")]
+    else:
+        # fallback: use first row as headers
+        first_row = table.find("tr")
+        headers = [td.get_text(strip=True) for td in first_row.find_all(["td", "th"])]
+
+    # Get all rows
+    data = []
+    tbody = table.find("tbody")
+    if not tbody:
+        raise ValueError("Could not find tbody in Table E.1-1.")
+    for tr in tbody.find_all("tr"):
+        cells = [td.get_text(strip=True) for td in tr.find_all("td")]
+        if len(cells) == len(headers):
+            data.append(cells)
+        else:
+            # skip malformed rows
+            continue
+
+    df = pd.DataFrame(data, columns=headers)
+    if save_csv:
+        df.to_csv(output_csv, index=False)
+        print(f"Saved DICOM Table E.1-1 to {output_csv}")
+    return df
+
+
 def extract_group_element(tag_str):
     """
     Extract Group and Element from tag string like (0010,0010) or 0010,0010.
@@ -325,8 +412,8 @@ def build_final_df(tcia_df, dicom_df, requested_cols, output_csv):
     for col in [
     'Basic Prof.', 'Rtn. Safe Priv. Opt.', 'Rtn. UIDs Opt.', 'Rtn. Dev. Id. Opt.', 'Rtn. Inst. Id. Opt.',
     'Rtn. Pat. Chars. Opt.', 'Rtn. Long. Full Dates Opt.', 'Rtn. Long. Modif. Dates Opt.',
-    'Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', 'Clean Graph. Opt.',
-]:
+    'Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', 'Clean Graph. Opt.', 'Final CTP Script'
+    ]:
         tcia_col = col + '_tcia'
         dicom_col = col + '_dicom'
         if tcia_col in merged.columns and dicom_col in merged.columns:
@@ -343,8 +430,487 @@ def build_final_df(tcia_df, dicom_df, requested_cols, output_csv):
         if col not in final.columns:
             final[col] = ''
     final = final[requested_cols]
-    print(merged.columns)
-    final.to_csv(output_csv, index=False)
+    #print(merged.columns)
+    #final.to_csv(output_csv, index=False)
+    #print(f"Saved merged standard tags to {output_csv}")
+    return final
+
+def fill_missing_vr(df):
+    """
+    Fill in the VR column for specific DICOM tags that are missing from the pydicom dictionary.
+    Args:
+        df (pd.DataFrame): DataFrame with DICOM tags and a 'VR' column.
+    Returns:
+        pd.DataFrame: DataFrame with updated 'VR' values for known missing tags.
+    """
+    # Map of tag (as string "gggg,eeee") to VR
+    missing_vr_map = {
+        "0008,1301": "CS",
+        "0008,1302": "CS",
+        "0008,1303": "SH",
+        "0008,1304": "UI",
+        "0010,0011": "PN",
+        "0010,0012": "LO",
+        "0010,0013": "SQ",
+        "0010,0014": "LO",
+        "0010,0015": "PN",
+        "0010,0016": "AS",
+        "0010,0041": "LO",
+        "0010,0042": "LO",
+        "0010,0043": "LO",
+        "0010,0044": "SH",
+        "0010,0045": "SQ",
+        "0010,0046": "LO",
+        "0010,0047": "SH",
+        "0010,2162": "PN",
+        "0040,a034": "LO",
+        "0040,a035": "SQ",
+        "0040,b034": "LO",
+        "0040,b036": "SQ",
+        "0040,b03b": "SQ",
+        "0040,b03f": "ST",
+    }
+    # Normalize tag format for matching
+    def normalize_tag(row):
+        group = str(row['Group']).lower().zfill(4)
+        element = str(row['Element']).lower().zfill(4)
+        return f"{group},{element}"
+
+    for idx, row in df.iterrows():
+        tag_str = normalize_tag(row)
+        if tag_str in missing_vr_map:
+            df.at[idx, 'VR'] = missing_vr_map[tag_str]
+    return df
+
+def get_vr_for_tag(tag_str, row):
+    """
+    Get the VR (Value Representation) for a DICOM tag.
+    If the VR column value for the row exists (not empty/NaN), return it.
+    Otherwise, try to get it from pydicom's dictionary.
+    If the group is 50xx, 60xx, or 'gggg', do nothing (return None).
+    Args:
+        tag_str (str): DICOM tag string, e.g., '(0008,1301)' or '0008,1301'
+        row (pd.Series): The DataFrame row containing the 'VR' column
+    Returns:
+        str or None: The VR value, or None if not found
+    """
+    vr_value = row.get('VR', None)
+    if pd.notna(vr_value) and str(vr_value).strip() != '':
+        return vr_value
+    try:
+        tag_str = tag_str.strip('()')
+        group_str, elem_str = tag_str.split(',')
+        group = group_str.strip().lower()
+        # Check for special cases
+        if group == 'gggg' or group == '50xx' or group == '60xx':
+            return None
+        group_int = int(group, 16)
+        elem = int(elem_str, 16)
+        entry = get_entry((group_int, elem))
+        if entry:
+            return entry[0]  # VR is the first element in the tuple
+    except Exception as e:
+        print(f"Could not determine VR for tag {tag_str}: {e}")
+    return None
+
+def generate_basic_profile(final_df):
+    """
+    Process a DataFrame and update the 'Basic Prof.' column based on DICOM anonymization rules.
+    
+    Args:
+        final_df: DataFrame with DICOM standard tags
+    
+    Returns:
+        DataFrame: Updated DataFrame with modified 'Basic Prof.' column
+    """
+    # Make a copy to avoid modifying the original
+    df = final_df.copy()
+    
+    # Ensure required columns exist
+    required_cols = ['Basic Prof.', 'Name', 'VR', 'TCIA element_sig_pattern', 'Group', 'Element']
+    for col in required_cols:
+        if col not in df.columns:
+            print(f"Warning: Required column '{col}' not found in DataFrame")
+            return df
+    
+    for idx, row in df.iterrows():
+        basic_profile = str(row['Basic Prof.']).strip()
+        name = str(row['Name']) if pd.notna(row['Name']) else ""
+        tag = str(row['TCIA element_sig_pattern']).strip() if pd.notna(row['TCIA element_sig_pattern']) else ""
+        # Set empty tags
+        if not tag:
+            tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
+        vr = get_vr_for_tag(tag, row)
+        df.at[idx, 'VR'] = vr
+        # Set empty tags
+        if basic_profile == '':
+            continue
+            
+        if basic_profile == 'X':
+            if name == "Digital Signatures Sequence":
+                df.at[idx, 'Basic Prof.'] = 'remove'
+            elif name == "Curve Data":
+                df.at[idx, 'Basic Prof.'] = 'remove'
+            elif name == "Overlay Data":
+                df.at[idx, 'Basic Prof.'] = 'remove'
+            elif name == "Overlay Comments":
+                df.at[idx, 'Basic Prof.'] = 'remove'
+            elif name == "Data Set Trailing Padding":
+                df.at[idx, 'Basic Prof.'] = 'remove'
+            elif name == "Private Attributes":
+                df.at[idx, 'Basic Prof.'] = 'remove'
+            else:
+                df.at[idx, 'Basic Prof.'] = 'remove'
+                
+        elif basic_profile == 'K':
+            df.at[idx, 'Basic Prof.'] = 'keep'
+            
+        elif basic_profile == 'U':
+            # Check if VR is UI for UID replacement
+            if vr == 'UI':
+                df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
+                
+        elif basic_profile == 'D':
+            # Check if VR is date/time related for date replacement
+            if vr in ['DA', 'DT', 'TM']:
+                df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
+            elif vr in ['UI']:
+                df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
+            elif vr in ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR"]:
+                df.at[idx, 'Basic Prof.'] = 'replace'
+            elif vr == "UN":
+                df.at[idx, 'Basic Prof.'] = 'replace'
+            elif vr in ["DS", "IS", "FD", "FL", "SS", "US", "SL", "UL"]:
+                df.at[idx, 'Basic Prof.'] = 'replace'
+            elif vr in ['OD', 'OF', 'OL', 'OV', 'SV', 'UV']:
+                df.at[idx, 'Basic Prof.'] = 'blank'
+            elif vr == 'AS':
+                df.at[idx, 'Basic Prof.'] = 'replace'
+            elif vr in ['SQ', 'OB']:
+                df.at[idx, 'Basic Prof.'] = 'replace'
+            else:
+                print(f"Tag {tag} with Basic Profile 'D' has unhandled VR '{vr}'. Keeping original value.")
+                
+        elif basic_profile == 'Z':
+            # Check if VR is date/time related for date replacement
+            if vr in ['DA', 'DT', 'TM']:
+                df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
+            else:
+                df.at[idx, 'Basic Prof.'] = 'blank'
+                
+        elif basic_profile in ['Z/D','X/Z','X/D','X/Z/D','X/Z/U*']:
+            if 'Final CTP Script' in row and pd.notna(row['Final CTP Script']):
+                final_ctp = str(row['Final CTP Script']).strip()
+                if final_ctp == "@keep()":
+                    if basic_profile == 'Z/D':
+                        df.at[idx, 'Basic Prof.'] = 'blank'
+                    else:
+                        df.at[idx, 'Basic Prof.'] = 'remove'
+                else:
+                    if final_ctp == "@hashuid(@UIDROOT,this)":
+                        df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
+                    elif final_ctp == "@incrementdate(this,@DATEINC)":
+                        df.at[idx, 'Basic Prof.'] = 'func:hash_increment_date'
+                    elif final_ctp == "@empty()":
+                        df.at[idx, 'Basic Prof.'] = 'blank'
+                    elif final_ctp == "@remove()":
+                        df.at[idx, 'Basic Prof.'] = 'remove'
+                    elif final_ctp == "@process()":
+                        if vr == 'UI':
+                            df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
+                        else:
+                            df.at[idx, 'Basic Prof.'] = 'remove'
+                    else:
+                        df.at[idx, 'Basic Prof.'] = 'manual_review'
+    
+    return df
+
+def generate_retain_uid_profile(final_df):
+    """
+    Process a DataFrame and update the 'Rtn. UIDs Opt.' column based on DICOM UID retention rules.
+    
+    Args:
+        final_df: DataFrame with DICOM standard tags
+    
+    Returns:
+        DataFrame: Updated DataFrame with modified 'Rtn. UIDs Opt.' column
+    """
+    # Make a copy to avoid modifying the original
+    df = final_df.copy()
+    
+    # Ensure required columns exist
+    required_cols = ['Rtn. UIDs Opt.', 'Name', 'TCIA element_sig_pattern', 'Group', 'Element']
+    for col in required_cols:
+        if col not in df.columns:
+            print(f"Warning: Required column '{col}' not found in DataFrame")
+            return df
+    
+    for idx, row in df.iterrows():
+        profile = str(row['Rtn. UIDs Opt.']).strip()
+        name = str(row['Name']) if pd.notna(row['Name']) else ""
+        tag = str(row['TCIA element_sig_pattern']).strip() if pd.notna(row['TCIA element_sig_pattern']) else ""
+        
+        # Set empty tags
+        if not tag:
+            tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
+        
+        if profile == 'K':
+            df.at[idx, 'Rtn. UIDs Opt.'] = 'keep'
+        else:
+            # For any other values, keep them as is or set to default
+            continue
+    
+    return df
+                    
+def generate_retain_patient_characteristics_profile(final_df):
+    """
+    Process a DataFrame and update the 'Rtn. Pat. Chars. Opt.' column based on patient characteristics retention rules.
+    
+    Args:
+        final_df: DataFrame with DICOM standard tags
+    
+    Returns:
+        DataFrame: Updated DataFrame with modified 'Rtn. Pat. Chars. Opt.' column
+    """
+    # Make a copy to avoid modifying the original
+    df = final_df.copy()
+    
+    # Ensure required columns exist
+    required_cols = ['Rtn. Pat. Chars. Opt.', 'Name', 'TCIA element_sig_pattern', 'Group', 'Element']
+    for col in required_cols:
+        if col not in df.columns:
+            print(f"Warning: Required column '{col}' not found in DataFrame")
+            return df
+    
+    for idx, row in df.iterrows():
+        profile = str(row['Rtn. Pat. Chars. Opt.']).strip()
+        name = str(row['Name']) if pd.notna(row['Name']) else ""
+        tag = str(row['TCIA element_sig_pattern']).strip() if pd.notna(row['TCIA element_sig_pattern']) else ""
+        
+        # Set empty tags
+        if not tag:
+            tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
+        
+        if profile == 'K':
+            df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'keep'
+        else:
+            # For any other values, keep them as is or set to default
+            continue
+    
+    return df
+
+def generate_retain_long_full_dates_profile(final_df):
+    """
+    Process a DataFrame and update the 'Rtn. Long. Full Dates Opt.' column based on date retention rules.
+    
+    Args:
+        final_df: DataFrame with DICOM standard tags
+    
+    Returns:
+        DataFrame: Updated DataFrame with modified 'Rtn. Long. Full Dates Opt.' column
+    """
+    # Make a copy to avoid modifying the original
+    df = final_df.copy()
+    
+    # Ensure required columns exist
+    required_cols = ['Rtn. Long. Full Dates Opt.', 'Name', 'TCIA element_sig_pattern', 'Group', 'Element']
+    for col in required_cols:
+        if col not in df.columns:
+            print(f"Warning: Required column '{col}' not found in DataFrame")
+            return df
+    
+    for idx, row in df.iterrows():
+        profile = str(row['Rtn. Long. Full Dates Opt.']).strip()
+        name = str(row['Name']) if pd.notna(row['Name']) else ""
+        tag = str(row['TCIA element_sig_pattern']).strip() if pd.notna(row['TCIA element_sig_pattern']) else ""
+        # Set empty tags
+        if not tag:
+            tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
+        if profile == 'K':
+            df.at[idx, 'Rtn. Long. Full Dates Opt.'] = 'keep'
+        elif profile == '':
+            continue
+        else:
+            # For any other values, keep them as is or set to default
+            pass
+    
+    return df
+
+def generate_retain_long_modified_dates_profile(final_df):
+    """
+    Process a DataFrame and update the 'Rtn. Long. Modif. Dates Opt.' column based on modified date retention rules.
+    
+    Args:
+        final_df: DataFrame with DICOM standard tags
+    
+    Returns:
+        DataFrame: Updated DataFrame with modified 'Rtn. Long. Modif. Dates Opt.' column
+    """
+    # Make a copy to avoid modifying the original
+    df = final_df.copy()
+    
+    # Ensure required columns exist
+    required_cols = ['Rtn. Long. Modif. Dates Opt.', 'Name', 'TCIA element_sig_pattern', 'Group', 'Element']
+    for col in required_cols:
+        if col not in df.columns:
+            print(f"Warning: Required column '{col}' not found in DataFrame")
+            return df
+    
+    for idx, row in df.iterrows():
+        profile = str(row['Rtn. Long. Modif. Dates Opt.']).strip()
+        name = str(row['Name']) if pd.notna(row['Name']) else ""
+        tag = str(row['TCIA element_sig_pattern']).strip() if pd.notna(row['TCIA element_sig_pattern']) else ""
+        
+        # Set empty tags
+        if not tag:
+            tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
+        
+        if profile == 'C':
+            df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'func:hash_increment_date'
+        else:
+            # For any other values, keep them as is or set to default
+            continue
+    
+    return df
+
+def retain_device_id_option(df):
+    """
+    Process a DataFrame and update the 'Rtn. Device ID Opt.' column based on device ID retention rules.
+
+    Args:
+        df: DataFrame with DICOM standard tags
+
+    Returns:
+        DataFrame: Updated DataFrame with modified 'Rtn. Device ID Opt.' column
+    """
+    # Make a copy to avoid modifying the original
+    df = df.copy()
+
+    # Ensure required columns exist
+    required_cols = ['Rtn. Dev. Id. Opt.', 'Name', 'TCIA element_sig_pattern', 'Group', 'Element']
+    for col in required_cols:
+        if col not in df.columns:
+            print(f"Warning: Required column '{col}' not found in DataFrame")
+            return df
+
+    for idx, row in df.iterrows():
+        profile = str(row['Rtn. Dev. Id. Opt.']).strip()
+        name = str(row['Name']) if pd.notna(row['Name']) else ""
+        tag = str(row['TCIA element_sig_pattern']).strip() if pd.notna(row['TCIA element_sig_pattern']) else ""
+
+        # Set empty tags
+        if not tag:
+            tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
+
+        if profile == 'C':
+            df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'clean_manually'
+        elif profile == 'K':
+            df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'keep'
+        else:
+            # For any other values, keep them as is or set to default
+            continue
+
+    return df
+
+def retain_institution_id_option(df):
+    """
+    Process a DataFrame and update the 'Rtn. Inst. Id. Opt.' column based on institution ID retention rules.
+
+    Args:
+        df: DataFrame with DICOM standard tags
+    Returns:
+        DataFrame: Updated DataFrame with modified 'Rtn. Inst. Id. Opt.' column
+    """
+    # Make a copy to avoid modifying the original
+    df = df.copy()
+
+    # Ensure required columns exist
+    required_cols = ['Rtn. Inst. Id. Opt.', 'Name', 'TCIA element_sig_pattern', 'Group', 'Element']
+    for col in required_cols:
+        if col not in df.columns:
+            print(f"Warning: Required column '{col}' not found in DataFrame")
+            return df
+
+    for idx, row in df.iterrows():
+        profile = str(row['Rtn. Inst. Id. Opt.']).strip()
+        name = str(row['Name']) if pd.notna(row['Name']) else ""
+        tag = str(row['TCIA element_sig_pattern']).strip() if pd.notna(row['TCIA element_sig_pattern']) else ""
+
+        # Set empty tags
+        if not tag:
+            tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
+
+        if profile == 'K':
+            df.at[idx, 'Rtn. Inst. Id. Opt.'] = 'keep'
+        else:
+            # For any other values, keep them as is or set to default
+            continue
+
+    return df
+
+def clean_profiles(df):
+    """
+    Process a DataFrame and update the 'Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', and 'Clean Graph. Opt.' columns based on institution ID retention rules.
+
+    Args:
+        df: DataFrame with DICOM standard tags
+    Returns:
+        DataFrame: Updated DataFrame with modified 'Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', and 'Clean Graph. Opt.' columns
+    """
+    # Make a copy to avoid modifying the original
+    df = df.copy()
+
+    # Ensure required columns exist
+    required_cols = ['Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', 'Clean Graph. Opt.', 'Name', 'TCIA element_sig_pattern', 'Group', 'Element']
+    for col in required_cols:
+        if col not in df.columns:
+            print(f"Warning: Required column '{col}' not found in DataFrame")
+            return df
+
+    for idx, row in df.iterrows():
+        profile1 = str(row['Clean Desc. Opt.']).strip()
+        profile2 = str(row['Clean Struct. Cont. Opt.']).strip()
+        profile3 = str(row['Clean Graph. Opt.']).strip()
+        name = str(row['Name']) if pd.notna(row['Name']) else ""
+        tag = str(row['TCIA element_sig_pattern']).strip() if pd.notna(row['TCIA element_sig_pattern']) else ""
+
+        # Set empty tags
+        if not tag:
+            tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
+
+        if profile1 == 'C':
+            df.at[idx, 'Clean Desc. Opt.'] = 'clean_manually'
+        if profile2 == 'C':
+            df.at[idx, 'Clean Struct. Cont. Opt.'] = 'clean_manually'
+        if profile3 == 'C':
+            df.at[idx, 'Clean Graph. Opt.'] = 'clean_manually'
+        else:
+            # For any other values, keep them as is or set to default
+            continue
+
+    return df
+
+def create_final_file(final_df, output_csv):
+    """
+    Apply all profile cleaning functions to the DataFrame.
+    
+    Args:
+        final_df: DataFrame with DICOM standard tags
+    
+    Returns:
+        DataFrame: Updated DataFrame with all profiles cleaned
+    """
+    df = final_df.copy()
+    df = fill_missing_vr(df)
+    df = generate_basic_profile(df)
+    df = generate_retain_uid_profile(df)
+    df = generate_retain_patient_characteristics_profile(df)
+    df = generate_retain_long_full_dates_profile(df)
+    df = generate_retain_long_modified_dates_profile(df)
+    df = retain_device_id_option(df)
+    df = retain_institution_id_option(df)
+    df = clean_profiles(df)
+    df.to_csv(output_csv, index=False)
     print(f"Saved merged standard tags to {output_csv}")
 
 def main():
@@ -365,9 +931,9 @@ def main():
     parser.add_argument('--standard_dicom_url', type=str, default="https://dicom.nema.org/medical/dicom/current/output/html/part15.html#chapter_E", help="URL for DICOM standard tags table.")
     parser.add_argument('--standard_tcia_csv', type=str, default="tcia_standard_tags.csv", help="Output CSV for TCIA standard tags.")
     parser.add_argument('--standard_dicom_csv', type=str, default="dicom_standard_tags.csv", help="Output CSV for DICOM standard tags.")
-    parser.add_argument('--standard_output_csv', type=str, default="merged_standard_tags.csv", help="Output merged standard tags CSV.")
-    parser.add_argument('--use_existing_tcia_csv', action='store_true', help="Use existing TCIA CSV if present.")
-    parser.add_argument('--use_existing_dicom_csv', action='store_true', help="Use existing DICOM CSV if present.")
+    parser.add_argument('--merged_standard_tags', type=str, default="../data/TagsArchive/standard_tags_template.csv", help="Output merged standard tags CSV.")
+    parser.add_argument('--save_standard_tcia_csv', action='store_true', help="Use existing TCIA CSV if present.")
+    parser.add_argument('--save_standard_dicom_csv', action='store_true', help="Use existing DICOM CSV if present.")
     args = parser.parse_args()
 
     temp_files = []
@@ -388,15 +954,15 @@ def main():
             temp_files.append(args.dicom_table_csv)
     if args.create_standard_tag_template:
         # Standard tag workflow
-        tcia_df = fetch_tcia_table1(args.standard_tcia_url, args.standard_tcia_csv, use_existing=args.use_existing_tcia_csv)
-        dicom_df = fetch_dicom_table_e1(args.standard_dicom_url, args.standard_dicom_csv, use_existing=args.use_existing_dicom_csv)
+        tcia_df = fetch_tcia_table1(args.standard_tcia_url, args.standard_tcia_csv, save_csv=args.save_standard_tcia_csv)
+        dicom_df = fetch_dicom_table_e1(args.standard_dicom_url, args.standard_dicom_csv, save_csv=args.save_standard_dicom_csv)
         requested_cols = [
-            'Group', 'Element', 'Name', 'VR', 'VM', 'Basic Prof.', 'Rtn. Safe Priv. Opt.',
-            'Rtn. UIDs Opt.', 'Rtn. Dev. Id. Opt.', 'Rtn. Inst. Id. Opt.', 'Rtn. Pat. Chars. Opt.',
+            'Group', 'Element', 'Name', 'VR', 'VM', 'Basic Prof.', 'Rtn. UIDs Opt.', 'Rtn. Dev. Id. Opt.', 'Rtn. Inst. Id. Opt.', 'Rtn. Pat. Chars. Opt.',
             'Rtn. Long. Full Dates Opt.', 'Rtn. Long. Modif. Dates Opt.', 'Clean Desc. Opt.',
-            'Clean Struct. Cont. Opt.', 'Clean Graph. Opt.','TCIA element_sig_pattern'
+            'Clean Struct. Cont. Opt.', 'Clean Graph. Opt.','TCIA element_sig_pattern', 'Final CTP Script'
         ]
-        build_final_df(tcia_df, dicom_df, requested_cols, args.standard_output_csv)
+        final_df = build_final_df(tcia_df, dicom_df, requested_cols, args.merged_standard_tags)
+        create_final_file(final_df, args.merged_standard_tags)
         # Track temp files for removal
         if args.standard_tcia_url:
             temp_files.append(args.standard_tcia_csv)
