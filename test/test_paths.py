@@ -30,16 +30,28 @@ class TestPaths(unittest.TestCase):
         print(f"anonymize.py path: {anonymize_py}")
         self.assertTrue(os.path.exists(anonymize_py), "anonymize.py should exist")
 
-        # Path to scripts directory (from test directory perspective, corrected)
-        scripts_dir_correct = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes")
-        print(f"scripts directory (correct): {scripts_dir_correct}")
-        self.assertTrue(os.path.exists(scripts_dir_correct), "scripts directory should exist")
+        # Path to data directory containing recipe files
+        data_dir = os.path.join(luwakx_dir, "data", "BurnedPixelLocation")
+        print(f"data directory: {data_dir}")
+        self.assertTrue(os.path.exists(data_dir), "data/BurnedPixelLocation directory should exist")
         
-        # Verify scripts directory contains expected files
-        if os.path.exists(scripts_dir_correct):
-            script_files = os.listdir(scripts_dir_correct)
-            print(f"Files in scripts directory: {script_files}")
-            self.assertIn('deid.dicom.safe-private-tags', script_files, "safe-private-tags recipe should exist")
+        # Verify data directory contains expected recipe files
+        if os.path.exists(data_dir):
+            data_files = os.listdir(data_dir)
+            print(f"Files in data directory: {data_files}")
+            self.assertIn('deid.dicom.burnedin-pixel-recipe', data_files, "burnedin-pixel-recipe should exist")
+
+        # Path to TagsArchive directory  
+        tags_archive_dir = os.path.join(luwakx_dir, "data", "TagsArchive")
+        print(f"TagsArchive directory: {tags_archive_dir}")
+        self.assertTrue(os.path.exists(tags_archive_dir), "TagsArchive directory should exist")
+        
+        # Verify TagsArchive contains template files
+        if os.path.exists(tags_archive_dir):
+            archive_files = os.listdir(tags_archive_dir)
+            print(f"Files in TagsArchive: {archive_files}")
+            self.assertIn('private_tags_template.csv', archive_files, "private_tags_template.csv should exist")
+            self.assertIn('standard_tags_template.csv', archive_files, "standard_tags_template.csv should exist")
 
         # Path to luwakx.py (using the test's approach)
         luwakx_py = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "luwakx.py")
@@ -70,8 +82,11 @@ class TestPaths(unittest.TestCase):
         luwakx_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx")
         self.assertTrue(os.path.isabs(luwakx_dir), "luwakx path should be absolute")
         
-        scripts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes")
-        self.assertTrue(os.path.isabs(scripts_dir), "scripts path should be absolute")
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "data", "BurnedPixelLocation")
+        self.assertTrue(os.path.isabs(data_dir), "data path should be absolute")
+        
+        tags_archive_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "data", "TagsArchive")
+        self.assertTrue(os.path.isabs(tags_archive_dir), "TagsArchive path should be absolute")
         
         luwakx_py = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "luwakx.py")
         self.assertTrue(os.path.isabs(luwakx_py), "luwakx.py path should be absolute")

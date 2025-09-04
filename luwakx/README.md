@@ -1,6 +1,7 @@
 # LuwakX - Config-Driven DICOM Anonymization
 
 LuwakX is a powerful, config-driven tool for anonymizing DICOM files using the `deid` library. It supports flexible configuration through JSON files and provides both command-line and programmatic interfaces.
+It is based on the 2025b DICOM standards.
 
 ## Prerequisites
 
@@ -26,8 +27,8 @@ Create a JSON configuration file with the following structure:
   "inputFolder": "/path/to/input/dicom/files",
   "outputDeidentifiedFolder": "/path/to/output/directory",
   "outputPrivateMappingFolder": "/path/to/output/directory/privateMapping",
-  "recipesFolder": "./scripts/anonymization_recipes",
-  "recipes": ["remove_private_tags"],
+  "recipesFolder": "./recipes",
+  "recipes": ["basic_profile"],
   "outputFolderHierarchy": "copy_from_input",
   "projectHashRoot": "your_encryption_key"
 }
@@ -39,14 +40,94 @@ Create a JSON configuration file with the following structure:
 - **`outputDeidentifiedFolder`**: Output directory for anonymized files
 - **`outputPrivateMappingFolder`**: Directory for private tag mappings
 - **`recipesFolder`**: Directory containing deid recipe files
-- **`recipes`**: List of recipe names to apply (e.g., `["remove_private_tags", "retain_safe_private_tags"]`)
+- **`recipes`**: List of recipe names to apply (e.g., `["basic_profile", "retain_safe_private_tags"]`)
 - **`outputFolderHierarchy`**: How to structure output (`"copy_from_input"` or `"flat"`)
 - **`projectHashRoot`**: Encryption key for anonymization
 
 ### Built-in Recipes
 
+LuwakX supports multiple anonymization profiles that can be used individually or combined:
 
-- **`retain_safe_private_tags`**: Keeps safe private tags while removing others
+#### Basic Anonymization Profiles
+
+- **`basic_profile`**: DICOM basic anonymization profile (Part 15, Table E.1-1)
+  - Removes or replaces patient identifiers
+  - Applies date/time anonymization
+  - Generates new UIDs
+  - Handles private tags according to basic profile rules
+
+- **`retain_safe_private_tags`**: Keeps only DICOM-and-TCIA-approved safe private tags
+  - Based on DICOM Part 15, Table E.3.10-1 and on TCIA (The Cancer Imaging Archive) Private Tag Knowledge Base
+  - Removes potentially identifying private tags
+  - Retains safe private tags for research/clinical use
+
+#### Retention Options (can be combined with basic profiles)
+
+- **`retain_uids`**: Preserves original UIDs
+  - Useful for maintaining study relationships
+
+- **`retain_device_identifiers`**: Keeps device-related information
+  - Preserves manufacturer, model, software version
+  - Maintains equipment traceability
+
+- **`retain_institution_identifiers`**: Keeps institution information
+  - Preserves institution name, department
+  - Maintains organizational context
+
+- **`retain_patient_characteristics`**: Keeps non-identifying patient data
+  - Preserves age, sex, body part examined
+  - Maintains clinical context without identification
+
+- **`retain_long_full_dates`**: Keeps complete date information
+  - Preserves original dates without shifting
+  - Useful for temporal analysis studies
+
+- **`retain_long_modified_dates`**: Applies date shifting instead of removal
+  - Shifts dates by consistent offset
+  - Maintains temporal relationships while anonymizing
+
+#### Advanced Cleaning Options (manually set)
+
+- **`clean_descriptors`**: Enhanced cleaning of text fields
+  - Removes potentially identifying text descriptions
+  - Applies advanced text cleaning algorithms
+
+- **`clean_structured_content`**: Cleans structured report content
+  - Processes SR (Structured Report) DICOM objects
+  - Removes identifying information from structured data
+
+- **`clean_graphics`**: Removes graphic annotations
+  - Strips overlay data that might contain identifying information
+  - Removes graphic annotations and text overlays
+
+#### Recipe Combination Examples
+
+You can combine multiple recipes for customized anonymization:
+
+```json
+{
+  "recipes": ["basic_profile", "retain_safe_private_tags", "retain_patient_characteristics"]
+}
+```
+
+```json
+{
+  "recipes": ["basic_profile", "retain_long_modified_dates", "clean_descriptors"]
+}
+```
+
+```json
+{
+  "recipes": ["retain_uids", "retain_device_identifiers"]
+}
+```
+
+#### Recipe Priority and Conflicts
+
+When multiple recipes are specified:
+
+1. **Action Priority**: `keep` > `replace` > `remove` 
+3. **Conflict Resolution**: Most restrictive action wins (keep > replace > others)
 
 ## Usage
 
@@ -80,7 +161,7 @@ result = anonymizer.anonymize()
   "inputFolder": "/data/dicom_files",
   "outputDeidentifiedFolder": "/data/anonymized",
   "outputPrivateMappingFolder": "/data/anonymized/privateMapping",
-  "recipesFolder": "./scripts/anonymization_recipes",
+  "recipesFolder": "./recipes",
   "recipes": ["retain_safe_private_tags"],
   "outputFolderHierarchy": "copy_from_input",
   "projectHashRoot": "my_secure_key"
@@ -100,7 +181,7 @@ result = anonymizer.anonymize()
 
 - The script supports both single DICOM files and directories containing multiple DICOM files
 - Output directories are created automatically if they don't exist
-- Recipe files are located in `./scripts/anonymization_recipes/` by default
+- Recipe files are located in `./recipes` by default
 - The system supports both string and list formats for recipe specifications
 - Path resolution allows for relocatable configurations using placeholders
 
@@ -113,7 +194,7 @@ Run the test suite to validate functionality:
 python -m unittest discover test -v
 
 # Run specific test
-python -m unittest test.test_anonymize.TestAnonymizeScript.test_private_tags_removed -v
+python -m unittest test.test_anonymize.TestAnonymizeScript.test_keep_specific_private_tags_should_be_original_value -v
 ```
 
 ## Troubleshooting

@@ -104,14 +104,14 @@ class TestExports(unittest.TestCase):
         """Helper method to create a temporary config file for testing."""
         if recipes is None:
             recipes = ""
-        
         # Convert relative paths to absolute paths for the config
         if not os.path.isabs(input_folder):
             input_folder = os.path.abspath(input_folder)
         if not os.path.isabs(output_folder):
             output_folder = os.path.abspath(output_folder)
-        # Recipes folder default
-        recipes_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes")
+        # Recipes folder is always output_folder/recipe/
+        recipes_folder = os.path.join(output_folder, "recipe")
+        os.makedirs(recipes_folder, exist_ok=True)
         # Output mapping folder
         output_private_mapping_folder = os.path.join(output_folder, "private")
         # Fill in all config keys
@@ -148,7 +148,7 @@ class TestExports(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"]
+            recipes=["basic_profile"]
         )
 
         try:
@@ -225,7 +225,7 @@ class TestExports(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"]
+            recipes=["basic_profile"]
         )
 
         try:
@@ -291,7 +291,7 @@ class TestExports(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=self.limited_input_dir,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile", "retain_safe_private_tags"]
+            recipes=["basic_profile", "retain_safe_private_tags"]
         )
 
         try:
@@ -368,7 +368,7 @@ class TestExports(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=self.limited_input_dir,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"]
+            recipes=["basic_profile"]
         )
 
         try:

@@ -17,7 +17,7 @@ class TestConfigOptions(unittest.TestCase):
             "outputDeidentifiedFolder": "./outputs/deidentified",
             "outputPrivateMappingFolder": "./outputs/privateMapping",
             "recipesFolder": "./recipes",
-            "recipes": ["dicom_basic_profile"],
+            "recipes": ["basic_profile"],
             "maxDateShiftDays": 1095,
             "excludedTagsFromParquet": ["(7FE0,0010)"],
             "outputFolderHierarchy": "copy_from_input",
@@ -65,9 +65,9 @@ class TestConfigOptions(unittest.TestCase):
         self.assertEqual(anonymizer.config["recipesFolder"], expected)
 
     def test_recipes(self):
-        config_path = self.make_config({"recipes": ["dicom_basic_profile", "retain_safe_private_tags"]})
+        config_path = self.make_config({"recipes": ["basic_profile", "retain_safe_private_tags"]})
         anonymizer = LuwakAnonymizer(config_path)
-        self.assertIn("dicom_basic_profile", anonymizer.config["recipes"])
+        self.assertIn("basic_profile", anonymizer.config["recipes"])
         self.assertIn("retain_safe_private_tags", anonymizer.config["recipes"])
 
     def test_max_date_shift_days(self):

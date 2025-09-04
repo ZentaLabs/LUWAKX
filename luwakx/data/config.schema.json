@@ -25,8 +25,8 @@
     "recipesFolder": {
       "type": "string",
       "description": "Directory containing deid recipe files.",
-      "default": "./scripts/anonymization_recipes",
-      "examples": ["./scripts/anonymization_recipes"]
+      "default": "./recipes",
+      "examples": ["./recipes"]
     },
     "recipes": {
       "oneOf": [

@@ -235,10 +235,10 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
     final_out['Group'], final_out['Element'] = zip(*final_out['element_sig_pattern_cmp'].map(split_group_element))
     # Remove rows where Group is even
     final_out = final_out[final_out['Group'].apply(lambda g: int(g, 16) % 2 == 1 if g else False)].copy()
-    # I dont't know what to do with them hence Exclude rows where Element == 'xxinc.'
+    # Exclude rows where Element == 'xxinc.' or 'xxinc'
     final_out = final_out[final_out['Element'] != 'xxinc.'].copy()
     final_out = final_out[final_out['Element'] != 'xxinc'].copy()
-
+   
     rename_map = {
         'Private_Creator': 'TCIA Private_Creator',
         'Private_Creator_cmp': 'Private Creator',
@@ -252,6 +252,9 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
         'Group', 'Element', 'Private Creator', 'VR', 'VM', 'Meaning', 'Rtn. Safe Priv. Opt.', 'IsInDICOMRetainSafePrivateTags',
         'TCIA element_sig_pattern'
     ]
+     # Remove rows where Group, Element, and Private Creator are all equal (duplicates)
+    final_out = final_out.drop_duplicates(subset=['Group', 'Element', 'Private Creator'])
+
     for col in requested_cols:
         if col not in final_out.columns:
             final_out[col] = ''

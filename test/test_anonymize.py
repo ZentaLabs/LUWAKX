@@ -103,15 +103,14 @@ class TestAnonymizeScript(unittest.TestCase):
         """Helper method to create a temporary config file for testing."""
         if recipes is None:
             recipes = ""
-        
         # Convert relative paths to absolute paths for the config
         if not os.path.isabs(input_folder):
             input_folder = os.path.abspath(input_folder)
         if not os.path.isabs(output_folder):
             output_folder = os.path.abspath(output_folder)
-        # Recipes folder default
-        recipes_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "scripts", "anonymization_recipes")
-
+        # Recipes folder is always output_folder/recipe/
+        recipes_folder = os.path.join(output_folder, "recipe")
+        os.makedirs(recipes_folder, exist_ok=True)
         # Output mapping folder
         output_private_mapping_folder = os.path.join(output_folder, "private")
         # Fill in all config keys
@@ -177,7 +176,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 "00251007": "gems_sers_01"   # lowercase private creator
             }
             unexpected_private_tags = {
-                "0019101b": "gems_acqu_01",  # This tag should be removed
+                "0019109d": "gems_acqu_01",  # This tag should be removed
             }
             # Verify that the specified private tags are retained in the output files
             for file in os.listdir(self.test_output_dir):
@@ -260,7 +259,7 @@ class TestAnonymizeScript(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"],  # Use basic profile recipe which should trigger UID generation
+            recipes=["basic_profile"],  # Use basic profile recipe which should trigger UID generation
         )
 
         try:
@@ -292,6 +291,50 @@ class TestAnonymizeScript(unittest.TestCase):
             # Clean up config file
             os.unlink(config_path)
 
+    def test_basic_retain_uid_should_have_original_uid(self):
+        """Test the that mixing basic profile and retain uid option keeps original UID for retain fields."""
+        print("Test the that mixing basic profile and retain uid option keeps original UID for retain fields.")
+
+        # Use the first file for testing
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        
+        # Read original file to get date/time values
+        original_ds = pydicom.dcmread(original_file)
+        original_uids = {
+            'StudyInstanceUID': getattr(original_ds, 'StudyInstanceUID', None),
+            'SeriesInstanceUID': getattr(original_ds, 'SeriesInstanceUID', None),
+            'SOPInstanceUID': getattr(original_ds, 'SOPInstanceUID', None)
+        }
+        # Create test config with basic profile (which should trigger date shifting)
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile", "retain_uid"],
+        )
+        try:
+            anonymizer = LuwakAnonymizer(config_path)
+            # Run anonymization
+            result = anonymizer.anonymize()
+            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
+            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
+            anonymized_ds = pydicom.dcmread(anonymized_file)
+            anonymized_uids = {
+                'StudyInstanceUID': getattr(anonymized_ds, 'StudyInstanceUID', None),
+                'SeriesInstanceUID': getattr(anonymized_ds, 'SeriesInstanceUID', None),
+                'SOPInstanceUID': getattr(anonymized_ds, 'SOPInstanceUID', None)
+            }
+            
+            # Verify that UIDs have been changed
+            for uid_name in ['StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID']:
+                original_uid = original_uids[uid_name]
+                anonymized_uid = anonymized_uids[uid_name]  
+                self.assertIsNotNone(anonymized_uid, f"Anonymized file missing {uid_name}")
+                self.assertEqual(original_uid, anonymized_uid, 
+                                  f"{uid_name} was changed during anonymization")
+        finally:
+            os.unlink(config_path)
+
     def test_hash_increment_date(self):
         """Test the date shift functionality for DA, DT, and TM fields."""
         print("Test date shift generation and application")
@@ -308,7 +351,7 @@ class TestAnonymizeScript(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"],
+            recipes=["basic_profile"],
         )
         try:
             anonymizer = LuwakAnonymizer(config_path)
@@ -338,7 +381,7 @@ class TestAnonymizeScript(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
-            recipes=["dicom_basic_profile"],
+            recipes=["basic_profile"],
         )
 
         try:
@@ -394,7 +437,7 @@ class TestAnonymizeScript(unittest.TestCase):
             # Clean up config file
             os.unlink(config_path)
 
-    def test_fixed_datetime_with_dicom_basic_profile_recipe(self):
+    def test_fixed_datetime_with_basic_profile_recipe(self):
         """Test fixed datetime generation when running full anonymization with DICOM basic profile recipe."""
         print("Test fixed datetime generation with DICOM basic profile recipe")
         
@@ -410,11 +453,11 @@ class TestAnonymizeScript(unittest.TestCase):
         # These correspond to the actual tags from the recipe file
         datetime_fields_to_check = ['StudyDate', 'StudyTime']
         
-        # Create test config using dicom_basic_profile recipe which includes basic-profile-2
+        # Create test config using basic_profile recipe which includes basic-profile-2
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
-            recipes=['dicom_basic_profile'],
+            recipes=['basic_profile'],
         )
 
         try:
@@ -440,7 +483,67 @@ class TestAnonymizeScript(unittest.TestCase):
             # Clean up files
             os.unlink(config_path)
 
+    def test_basic_retain_date_should_have_original_date(self):
+        """Test the that mixing retain and date shift keeps original date for retain fields."""
+        print("Test the that mixing retain and date shift keeps original date for retain fields.")
+        
+        # Use the first file for testing
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        
+        # Read original file to get date/time values
+        original_ds = pydicom.dcmread(original_file)
+        original_value = original_ds['AcquisitionDate'].value
+        # Create test config with basic profile (which should trigger date shifting)
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile", "retain_long_full_dates", "retain_long_modified_dates"],
+        )
+        try:
+            anonymizer = LuwakAnonymizer(config_path)
+            # Run anonymization
+            result = anonymizer.anonymize()
+            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
+            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
+            anonymized_ds = pydicom.dcmread(anonymized_file)
+            # Check that the AcquisitionDate has been retained
+            self.assertEqual(anonymized_ds.AcquisitionDate, original_value,
+                        "AcquisitionDate should be the original value: expected {original_value}, got {anonymized_ds.AcquisitionDate}")
+        finally:
+            os.unlink(config_path)
 
+    def test_basic_modified_date_should_have_modified_date(self):
+        """Test the that mixing basic profile and date shift modifies original date."""
+        print("Test the that mixing basic profile and date shift modifies original date.")
+
+        # Use the first file for testing
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        
+        # Read original file to get date/time values
+        original_ds = pydicom.dcmread(original_file)
+        original_value = original_ds['AcquisitionDate'].value
+        # Create test config with basic profile (which should trigger date shifting)
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile", "retain_long_modified_dates"],
+        )
+        try:
+            anonymizer = LuwakAnonymizer(config_path)
+            # Run anonymization
+            result = anonymizer.anonymize()
+            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
+            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
+            anonymized_ds = pydicom.dcmread(anonymized_file)
+            # Check that the AcquisitionDate has been retained
+            self.assertEqual(anonymized_ds.AcquisitionDate, '20130730',
+                        "AcquisitionDate should be the original value: expected '20130730', got {anonymized_ds.AcquisitionDate}")
+            self.assertEqual(anonymized_ds.LongitudinalTemporalInformationModified, 'MODIFIED',
+                        "LongitudinalTemporalInformationModified should be 'MODIFIED': expected 'MODIFIED', got {anonymized_ds.LongitudinalTemporalInformationModified}")
+        finally:
+            os.unlink(config_path)
 
 if __name__ == "__main__":
     unittest.main()

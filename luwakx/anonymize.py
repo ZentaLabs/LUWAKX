@@ -17,8 +17,8 @@ from datetime import datetime
 from pydicom.datadict import add_private_dict_entry
 
 def setup_deid_repo():
-    repo_url = "https://github.com/Simlomb/deid.git"
-    branch = "enhversion"
+    repo_url = "https://github.com/ZentaLabs/deid.git"
+    branch = "master"
     repo_dir = os.path.expanduser("~/deid")  # Set repo_dir to the home directory
 
     # Check if the repository is already cloned
@@ -867,6 +867,179 @@ class LuwakAnonymizer:
         print(f"Found {len(dicom_files)} files to process")
         return dicom_files
     
+    def _collect_actions_for_row(self, row, recipes_to_process, recipe_column_map):
+        """
+        Helper function to collect actions from recipe columns for a given row.
+        
+        Args:
+            row: CSV row dictionary
+            recipes_to_process: List of recipe names to process
+            recipe_column_map: Dictionary mapping recipe names to CSV column names
+        
+        Returns:
+            list: List of non-empty actions from the requested recipe columns
+        """
+        actions = []
+        for recipe in recipes_to_process:
+            if recipe not in recipe_column_map:
+                continue
+                
+            column_name = recipe_column_map[recipe]
+            action = row[column_name].strip() if row[column_name] else ""
+            
+            if action:  # Only add non-empty actions
+                actions.append(action)
+        
+        return actions
+
+    def make_recipe_file(self, recipes_to_process, recipe_folder):
+        """
+        Generate a deid recipe file from standard_tags_template.csv and private_tags_template.csv based on selected recipes.
+
+        Args:
+            recipes_to_process: List of recipe names to process (e.g., ['basic_profile', 'retain_uid'])
+            recipe_folder: Path to the folder where the recipe file will be saved
+        
+        Returns:
+            str: Path to the generated recipe file
+        """
+        import csv
+        
+        input_standard_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "standard_tags_template.csv")
+        input_private_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "private_tags_template.csv")
+
+        # Map recipe names to column names in the CSV
+        recipe_column_map = {
+            'basic_profile': 'Basic Prof.',
+            'retain_uid': 'Rtn. UIDs Opt.',
+            'retain_device_id': 'Rtn. Dev. Id. Opt.',
+            'retain_institution_id': 'Rtn. Inst. Id. Opt.',
+            'retain_patient_chars': 'Rtn. Pat. Chars. Opt.',
+            'retain_long_full_dates': 'Rtn. Long. Full Dates Opt.',
+            'retain_long_modified_dates': 'Rtn. Long. Modif. Dates Opt.',
+            'clean_descriptors': 'Clean Desc. Opt.',
+            'clean_structured_content': 'Clean Struct. Cont. Opt.',
+            'clean_graphics': 'Clean Graph. Opt.'
+        }
+
+        if not os.path.exists(input_standard_template):
+            print(f"Error: Input file {input_standard_template} not found")
+            return None
+
+        if not os.path.exists(input_private_template):
+            print(f"Error: Input file {input_private_template} not found")
+            return None
+
+        # Create recipe folder if it doesn't exist
+        os.makedirs(recipe_folder, exist_ok=True)
+        
+        # Output recipe file path
+        output_file = os.path.join(recipe_folder, "deid.dicom.recipe")
+
+        with open(output_file, 'w') as outfile:
+            outfile.write("FORMAT dicom\n\n%header\n\n")
+            with open(input_standard_template, 'r') as csvfile:
+                reader = csv.DictReader(csvfile)
+                
+                for row in reader:
+                    tag = f"({row['Group']},{row['Element']})"
+                    
+                    name = row['Name']
+                    comment = f" # {name}" if name else ""
+                    vr = row['VR']
+                    # Collect actions from only the requested recipe columns
+                    actions = self._collect_actions_for_row(row, recipes_to_process, recipe_column_map)
+                    
+                    # Skip if no actions found
+                    if not actions:
+                        continue
+                    
+                    # Determine final action based on priority rules
+                    final_action = None
+                    
+                    # If any action is 'keep', final action is 'keep'
+                    if 'keep' in actions:
+                        final_action = 'keep'
+                    elif 'func:hash_increment_date' in actions:
+                        final_action = 'func:hash_increment_date'
+                    elif 'replace' in actions:
+                        final_action = 'replace'
+                    elif 'func:set_fixed_datetime' in actions:
+                        final_action = 'func:set_fixed_datetime'
+                    elif 'func:generate_hashuid' in actions:
+                        final_action = 'func:generate_hashuid'
+                    elif 'blank' in actions:
+                        final_action = 'blank'
+                    elif 'remove' in actions:
+                        final_action = 'remove'
+                    # Otherwise, take the first non-empty action from the priority order
+                    else:
+                        final_action = actions[0]
+                    
+                    # Write action based on the final determined action
+                    line = f"{comment}\n"
+                    outfile.write(line)
+                    if final_action == 'keep':
+                        line = f"KEEP {tag}\n"
+                    elif final_action == 'remove':
+                        line = f"REMOVE {tag}\n"
+                    elif final_action == 'blank':
+                        line = f"BLANK {tag}\n"
+                    elif final_action == 'replace':
+                        if  vr in ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR"]:
+                            line = f"REPLACE {tag} ANONYMIZED\n"
+                        elif vr == "UN":
+                            line = f"REPLACE {tag} b'Anonymized'\n"
+                        elif vr in ["DS", "IS", "FD", "FL", "SS", "US", "SL", "UL"]:
+                            line = f"REPLACE {tag} 0 # NEED to BE REVIEWED\n"
+                        elif vr == 'AS':
+                            line = f"REPLACE {tag} 030Y # NEED to BE REVIEWED\n"
+                        elif vr in ['SQ', 'OB']:
+                            line = f"#REPLACE {tag} NEED to BE REVIEWED\n"
+                    elif final_action == 'func:generate_hashuid':
+                        line = f"REPLACE {tag} func:generate_hashuid\n"
+                    elif final_action == 'func:set_fixed_datetime':
+                        line = f"REPLACE {tag} func:set_fixed_datetime\n"
+                    elif final_action == 'func:hash_increment_date':
+                        line = f"JITTER {tag} func:hash_increment_date\n"
+                    elif final_action == 'clean_manually':
+                        line = f"# REPLACE {tag} CLEANED NEEDS MANUAL REVIEW\n"
+                    elif final_action == 'manual_review':
+                        line = f"# REPLACE {tag} MANUAL REVIEW NEEDED\n"
+                    outfile.write(line)
+            
+            # Add PatientIdentityRemoved if basic_profile is in the recipe list
+            if 'basic_profile' in recipes_to_process:
+                outfile.write("ADD PatientIdentityRemoved YES\n")
+                if 'retain_long_full_dates' not in recipes_to_process and 'retain_long_modified_dates' not in recipes_to_process:
+                    outfile.write("ADD LongitudinalTemporalInformationModified REMOVED\n")
+            if 'retain_long_full_dates' in recipes_to_process:
+                outfile.write("ADD LongitudinalTemporalInformationModified UNMODIFIED\n")
+            elif 'retain_long_modified_dates' in recipes_to_process:
+                outfile.write("ADD LongitudinalTemporalInformationModified MODIFIED\n")
+            
+            if 'retain_safe_private_tags' in recipes_to_process:
+                with open(input_private_template, 'r') as privfile:
+                    privreader = csv.DictReader(privfile)
+                    for row in privreader:
+                        private_creator = row['Private Creator']
+                        group = row['Group']
+                        element = row['Element'][-2:]  # Last two hex digits
+                        name = row['Meaning']
+                        comment = f" # {name}" if name else ""
+                        line = f"{comment}\n"
+                        outfile.write(line)
+                        # For safe private tags, we keep them
+                        line = f"KEEP ({group},\"{private_creator}\",{element})\n"
+                        outfile.write(line)
+
+            # Add the final line to remove all other private tags
+            line = f"REMOVE ALL func:is_tag_private\n"
+            outfile.write(line)
+
+        print(f"Recipe generated: {output_file}")
+        return output_file
+
     def create_deid_recipe(self):
         """Create the deid recipe based on the recipes list.
         
@@ -878,10 +1051,18 @@ class LuwakAnonymizer:
             
         Supported Recipe Types:
             - 'deid.dicom': Built-in deid recipe (default)
-            - 'dicom_basic_profile': Uses deid.dicom.basic-profile + removes private tags
-            - 'retain_safe_private_tags': Combines safe-private-tags + remove-private-tags recipes  
-            - 'retain_uids': Uses UID retention recipe
-            - Custom recipes: Resolved as filename, relative path, or absolute path
+            - 'basic_profile': Basic DICOM anonymization profile
+            - 'retain_uid': Retain UIDs option
+            - 'retain_device_id': Retain device identification option
+            - 'retain_institution_id': Retain institution identification option
+            - 'retain_patient_chars': Retain patient characteristics option
+            - 'retain_long_full_dates': Retain longitudinal full dates option
+            - 'retain_long_modified_dates': Retain longitudinal modified dates option
+            - 'clean_descriptors': Clean descriptors option (to be checked)
+            - 'clean_structured_content': Clean structured content option (to be checked)
+            - 'clean_graphics': Clean graphics option (to be checked)
+            - 'retain_safe_private_tags': Retain safe private tags option 
+            Any final recipe will remove all other private tags not retained.
             
         Path Resolution:
             - Absolute paths: Used as-is
@@ -895,7 +1076,12 @@ class LuwakAnonymizer:
         recipe_paths = []
         config_dir = os.path.dirname(os.path.abspath(self.config_path))
         recipes_list = self.config.get('recipes')
-        recipes_folder = self.config.get('recipesFolder')
+        recipes_folder_config = self.config.get('recipesFolder')
+        output_directory = self.config.get('outputDeidentifiedFolder')
+        
+        # Create recipes subfolder within output directory
+        recipes_folder = os.path.join(output_directory, recipes_folder_config)
+        os.makedirs(recipes_folder, exist_ok=True)
 
         # Handle single string recipe by converting to list
         if isinstance(recipes_list, str):
@@ -906,27 +1092,16 @@ class LuwakAnonymizer:
                 recipes_to_process = [recipes_list]
         else:
             recipes_to_process = recipes_list
-
-        for recipe in recipes_to_process:
-            print(f"Processing recipe: {recipe}")
-            if recipe == 'dicom_basic_profile':
-                recipe_file = os.path.join(recipes_folder, 'deid.dicom.basic-profile')
-                recipe_paths.append(recipe_file)
-            elif recipe == 'retain_safe_private_tags':
-                recipe_paths.append(os.path.join(recipes_folder, 'deid.dicom.safe-private-tags'))
-                print("Using recipe to retain safe private tags and remove others", recipe_paths)
-            elif recipe == 'retain_uids':
-                recipe_file = os.path.join(recipes_folder, 'deid.dicom.retain-uids')
-                recipe_paths.append(recipe_file)
-            else:
-                if os.path.isabs(recipe):
-                    recipe_paths.append(recipe)
-                elif recipe.startswith('./') or recipe.startswith('../') or '/' in recipe:
-                    recipe_file = os.path.abspath(os.path.join(config_dir, recipe))
-                    recipe_paths.append(recipe_file)
-                else:
-                    recipe_file = os.path.join(recipes_folder, recipe)
-                    recipe_paths.append(recipe_file)
+        
+        # Generate the recipe file in the recipes subfolder
+        generated_recipe_file = self.make_recipe_file(recipes_to_process, recipes_folder)
+        
+        if generated_recipe_file and os.path.exists(generated_recipe_file):
+            recipe_paths.append(generated_recipe_file)
+            print(f"Using generated recipe file: {generated_recipe_file}")
+        else:
+            print("ERROR: Failed to generate recipe file")
+            return None
 
         missing_recipes = []
         for path in recipe_paths:
@@ -938,10 +1113,15 @@ class LuwakAnonymizer:
                 print(f"  - {missing}")
             print("Continuing with available recipes...")
 
-        if len(recipe_paths) > 1:
-            recipe = DeidRecipe(deid=recipe_paths)
+        # Add burned-in pixel recipe file to the recipe paths
+        burnedin_recipe_path = os.path.join(os.path.dirname(__file__), "data", "BurnedPixelLocation", "deid.dicom.burnedin-pixel-recipe")
+        if os.path.exists(burnedin_recipe_path):
+            recipe_paths.append(burnedin_recipe_path)
+            print(f"Added burned-in pixel recipe: {burnedin_recipe_path}")
         else:
-            recipe = DeidRecipe(deid=recipe_paths[0])
+            print(f"WARNING: Burned-in pixel recipe not found at: {burnedin_recipe_path}")
+        
+        recipe = DeidRecipe(deid=recipe_paths)
 
         print(f"DEBUG: Created recipe with paths: {recipe_paths}")
         print(f"DEBUG: Recipe content: {recipe}")

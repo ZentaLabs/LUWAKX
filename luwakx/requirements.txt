@@ -5,4 +5,4 @@ pandas
 pyarrow
 argparse
 jsonschema
-git+https://github.com/Simlomb/deid.git@enhversion
+git+https://github.com/ZentaLabs/deid.git@master
