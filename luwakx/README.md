@@ -168,10 +168,62 @@ result = anonymizer.anonymize()
 }
 ```
 
+## Logging
+
+LuwakX includes comprehensive logging functionality to track the anonymization process and troubleshoot issues.
+
+### Logging Configuration
+
+The logger automatically creates log files in the output directory structure:
+- Log files are saved to `{outputFolder}/recipes/luwak.log` by default
+- Centralized logging across all modules using the `luwak_logger` system
+- Configurable log levels and output destinations
+
+### Log Levels
+
+You can control logging verbosity using the `--log_level` command line option:
+
+```bash
+# Debug level (most verbose)
+python luwakx.py --config_path config.json --log_level DEBUG
+
+# Info level (default)
+python luwakx.py --config_path config.json --log_level INFO
+
+# Warning level
+python luwakx.py --config_path config.json --log_level WARNING
+
+# Error level (least verbose)
+python luwakx.py --config_path config.json --log_level ERROR
+```
+
+### Programmatic Logging
+
+When using the programmatic interface, the logger is automatically configured based on your configuration:
+
+```python
+from anonymize import LuwakAnonymizer
+
+# Logger is automatically set up during initialization
+anonymizer = LuwakAnonymizer("/path/to/config.json")
+
+# Log file will be created at {outputFolder}/recipes/luwak.log
+result = anonymizer.anonymize()
+```
+
+### Log Content
+
+The logs include:
+- Anonymization process progress and status
+- Recipe loading and application details
+- File processing information and statistics
+- Error messages and troubleshooting information
+
 ## Features
 
 - **Config-driven architecture**: Use JSON files for flexible configuration
 - **Multiple recipe support**: Apply multiple anonymization recipes simultaneously
+- **Comprehensive logging**: Detailed process tracking with configurable log levels
 - **Path resolution**: Supports both relative and absolute paths with `{shared_config}` placeholders
 - **Hierarchical output**: Preserve or flatten directory structures
 - **Performance optimized**: Efficient processing of large DICOM datasets

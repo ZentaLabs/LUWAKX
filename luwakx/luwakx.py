@@ -3,7 +3,8 @@
 import os
 import argparse
 import sys
-from pathlib import Path
+import json
+from luwak_logger import setup_logger, get_logger
 from anonymize import LuwakAnonymizer
 
 def main():
@@ -20,21 +21,82 @@ def main():
         action="store_true",
         help="Show what would be processed without actually processing"
     )
+    parser.add_argument(
+        "--log-level",
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        default='INFO',
+        help="Set the logging level (default: INFO)"
+    )
+    parser.add_argument(
+        "--no-console",
+        action="store_true",
+        help="Disable console logging (only log to file)"
+    )
     
     args = parser.parse_args()
     
-    # Validate config file exists
+    # Validate config file exists first
     if not os.path.exists(args.config_path):
-        print(f"ERROR: Configuration file not found: {args.config_path}")
+        print(f"Error: Configuration file not found: {args.config_path}")
         sys.exit(1)
     
+    # Load config to determine log file path
+    try:
+        with open(args.config_path, 'r') as f:
+            config = json.load(f)
+    except Exception as e:
+        print(f"Error: Failed to load configuration file: {e}")
+        sys.exit(1)
+    
+    # Resolve log file path from config
+    config_dir = os.path.dirname(os.path.abspath(args.config_path))
+    output_folder = config.get('outputDeidentifiedFolder', 'output')
+    recipe_folder = config.get('recipesFolder', 'recipes')
+    
+    # Resolve paths relative to config file
+    if not os.path.isabs(output_folder):
+        if output_folder.startswith('~'):
+            output_folder = os.path.expanduser(output_folder)
+        else:
+            output_folder = os.path.join(config_dir, output_folder)
+    
+    if not os.path.isabs(recipe_folder):
+        recipe_folder = os.path.join(output_folder, recipe_folder)
+    
+    # Create log file path
+    os.makedirs(recipe_folder, exist_ok=True)
+    log_file_path = os.path.join(recipe_folder, 'luwak.log')
+    
+    # Configure logging with config-based file path and args-based level
+    setup_logger(
+        log_level=args.log_level,
+        log_file=log_file_path,
+        console_output=not args.no_console
+    )
+    
+    # Get logger for this module
+    logger = get_logger(__name__)
+    
+    # Log the arguments being used
+    logger.info("=" * 50)
+    logger.info("LUWAK DICOM Anonymizer Started")
+    logger.info("=" * 50)
+    logger.info("Command-line arguments:")
+    logger.info(f"  Config file: {args.config_path}")
+    logger.info(f"  Log level: {args.log_level}")
+    logger.info(f"  Console output: {not args.no_console}")
+    logger.info(f"  Dry run: {args.dry_run}")
+    logger.info(f"  Log file: {log_file_path}")
+    logger.info("-" * 50)
+    
+    logger.info(f"Using configuration file: {args.config_path}")
+    
     if args.dry_run:
-        print("DRY RUN MODE - Configuration will be loaded but no files will be processed")
-        # Create anonymizer to load and validate config
+        logger.info("DRY RUN MODE - Configuration will be loaded but no files will be processed")
+        # Import here to avoid circular imports
         anonymizer = LuwakAnonymizer(args.config_path)
-        print("\nDry run completed. Configuration is valid.")
+        logger.info("Dry run completed. Configuration is valid.")
     else:
-        # Create and run anonymizer
         anonymizer = LuwakAnonymizer(args.config_path)
         anonymizer.anonymize()
 

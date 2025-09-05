@@ -43,12 +43,6 @@
       "default": "myproject2025",
       "examples": ["myproject2025"]
     },
-    "outputFolderHierarchy": {
-      "type": "string",
-      "description": "How to structure output folders. E.g., 'copy_from_input' to mirror input structure.",
-      "default": "copy_from_input",
-      "examples": ["copy_from_input"]
-    },
     "maxDateShiftDays": {
       "type": "integer",
       "description": "Maximum number of days for date shifting (default 1095).",
@@ -67,6 +61,13 @@
       },
       "default": ["(7FE0,0010)"],
       "examples": [[2145386512, "7FE0,0010", "(7FE0,0010)"]]
+    },
+    "logLevel": {
+      "type": "string",
+      "description": "Logging level for the anonymization process.",
+      "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+      "default": "INFO",
+      "examples": ["DEBUG", "INFO", "WARNING"]
     }
   },
   "required": [

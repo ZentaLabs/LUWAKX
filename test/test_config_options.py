@@ -20,7 +20,6 @@ class TestConfigOptions(unittest.TestCase):
             "recipes": ["basic_profile"],
             "maxDateShiftDays": 1095,
             "excludedTagsFromParquet": ["(7FE0,0010)"],
-            "outputFolderHierarchy": "copy_from_input",
             "projectHashRoot": "testhashroot"
         }
         self.tempfiles = []
@@ -61,7 +60,7 @@ class TestConfigOptions(unittest.TestCase):
     def test_recipes_folder(self):
         config_path = self.make_config({"recipesFolder": "./test_recipes"})
         anonymizer = LuwakAnonymizer(config_path)
-        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "test_recipes"))
+        expected = os.path.abspath(os.path.join(anonymizer.config['outputDeidentifiedFolder'], "test_recipes"))        
         self.assertEqual(anonymizer.config["recipesFolder"], expected)
 
     def test_recipes(self):
@@ -79,11 +78,6 @@ class TestConfigOptions(unittest.TestCase):
         config_path = self.make_config({"excludedTagsFromParquet": ["(0010,0010)"]})
         anonymizer = LuwakAnonymizer(config_path)
         self.assertIn((0x0010 << 16) | 0x0010, anonymizer.excluded_tags_from_parquet)
-
-    def test_output_folder_hierarchy(self):
-        config_path = self.make_config({"outputFolderHierarchy": "flat"})
-        anonymizer = LuwakAnonymizer(config_path)
-        self.assertEqual(anonymizer.config["outputFolderHierarchy"], "flat")
 
     def test_project_hash_root(self):
         config_path = self.make_config({"projectHashRoot": "mytestroot"})

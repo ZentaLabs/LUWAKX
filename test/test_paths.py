@@ -3,6 +3,9 @@
 import unittest
 import os
 import sys
+# Add luwakx directory to Python path for imports
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
+from luwak_logger import setup_logger, get_logger
 
 class TestPaths(unittest.TestCase):
     """Test that all paths are correctly resolved when test is moved to test directory."""
@@ -13,49 +16,60 @@ class TestPaths(unittest.TestCase):
         
         # Test the paths that would be used in the test (from test directory)
         test_dir = os.path.dirname(__file__)
-        print(f"Test directory: {test_dir}")
+        # print(f"Test directory: {test_dir}")
 
         # Path to parent directory (luwak)
         parent_dir = os.path.dirname(test_dir)
-        print(f"Parent directory: {parent_dir}")
-        self.assertTrue(os.path.exists(parent_dir), "Parent directory should exist")
+        # print(f"Parent directory: {parent_dir}")
 
         # Path to luwakx directory
         luwakx_dir = os.path.join(parent_dir, "luwakx")
-        print(f"luwakx directory: {luwakx_dir}")
-        self.assertTrue(os.path.exists(luwakx_dir), "luwakx directory should exist")
+        # print(f"luwakx directory: {luwakx_dir}")
 
         # Path to anonymize.py
         anonymize_py = os.path.join(luwakx_dir, "anonymize.py")
-        print(f"anonymize.py path: {anonymize_py}")
-        self.assertTrue(os.path.exists(anonymize_py), "anonymize.py should exist")
+        # print(f"anonymize.py path: {anonymize_py}")
 
         # Path to data directory containing recipe files
         data_dir = os.path.join(luwakx_dir, "data", "BurnedPixelLocation")
-        print(f"data directory: {data_dir}")
+        # print(f"data directory: {data_dir}")
+
+        # Path to TagsArchive directory  
+        tags_archive_dir = os.path.join(luwakx_dir, "data", "TagsArchive")
+        # print(f"TagsArchive directory: {tags_archive_dir}")
+
+        # Path to luwakx.py (using the test's approach)
+        luwakx_py = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "luwakx.py")
+        # print(f"luwakx.py path: {luwakx_py}")
+
+        # Setup logger for this test
+        log_dir = os.path.join(parent_dir, "test", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "test_paths.log")
+        setup_logger(log_file, console_output=False)
+        logger = get_logger("test_paths")
+        # Only resolve and log the logger file path, do not assert existence
+
+        self.assertTrue(os.path.exists(parent_dir), "Parent directory should exist")
+        self.assertTrue(os.path.exists(luwakx_dir), "luwakx directory should exist")
+        self.assertTrue(os.path.exists(anonymize_py), "anonymize.py should exist")
         self.assertTrue(os.path.exists(data_dir), "data/BurnedPixelLocation directory should exist")
         
         # Verify data directory contains expected recipe files
         if os.path.exists(data_dir):
             data_files = os.listdir(data_dir)
-            print(f"Files in data directory: {data_files}")
+            # print(f"Files in data directory: {data_files}")
             self.assertIn('deid.dicom.burnedin-pixel-recipe', data_files, "burnedin-pixel-recipe should exist")
 
-        # Path to TagsArchive directory  
-        tags_archive_dir = os.path.join(luwakx_dir, "data", "TagsArchive")
-        print(f"TagsArchive directory: {tags_archive_dir}")
         self.assertTrue(os.path.exists(tags_archive_dir), "TagsArchive directory should exist")
         
         # Verify TagsArchive contains template files
         if os.path.exists(tags_archive_dir):
             archive_files = os.listdir(tags_archive_dir)
-            print(f"Files in TagsArchive: {archive_files}")
+            # print(f"Files in TagsArchive: {archive_files}")
             self.assertIn('private_tags_template.csv', archive_files, "private_tags_template.csv should exist")
             self.assertIn('standard_tags_template.csv', archive_files, "standard_tags_template.csv should exist")
 
-        # Path to luwakx.py (using the test's approach)
-        luwakx_py = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "luwakx.py")
-        print(f"luwakx.py path: {luwakx_py}")
         self.assertTrue(os.path.exists(luwakx_py), "luwakx.py should exist")
 
     def test_import_resolution(self):
@@ -66,7 +80,7 @@ class TestPaths(unittest.TestCase):
         sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
         try:
             from anonymize import LuwakAnonymizer
-            print("Import successful: LuwakAnonymizer imported")
+            # print("Import successful: LuwakAnonymizer imported")
             self.assertTrue(True, "LuwakAnonymizer should be importable")
         except ImportError as e:
             self.fail(f"Import failed: {e}")
@@ -76,7 +90,7 @@ class TestPaths(unittest.TestCase):
         print("Testing working directory independence")
         
         current_cwd = os.getcwd()
-        print(f"Current working directory: {current_cwd}")
+        # print(f"Current working directory: {current_cwd}")
         
         # Test that all paths are absolute and don't depend on cwd
         luwakx_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx")

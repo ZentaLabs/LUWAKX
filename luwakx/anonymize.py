@@ -1,5 +1,3 @@
-print("start")
-
 #!/usr/bin/env python
 
 import subprocess
@@ -13,25 +11,31 @@ import hashlib
 import csv
 import pydicom
 import pandas as pd
+import logging
 from datetime import datetime
 from pydicom.datadict import add_private_dict_entry
 
+# Import the centralized logger
+from luwak_logger import get_logger, setup_logger
+
 def setup_deid_repo():
+    logger = get_logger('setup_deid_repo')
+    
     repo_url = "https://github.com/ZentaLabs/deid.git"
     branch = "master"
     repo_dir = os.path.expanduser("~/deid")  # Set repo_dir to the home directory
 
     # Check if the repository is already cloned
     if not os.path.exists(repo_dir):
-        print("Cloning deid repository...")
+        logger.info("Cloning deid repository...")
         subprocess.check_call(["git", "clone", "--branch", branch, repo_url, repo_dir])
     else:
         # Check if the repository is already up-to-date
-        print("Checking for updates in deid repository...")
+        logger.info("Checking for updates in deid repository...")
         subprocess.check_call(["git", "-C", repo_dir, "fetch"])
         status = subprocess.check_output(["git", "-C", repo_dir, "status", "--porcelain", "-b"])
         if b"behind" in status:
-            print("Updating deid repository...")
+            logger.info("Updating deid repository...")
             subprocess.check_call(["git", "-C", repo_dir, "pull"])
 
     if repo_dir not in sys.path:
@@ -40,7 +44,7 @@ def setup_deid_repo():
     try:
         import deid
     except ImportError:
-        print("Installing deid repository...")
+        logger.info("Installing deid repository...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", repo_dir])
 
 # Call the setup function before importing deid
@@ -60,13 +64,16 @@ def tag_str_to_int(group, element):
     Returns:
         int: Integer representation of the DICOM tag.
     """
+    logger = get_logger('tag_str_to_int')
+    
     try:
         group = int(group, 16)
         if str(element).startswith('xx'):
             element_int = int(str(element)[2:], 16)
         else:
             element_int = int(element, 16)
-    except ValueError:
+    except ValueError as e:
+        logger.error(f"Invalid tag format: ({group},{element}) - {e}")
         raise ValueError(f"Invalid tag format: ({group},{element})")
     return (group << 16) | element_int
 
@@ -104,6 +111,10 @@ def register_private_tags_from_csv(csv_path):
     Returns:
         None
     """
+    logger = get_logger('register_private_tags')
+    logger.debug(f"Loading private tags from: {csv_path}")
+    
+    tag_count = 0
     with open(csv_path, newline='') as csvfile:
         reader = csv.reader(csvfile)
         header = next(reader)  # Skip header if present
@@ -111,11 +122,14 @@ def register_private_tags_from_csv(csv_path):
             group, element, private_creator, vr, vm, description = row[:6]
             try:
                 tag = tag_str_to_int(group, element)
+                description = name_to_keyword(description)
+                add_private_dict_entry(private_creator, tag, vr, description, vm)
+                tag_count += 1
             except Exception as e:
-                print(f"Skipping row {row}: {e}")
+                logger.warning(f"Skipping row {row}: {e}")
                 continue
-            description = name_to_keyword(description)
-            add_private_dict_entry(private_creator, tag, vr, description, vm)
+    
+    logger.info(f"Successfully registered {tag_count} private DICOM tags")
 
 
 class ConfigurationError(Exception):
@@ -151,21 +165,80 @@ class LuwakAnonymizer:
     def __init__(self, config_path):
         """Initialize the anonymizer with configuration from JSON file."""
         self.config_path = config_path
+        
+        # Check if logger is already configured, if not set it up using this config file
+        temp_logger = get_logger('anonymize_init')
+        if not temp_logger.handlers and not logging.getLogger().handlers:
+            self._setup_logger_if_needed()
+        
+        # Get logger for this module
+        self.logger = get_logger(__name__)
+        
+        self.logger.info("Initializing Luwak Anonymizer...")
+        self.logger.debug(f"Configuration file: {config_path}")
+        
         try:
             self.load_config()
             self.setup_paths()
         except ConfigurationError as e:
-            print(f"ERROR: {e}")
+            self.logger.error(f"Configuration error: {e}")
             sys.exit(1)
+            
         # Initialize mapping storage for each file
         self.current_file_mappings = {}
         # Initialize metadata storage for Parquet export
         self.dicom_metadata = []
         # Initialize single date shift for entire project run
+        
+        self.logger.info("Registering private tags from CSV...")
         # Register private tags from CSV
         register_private_tags_from_csv(
             os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "private_tags_template.csv")
         )
+        
+        self.logger.info("Luwak Anonymizer initialization completed")
+
+    def _setup_logger_if_needed(self):
+        """Set up logger if not already configured, using config file information."""
+        
+        try:
+            # Load config to determine log file path (minimal loading, just for paths)
+            with open(self.config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Resolve log file path from config (same logic as luwakx.py)
+            config_dir = os.path.dirname(os.path.abspath(self.config_path))
+            output_folder = config.get('outputDeidentifiedFolder', 'output')
+            recipe_folder = config.get('recipesFolder', 'recipes')
+            
+            # Resolve paths relative to config file
+            if not os.path.isabs(output_folder):
+                if output_folder.startswith('~'):
+                    output_folder = os.path.expanduser(output_folder)
+                else:
+                    output_folder = os.path.join(config_dir, output_folder)
+            
+            if not os.path.isabs(recipe_folder):
+                recipe_folder = os.path.join(output_folder, recipe_folder)
+            
+            # Create log file path
+            os.makedirs(recipe_folder, exist_ok=True)
+            log_file_path = os.path.join(recipe_folder, 'luwak.log')
+            
+            # Configure logging with same settings as luwakx.py
+            setup_logger(
+                log_level='INFO',
+                log_file=log_file_path,
+                console_output=False
+            )
+
+        except Exception as e:
+            # Fallback to basic logging if config loading fails
+            setup_logger(
+                log_level='INFO',
+                log_file=None,
+                console_output=False
+            )
 
     def is_tag_private(self, dicom, value, field, item):
         """Check if a DICOM tag is private.
@@ -219,7 +292,7 @@ class LuwakAnonymizer:
             return -project_date_shift
             
         except Exception as e:
-            print(f"Error in date shift generation: {e}")
+            self.logger.error(f"Error in date shift generation: {e}")
             return 0  # Return 0 days shift on error
     
     def set_fixed_datetime(self, item, value, field, dicom):
@@ -259,7 +332,7 @@ class LuwakAnonymizer:
                 return original_datetime_value if original_datetime_value is not None else ""
                 
         except Exception as e:
-            print(f"Error in fixed datetime generation: {e}")
+            self.logger.error(f"Error in fixed datetime generation: {e}")
             return ""
     
 
@@ -277,7 +350,7 @@ class LuwakAnonymizer:
             else:
                 original_uid = str(value) if value else "unknown"
         except Exception as e:
-            print(f"  ERROR extracting original UID: {e}")
+            self.logger.error(f"  ERROR extracting original UID: {e}")
             original_uid = str(value) if value else "unknown"
 
         # Extract file path from the dicom dataset filename attribute
@@ -343,7 +416,7 @@ class LuwakAnonymizer:
         for field in sorted_fields:
             fieldnames.extend([f'{field}_original', f'{field}_anonymized'])
 
-        print(f"Dynamically detected {len(sorted_fields)} modified fields: {sorted_fields}")
+        self.logger.debug(f"Dynamically detected {len(sorted_fields)} modified fields: {sorted_fields}")
 
         # Open file in append mode
         with open(mapping_file, 'a', newline='') as csvfile:
@@ -366,6 +439,7 @@ class LuwakAnonymizer:
                     row['PatientID'] = str(getattr(ds, 'PatientID', ''))
                     row['PatientBirthDate'] = str(getattr(ds, 'PatientBirthDate', ''))
                 except Exception as e:
+                    self.logger.warning(f"Could not read patient info from {file_path}: {e}")
                     row['PatientName'] = ''
                     row['PatientID'] = ''
                     row['PatientBirthDate'] = ''
@@ -382,8 +456,8 @@ class LuwakAnonymizer:
 
                 writer.writerow(row)
 
-        print(f"\nUID mappings saved for {len(self.current_file_mappings)} files to: {mapping_file}")
-        print(f"CSV contains mappings for {len(sorted_fields)} different field types")
+        self.logger.info(f"UID mappings saved for {len(self.current_file_mappings)} files to: {mapping_file}")
+        self.logger.info(f"CSV contains mappings for {len(sorted_fields)} different field types")
 
         # Clear the mappings for next run
         self.current_file_mappings = {}
@@ -414,6 +488,7 @@ class LuwakAnonymizer:
             - Prints warning if entire file extraction fails
         """
         try:
+            self.logger.debug(f"Extracting metadata from: {anonymized_file_path}")
             
             # Read the anonymized DICOM file
             ds = pydicom.dcmread(anonymized_file_path, force=True)
@@ -446,7 +521,7 @@ class LuwakAnonymizer:
                             # If name is unknown, use tag as fallback
                             keyword = f'{private_creator}_{elem.tag.group:04X}xx{elem.tag.element & 0xFF:02X}'
                     except Exception as e:
-                        print(f"Skipping private tag ({elem.tag}): {e}")
+                        self.logger.warning(f"Skipping private tag ({elem.tag}): {e}")
                         continue
                 else:
                     # Get the keyword name for this DICOM element
@@ -525,14 +600,14 @@ class LuwakAnonymizer:
                     
                 except Exception as e:
                     # If there's any issue with this element, skip it
-                    print(f"Skipping element {keyword} ({elem.tag}): {e}")
+                    self.logger.warning(f"Skipping element {keyword} ({elem.tag}): {e}")
                     continue
             
             # Add to metadata collection
             self.dicom_metadata.append(metadata)
             
         except Exception as e:
-            print(f"Warning: Could not extract metadata from {dicom_file}: {e}")
+            self.logger.warning(f"Could not extract metadata from {dicom_file}: {e}")
     
     def export_metadata_to_parquet(self):
         """Export all collected metadata to Parquet file with dynamic schema based on retained tags.
@@ -568,14 +643,14 @@ class LuwakAnonymizer:
         try:
             
             if not self.dicom_metadata:
-                print("No metadata to export")
+                self.logger.info("No metadata to export")
                 return
             
             # Create DataFrame from dynamic metadata
             df = pd.DataFrame(self.dicom_metadata)
-            
-            print(f"Dynamic Parquet schema detected {len(df.columns)} columns from retained DICOM tags")
-            
+
+            self.logger.debug(f"Dynamic Parquet schema detected {len(df.columns)} columns from retained DICOM tags")
+
             # Optimize data types for better Parquet performance
             # We'll infer types dynamically since we don't know which columns will exist
             for col in df.columns:
@@ -641,12 +716,12 @@ class LuwakAnonymizer:
                 use_dictionary=True
             )
             
-            print(f"Metadata exported to Parquet: {parquet_file}")
-            print(f"Exported {len(df)} DICOM metadata records with {len(df.columns)} retained tag columns")
+            self.logger.info(f"Metadata exported to Parquet: {parquet_file}")
+            self.logger.info(f"Exported {len(df)} DICOM metadata records with {len(df.columns)} retained tag columns")
             
             # Print schema summary for verification
-            print(f"\nDynamic Parquet Schema Summary:")
-            print(f"- Total columns: {len(df.columns)}")
+            self.logger.debug("Dynamic Parquet Schema Summary:")
+            self.logger.debug(f"- Total columns: {len(df.columns)}")
             
             # Clear metadata for next run
             self.dicom_metadata = []
@@ -654,9 +729,9 @@ class LuwakAnonymizer:
             return parquet_file
             
         except ImportError:
-            print("Warning: pandas and pyarrow required for Parquet export. Install with: pip install pandas pyarrow")
+            self.logger.warning("pandas and pyarrow required for Parquet export. Install with: pip install pandas pyarrow")
         except Exception as e:
-            print(f"Error exporting metadata to Parquet: {e}")
+            self.logger.error(f"Error exporting metadata to Parquet: {e}")
     
     def load_config(self):
         """Load and parse the JSON configuration file.
@@ -763,8 +838,8 @@ class LuwakAnonymizer:
                     except Exception:
                         pass
 
-        print(f"\nConfiguration loaded from: {self.config_path}")
-        print(f"  Config keys: {list(self.config.keys())}")
+        self.logger.info(f"Configuration loaded from: {self.config_path}")
+        self.logger.debug(f"Config keys: {list(self.config.keys())}")
 
     def resolve_path(self, path, is_output=False):
         """Resolve a path relative to the config file directory."""
@@ -810,7 +885,7 @@ class LuwakAnonymizer:
         """
         # Get config directory for resolving relative paths
         config_dir = os.path.dirname(os.path.abspath(self.config_path))
-        print(f"Config directory (base for relative paths): {config_dir}")
+        self.logger.debug(f"Config directory (base for relative paths): {config_dir}")
 
         # Use config keys
         input_folder = self.config.get('inputFolder')
@@ -832,30 +907,37 @@ class LuwakAnonymizer:
         self.config['inputFolder'] = input_folder
         self.config['outputDeidentifiedFolder'] = output_directory
         self.config['outputPrivateMappingFolder'] = private_map_folder
+        # Recipes folder should be a subfolder inside the output directory
+        recipes_folder = os.path.join(output_directory, os.path.basename(recipes_folder))
         self.config['recipesFolder'] = recipes_folder
+        os.makedirs(recipes_folder, exist_ok=True)
 
         # Create output directories
         os.makedirs(output_directory, exist_ok=True)
         os.makedirs(private_map_folder, exist_ok=True)
 
-        print(f"\nFinal paths:")
-        print(f"  Input folder: {input_folder}")
-        print(f"  Output directory: {output_directory}")
-        print(f"  Private mapping folder: {private_map_folder}")
-        print(f"  Recipes folder: {recipes_folder}")
+        self.logger.info("Final paths:")
+        self.logger.info(f"  Input folder: {input_folder}")
+        self.logger.info(f"  Output directory: {output_directory}")
+        self.logger.info(f"  Private mapping folder: {private_map_folder}")
+        self.logger.info(f"  Recipes folder: {recipes_folder}")
+        
+        # Log configuration info
+        self.logger.info(f"Configuration loaded from: {self.config_path}")
+        self.logger.debug(f"  Config keys: {list(self.config.keys())}")
 
         # Validate that input and recipes folders exist
         if not os.path.exists(input_folder):
-            print(f"WARNING: Input folder does not exist: {input_folder}")
+            self.logger.warning(f"Input folder does not exist: {input_folder}")
         if not os.path.exists(recipes_folder):
-            print(f"WARNING: Recipes folder does not exist: {recipes_folder}")
-            print(f"  Make sure recipe files are available at this location or adjust the config.")
+            self.logger.warning(f"Recipes folder does not exist: {recipes_folder}")
+            self.logger.warning("  Make sure recipe files are available at this location or adjust the config.")
     
     def get_dicom_files(self):
         """Get all DICOM files from the input folder (using self.config)."""
         input_folder = self.config.get('inputFolder')
         if not os.path.exists(input_folder):
-            print(f"ERROR: Input folder does not exist: {input_folder}")
+            self.logger.error(f"Input folder does not exist: {input_folder}")
             sys.exit(1)
         dicom_files = []
         if os.path.isfile(input_folder):
@@ -864,7 +946,7 @@ class LuwakAnonymizer:
             for root, dirs, files in os.walk(input_folder):
                 for file in files:
                     dicom_files.append(os.path.join(root, file))
-        print(f"Found {len(dicom_files)} files to process")
+        self.logger.info(f"Found {len(dicom_files)} files to process")
         return dicom_files
     
     def _collect_actions_for_row(self, row, recipes_to_process, recipe_column_map):
@@ -902,8 +984,9 @@ class LuwakAnonymizer:
         
         Returns:
             str: Path to the generated recipe file
-        """
-        import csv
+        """        
+        self.logger.info(f"Generating recipe file for profiles: {recipes_to_process}")
+        self.logger.debug(f"Recipe output folder: {recipe_folder}")
         
         input_standard_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "standard_tags_template.csv")
         input_private_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "private_tags_template.csv")
@@ -923,11 +1006,11 @@ class LuwakAnonymizer:
         }
 
         if not os.path.exists(input_standard_template):
-            print(f"Error: Input file {input_standard_template} not found")
+            self.logger.error(f"Input file {input_standard_template} not found")
             return None
 
         if not os.path.exists(input_private_template):
-            print(f"Error: Input file {input_private_template} not found")
+            self.logger.error(f"Input file {input_private_template} not found")
             return None
 
         # Create recipe folder if it doesn't exist
@@ -1037,7 +1120,7 @@ class LuwakAnonymizer:
             line = f"REMOVE ALL func:is_tag_private\n"
             outfile.write(line)
 
-        print(f"Recipe generated: {output_file}")
+        self.logger.info(f"Recipe generated: {output_file}")
         return output_file
 
     def create_deid_recipe(self):
@@ -1074,57 +1157,47 @@ class LuwakAnonymizer:
             - Invalid recipe types: Treated as custom recipe filenames
         """
         recipe_paths = []
-        config_dir = os.path.dirname(os.path.abspath(self.config_path))
         recipes_list = self.config.get('recipes')
-        recipes_folder_config = self.config.get('recipesFolder')
-        output_directory = self.config.get('outputDeidentifiedFolder')
-        
-        # Create recipes subfolder within output directory
-        recipes_folder = os.path.join(output_directory, recipes_folder_config)
-        os.makedirs(recipes_folder, exist_ok=True)
+        recipes_folder = self.config.get('recipesFolder')
+        # Use the resolved recipes folder from setup_paths
+        # No need to create or join paths here
 
         # Handle single string recipe by converting to list
         if isinstance(recipes_list, str):
             if recipes_list == 'deid.dicom':
-                print("Using built-in deid.dicom recipe")
+                self.logger.info("Using built-in deid.dicom recipe")
                 return DeidRecipe()
             else:
                 recipes_to_process = [recipes_list]
         else:
             recipes_to_process = recipes_list
-        
-        # Generate the recipe file in the recipes subfolder
+        # Generate the recipe file in the recipes folder
         generated_recipe_file = self.make_recipe_file(recipes_to_process, recipes_folder)
-        
         if generated_recipe_file and os.path.exists(generated_recipe_file):
             recipe_paths.append(generated_recipe_file)
-            print(f"Using generated recipe file: {generated_recipe_file}")
+            self.logger.info(f"Using generated recipe file: {generated_recipe_file}")
         else:
-            print("ERROR: Failed to generate recipe file")
+            self.logger.error("Failed to generate recipe file")
             return None
-
         missing_recipes = []
         for path in recipe_paths:
             if path != 'deid.dicom' and not os.path.exists(path):
                 missing_recipes.append(path)
         if missing_recipes:
-            print(f"WARNING: The following recipe files are missing:")
+            self.logger.warning("The following recipe files are missing:")
             for missing in missing_recipes:
-                print(f"  - {missing}")
-            print("Continuing with available recipes...")
-
+                self.logger.warning(f"  - {missing}")
+            self.logger.warning("Continuing with available recipes...")
         # Add burned-in pixel recipe file to the recipe paths
         burnedin_recipe_path = os.path.join(os.path.dirname(__file__), "data", "BurnedPixelLocation", "deid.dicom.burnedin-pixel-recipe")
         if os.path.exists(burnedin_recipe_path):
             recipe_paths.append(burnedin_recipe_path)
-            print(f"Added burned-in pixel recipe: {burnedin_recipe_path}")
+            self.logger.info(f"Added burned-in pixel recipe: {burnedin_recipe_path}")
         else:
-            print(f"WARNING: Burned-in pixel recipe not found at: {burnedin_recipe_path}")
-        
+            self.logger.warning(f"Burned-in pixel recipe not found at: {burnedin_recipe_path}")
         recipe = DeidRecipe(deid=recipe_paths)
-
-        print(f"DEBUG: Created recipe with paths: {recipe_paths}")
-        print(f"DEBUG: Recipe content: {recipe}")
+        self.logger.debug(f"Created recipe with paths: {recipe_paths}")
+        self.logger.debug(f"Recipe content: {recipe}")
         return recipe
     
     def anonymize(self):
@@ -1161,34 +1234,33 @@ class LuwakAnonymizer:
             - uid_mappings.csv: UID mapping table for re-identification
             - metadata.parquet: Structured metadata for analysis
         """
-        print("\n" + "="*50)
-        print("Starting DICOM anonymization process...")
-        print("="*50)
+        self.logger.info("=" * 50)
+        self.logger.info("Starting DICOM anonymization process...")
+        self.logger.info("=" * 50)
         
         # Get DICOM files
         dicom_files = self.get_dicom_files()
         
         if not dicom_files:
-            print("No files found to process")
+            self.logger.warning("No files found to process")
             return
         
         # Get identifiers
-        print("Getting DICOM identifiers...")
+        self.logger.info("Getting DICOM identifiers...")
         items = get_identifiers(dicom_files)
         
         # Create recipe
-        print("Creating anonymization recipe...")
+        self.logger.info("Creating anonymization recipe...")
         recipe = self.create_deid_recipe()
         for item in items:
             items[item]["is_tag_private"] = self.is_tag_private
-            #print(f'items[{item}]["is_tag_private"]:', items[item]["is_tag_private"])
             items[item]["generate_hashuid"] = self.generate_hashuid
             items[item]["hash_increment_date"] = self.hash_increment_date
             items[item]["set_fixed_datetime"] = self.set_fixed_datetime
 
         output_directory = self.config.get('outputDeidentifiedFolder')
         # Perform anonymization
-        print("Performing anonymization...")
+        self.logger.info("Performing anonymization...")
         parsed_files = replace_identifiers(
             dicom_files=dicom_files, 
             deid=recipe, 
@@ -1202,7 +1274,7 @@ class LuwakAnonymizer:
         )
         
         # Extract metadata from anonymized files for Parquet export
-        print("Extracting metadata for Parquet export...")
+        self.logger.info("Extracting metadata for Parquet export...")
         for original_file in dicom_files:
             # Find corresponding anonymized file
             original_basename = os.path.basename(original_file)
@@ -1211,9 +1283,9 @@ class LuwakAnonymizer:
             if os.path.exists(anonymized_file):
                 self.extract_dicom_metadata(original_file, anonymized_file)
         
-        print(f"\nAnonymization completed!")
-        print(f"Processed {len(parsed_files)} files")
-        print(f"Output saved to: {output_directory}")
+        self.logger.info("Anonymization completed!")
+        self.logger.info(f"Processed {len(parsed_files)} files")
+        self.logger.info(f"Output saved to: {output_directory}")
         
         # Save all UID mappings to CSV after processing is complete
         if self.current_file_mappings:
@@ -1223,12 +1295,21 @@ class LuwakAnonymizer:
         if self.dicom_metadata:
             self.export_metadata_to_parquet()
         
+        self.logger.info("=" * 50)
+        self.logger.info("DICOM anonymization process completed successfully!")
+        self.logger.info("=" * 50)
+        
         return parsed_files
 
 
 if __name__ == "__main__":
     # Simple test with default config
-    anonymizer = LuwakAnonymizer("data/luwak-config.json")
-    anonymizer.anonymize()
-
-print("end of anonymization action")
+    logger = get_logger('anonymize_main')
+    logger.info("Running anonymize.py in standalone mode")
+    
+    try:
+        anonymizer = LuwakAnonymizer("data/luwak-config.json")
+        anonymizer.anonymize()
+    except Exception as e:
+        logger.error(f"Standalone execution failed: {e}")
+        raise

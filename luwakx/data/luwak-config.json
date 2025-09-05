@@ -6,6 +6,5 @@
   "recipes": ["basic_profile", "retain_safe_private_tags", "retain_uids"],
   "maxDateShiftDays": 1095,
   "excludedTagsFromParquet":  ["(7FE0,0010)"],
-  "outputFolderHierarchy": "copy_from_input",
-   "projectHashRoot": "7f4fsui293asdf"
+  "projectHashRoot": "7f4fsui293asdf"
 }

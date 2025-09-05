@@ -13,6 +13,7 @@ import sys
 # Add luwakx directory to Python path for imports
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
 from anonymize import LuwakAnonymizer
+from luwak_logger import setup_logger, get_logger
 
 class TestAnonymizeScript(unittest.TestCase):
 
@@ -26,7 +27,6 @@ class TestAnonymizeScript(unittest.TestCase):
 
         # Check if the test data directory exists
         if not os.path.exists(cls.test_data_dir):
-            print("Test data directory not found. Downloading and extracting test data...")
 
             # URL of the test data archive
             test_data_url = "https://github.com/Simlomb/Test-data-anonymization/releases/download/0.0.1-dicom-files-test/test-dicom-files-2.tar.gz"
@@ -45,7 +45,6 @@ class TestAnonymizeScript(unittest.TestCase):
 
             # Clean up the downloaded archive
             os.remove(archive_path)
-            print(f"Test data extracted to {cls.test_data_dir}")
 
     @classmethod
     def tearDownClass(cls):
@@ -53,9 +52,8 @@ class TestAnonymizeScript(unittest.TestCase):
             # Perform cleanup of the test_data_dir
             if os.path.exists(cls.test_data_dir):
                 shutil.rmtree(cls.test_data_dir)
-                print("Test data directory cleaned up.")
         finally:
-            print("tearDownClass executed, ensuring cleanup.")
+            pass
 
     def setUp(self):
         # Ensure the output directory is clean before each test
@@ -82,8 +80,6 @@ class TestAnonymizeScript(unittest.TestCase):
         # Take only first 50 files
         files_to_copy = all_files[:50]
 
-        print(f"Creating limited input dataset with {len(files_to_copy)} files out of {len(all_files)} total files")
-
         # Copy the first 50 files to the limited input directory
         for file in files_to_copy:
             src = os.path.join(self.test_data_dir, file)
@@ -109,10 +105,18 @@ class TestAnonymizeScript(unittest.TestCase):
         if not os.path.isabs(output_folder):
             output_folder = os.path.abspath(output_folder)
         # Recipes folder is always output_folder/recipe/
-        recipes_folder = os.path.join(output_folder, "recipe")
+        recipes_folder = os.path.join(output_folder, "recipes")
         os.makedirs(recipes_folder, exist_ok=True)
         # Output mapping folder
         output_private_mapping_folder = os.path.join(output_folder, "private")
+        
+        # Setup logger with the actual output and recipe paths
+        log_file_path = os.path.join(self.test_output_dir, './recipes', 'luwak_test.log')
+        os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+        setup_logger(log_level='INFO', log_file=log_file_path, console_output=False)
+        self.logger = get_logger('test_anonymize')
+        self.logger.info(f"Setting up test configuration with output: {output_folder}, recipes: {recipes_folder}")
+        
         # Fill in all config keys
         config = {
             "inputFolder": input_folder,
@@ -125,6 +129,8 @@ class TestAnonymizeScript(unittest.TestCase):
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
         json.dump(config, config_file, indent=2)
         config_file.close()
+        
+        self.logger.info(f"Created test config file: {config_file.name}")
         return config_file.name
 
     def test_script_runs_on_first_file(self):
@@ -143,6 +149,7 @@ class TestAnonymizeScript(unittest.TestCase):
         )
 
         try:
+            self.logger.info("Starting anonymization of first file test")
             # Run the anonymize script using the new class structure
             anonymizer = LuwakAnonymizer(config_path)
             result = anonymizer.anonymize()
@@ -150,10 +157,12 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check if the output directory contains the anonymized file
             anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
             self.assertTrue(os.path.exists(anonymized_file), "Anonymized file `00000001.dcm` not found in output directory")
+            self.logger.info(f"Successfully anonymized file: {anonymized_file}")
             
         finally:
             # Clean up config file
             os.unlink(config_path)
+            self.logger.info("Test completed and config cleaned up")
 
     def test_keep_specific_private_tags_should_be_original_value(self):
         """Test KEEP private tags using retain_safe_private_tags recipe."""
@@ -166,6 +175,7 @@ class TestAnonymizeScript(unittest.TestCase):
             recipes=["retain_safe_private_tags"]  # Use the built-in retain_safe_private_tags recipe
         )
         try:
+            self.logger.info("Starting private tags retention test")
             # Run the anonymize script
             anonymizer = LuwakAnonymizer(config_path)
             result = anonymizer.anonymize()
@@ -178,6 +188,9 @@ class TestAnonymizeScript(unittest.TestCase):
             unexpected_private_tags = {
                 "0019109d": "gems_acqu_01",  # This tag should be removed
             }
+            
+            self.logger.info(f"Checking {len(expected_private_tags)} expected private tags retention")
+            
             # Verify that the specified private tags are retained in the output files
             for file in os.listdir(self.test_output_dir):
                 if not file.endswith(".dcm"):
@@ -197,10 +210,14 @@ class TestAnonymizeScript(unittest.TestCase):
                 for tag_str, unexpected_creator in unexpected_private_tags.items():
                     tag = pydicom.tag.Tag(f"0x{tag_str}")
                     # Check that the unexpected private tag does not exist
-                    self.assertNotIn(tag, ds, f"Unexpected private tag {tag_str} found in file {file}.")      
+                    self.assertNotIn(tag, ds, f"Unexpected private tag {tag_str} found in file {file}.")
+            
+            self.logger.info("Private tags retention test completed successfully")
+            
         finally:
             # Clean up config file
             os.unlink(config_path)
+            self.logger.info("Test completed and config cleaned up")
 
     def test_luwakx_wrapper_script(self):
         """Test that the luwakx.py wrapper script works with config files."""
@@ -214,8 +231,11 @@ class TestAnonymizeScript(unittest.TestCase):
         )
 
         try:
+            self.logger.info("Starting luwakx wrapper script test")
             # Run the luwakx wrapper script (path to luwakx directory)
             script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "luwakx.py")
+            self.logger.info(f"Running luwakx script: {script_path}")
+            
             result = subprocess.run([
                 "python", script_path,
                 "--config_path", config_path
@@ -231,10 +251,12 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check if the output file was created
             anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
             self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found from luwakx.py")
+            self.logger.info(f"Successfully created anonymized file via luwakx wrapper: {anonymized_file}")
             
         finally:
             # Clean up config file
             os.unlink(config_path)
+            self.logger.info("Test completed and config cleaned up")
 
     def test_uid_generation(self):
         """Test the generation of new UIDs for StudyInstanceUID, SeriesInstanceUID, and SOPInstanceUID."""
@@ -263,6 +285,9 @@ class TestAnonymizeScript(unittest.TestCase):
         )
 
         try:
+            self.logger.info("Starting UID generation test")
+            self.logger.info(f"Original UIDs: {original_uids}")
+            
             # Run the anonymize script
             anonymizer = LuwakAnonymizer(config_path)
             result = anonymizer.anonymize()
@@ -279,6 +304,8 @@ class TestAnonymizeScript(unittest.TestCase):
                 'SOPInstanceUID': getattr(anonymized_ds, 'SOPInstanceUID', None)
             }
             
+            self.logger.info(f"Anonymized UIDs: {anonymized_uids}")
+            
             # Verify that UIDs have been changed
             for uid_name in ['StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID']:
                 original_uid = original_uids[uid_name]
@@ -286,10 +313,12 @@ class TestAnonymizeScript(unittest.TestCase):
                 self.assertIsNotNone(anonymized_uid, f"Anonymized file missing {uid_name}")
                 self.assertNotEqual(original_uid, anonymized_uid, 
                                   f"{uid_name} was not changed during anonymization")
+                self.logger.info(f"✓ {uid_name}: {original_uid} → {anonymized_uid}")
 
         finally:
             # Clean up config file
             os.unlink(config_path)
+            self.logger.info("UID generation test completed and config cleaned up")
 
     def test_basic_retain_uid_should_have_original_uid(self):
         """Test the that mixing basic profile and retain uid option keeps original UID for retain fields."""
@@ -313,6 +342,9 @@ class TestAnonymizeScript(unittest.TestCase):
             recipes=["basic_profile", "retain_uid"],
         )
         try:
+            self.logger.info("Starting basic profile + retain UID test")
+            self.logger.info(f"Original UIDs to be retained: {original_uids}")
+            
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             result = anonymizer.anonymize()
@@ -325,6 +357,8 @@ class TestAnonymizeScript(unittest.TestCase):
                 'SOPInstanceUID': getattr(anonymized_ds, 'SOPInstanceUID', None)
             }
             
+            self.logger.info(f"Anonymized UIDs (should match original): {anonymized_uids}")
+            
             # Verify that UIDs have been changed
             for uid_name in ['StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID']:
                 original_uid = original_uids[uid_name]
@@ -332,8 +366,10 @@ class TestAnonymizeScript(unittest.TestCase):
                 self.assertIsNotNone(anonymized_uid, f"Anonymized file missing {uid_name}")
                 self.assertEqual(original_uid, anonymized_uid, 
                                   f"{uid_name} was changed during anonymization")
+                self.logger.info(f"✓ {uid_name} retained: {original_uid}")
         finally:
             os.unlink(config_path)
+            self.logger.info("Retain UID test completed and config cleaned up")
 
     def test_hash_increment_date(self):
         """Test the date shift functionality for DA, DT, and TM fields."""
@@ -354,6 +390,9 @@ class TestAnonymizeScript(unittest.TestCase):
             recipes=["basic_profile"],
         )
         try:
+            self.logger.info("Starting date shift test")
+            self.logger.info(f"Original SeriesDate: {original_value}")
+            
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             result = anonymizer.anonymize()
@@ -363,8 +402,10 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check that the SeriesDate has been shifted correctly (if present)
             self.assertEqual(anonymized_ds.SeriesDate, '20130730',
                         "SeriesDate should be shifted by 181 days: expected '20130730', got {anonymized_ds.SeriesDate}")
+            self.logger.info(f"✓ SeriesDate shifted: {original_value} → {anonymized_ds.SeriesDate}")
         finally:
             os.unlink(config_path)
+            self.logger.info("Date shift test completed and config cleaned up")
           
 
     def test_fixed_datetime_generation(self):
@@ -385,11 +426,13 @@ class TestAnonymizeScript(unittest.TestCase):
         )
 
         try:
+            self.logger.info("Starting fixed datetime generation test")
             # Initialize anonymizer to test fixed datetime generation
             anonymizer = LuwakAnonymizer(config_path)
             
             # Test DA (Date) VR
-            print("  Testing DA (Date) VR...")
+            self.logger.info("Testing DA (Date) VR...")
+            
             # Create mock field with actual DICOM date value in element
             mock_da_field = type('MockField', (), {
                 'element': type('MockElement', (), {
@@ -401,9 +444,10 @@ class TestAnonymizeScript(unittest.TestCase):
             # The value parameter should be the recipe string, not the original value
             fixed_da = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_da_field, original_ds)
             self.assertEqual(fixed_da, "00010101", f"DA fixed should be '00010101', got '{fixed_da}'")
+            self.logger.info(f"✓ DA (Date) VR: {mock_da_field.element.value} → {fixed_da}")
             
             # Test DT (DateTime) VR
-            print("  Testing DT (DateTime) VR...")
+            self.logger.info("Testing DT (DateTime) VR...")
             mock_dt_field = type('MockField', (), {
                 'element': type('MockElement', (), {
                     'VR': 'DT',
@@ -414,9 +458,10 @@ class TestAnonymizeScript(unittest.TestCase):
             fixed_dt = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_dt_field, original_ds)
             expected_dt = "00010101010101.000000+0000"
             self.assertEqual(fixed_dt, expected_dt, f"DT fixed should be '{expected_dt}', got '{fixed_dt}'")
+            self.logger.info(f"✓ DT (DateTime) VR: {mock_dt_field.element.value} → {fixed_dt}")
             
             # Test TM (Time) VR
-            print("  Testing TM (Time) VR...")
+            self.logger.info("Testing TM (Time) VR...")
             mock_tm_field = type('MockField', (), {
                 'element': type('MockElement', (), {
                     'VR': 'TM',
@@ -427,15 +472,16 @@ class TestAnonymizeScript(unittest.TestCase):
             fixed_tm = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_tm_field, original_ds)
             expected_tm = "000000.00"
             self.assertEqual(fixed_tm, expected_tm, f"TM fixed should be '{expected_tm}', got '{fixed_tm}'")
-            
-            print("  All fixed datetime generation tests passed!")
-            print(f"    - DA (Date): '{fixed_da}'")
-            print(f"    - DT (DateTime): '{fixed_dt}'") 
-            print(f"    - TM (Time): '{fixed_tm}'")
-            
+            self.logger.info(f"✓ TM (Time) VR: {mock_tm_field.element.value} → {fixed_tm}")
+            self.logger.info("All fixed datetime generation tests passed!")
+            self.logger.info(f"    - DA (Date): '{fixed_da}'")
+            self.logger.info(f"    - DT (DateTime): '{fixed_dt}'")
+            self.logger.info(f"    - TM (Time): '{fixed_tm}'")
+
         finally:
             # Clean up config file
             os.unlink(config_path)
+            self.logger.info("Fixed datetime generation test completed and config cleaned up")
 
     def test_fixed_datetime_with_basic_profile_recipe(self):
         """Test fixed datetime generation when running full anonymization with DICOM basic profile recipe."""
@@ -447,13 +493,10 @@ class TestAnonymizeScript(unittest.TestCase):
 
         # Read original file to get date/time values
         original_ds = pydicom.dcmread(original_file)
-        print(f"  Checking for date/time fields that use set_fixed_datetime in basic-profile-2...")
-        
-        # DICOM tag keywords from deid.dicom.basic-profile-2 that use func:set_fixed_datetime
+        # DICOM tag keywords from basic_profile that use func:set_fixed_datetime
         # These correspond to the actual tags from the recipe file
         datetime_fields_to_check = ['StudyDate', 'StudyTime']
         
-        # Create test config using basic_profile recipe which includes basic-profile-2
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
@@ -461,6 +504,9 @@ class TestAnonymizeScript(unittest.TestCase):
         )
 
         try:
+            self.logger.info("Starting fixed datetime with basic profile recipe test")
+            self.logger.info(f"Checking fields that use set_fixed_datetime: {datetime_fields_to_check}")
+            
             # Run full anonymization
             anonymizer = LuwakAnonymizer(config_path)
             result = anonymizer.anonymize()
@@ -474,14 +520,19 @@ class TestAnonymizeScript(unittest.TestCase):
             
             # Check date fields (DA VR) - should be "00010101"
             self.assertEqual(anonymized_ds['00080020'].value, "00010101", f"DA fixed should be '00010101', got '{anonymized_ds['00080020'].value}'")
+            self.logger.info(f"✓ StudyDate (DA): {anonymized_ds['00080020'].value}")
+            
             # Check datetime fields (DT VR) - should be "00010101010101.000000+0000"
             #self.assertEqual(anonymized_ds['0040A13A'].value, "00010101010101.000000+0000", f"DT fixed should be '00010101010101.000000+0000', got '{anonymized_ds['0040A13A'].value}'")
+            
             # Check time fields (TM VR) - should be "000000.00" if using fixed generation
             self.assertEqual(anonymized_ds['00080030'].value, "000000.00", f"TM fixed should be '000000.00', got '{anonymized_ds['00080030'].value}'")
+            self.logger.info(f"✓ StudyTime (TM): {anonymized_ds['00080030'].value}")
 
         finally:
             # Clean up files
             os.unlink(config_path)
+            self.logger.info("Fixed datetime with basic profile test completed and config cleaned up")
 
     def test_basic_retain_date_should_have_original_date(self):
         """Test the that mixing retain and date shift keeps original date for retain fields."""
@@ -501,6 +552,9 @@ class TestAnonymizeScript(unittest.TestCase):
             recipes=["basic_profile", "retain_long_full_dates", "retain_long_modified_dates"],
         )
         try:
+            self.logger.info("Starting basic profile + retain dates test")
+            self.logger.info(f"Original AcquisitionDate to be retained: {original_value}")
+            
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             result = anonymizer.anonymize()
@@ -510,8 +564,10 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check that the AcquisitionDate has been retained
             self.assertEqual(anonymized_ds.AcquisitionDate, original_value,
                         "AcquisitionDate should be the original value: expected {original_value}, got {anonymized_ds.AcquisitionDate}")
+            self.logger.info(f"✓ AcquisitionDate retained: {original_value}")
         finally:
             os.unlink(config_path)
+            self.logger.info("Retain dates test completed and config cleaned up")
 
     def test_basic_modified_date_should_have_modified_date(self):
         """Test the that mixing basic profile and date shift modifies original date."""
@@ -531,6 +587,9 @@ class TestAnonymizeScript(unittest.TestCase):
             recipes=["basic_profile", "retain_long_modified_dates"],
         )
         try:
+            self.logger.info("Starting basic profile + modified dates test")
+            self.logger.info(f"Original AcquisitionDate to be modified: {original_value}")
+            
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             result = anonymizer.anonymize()
@@ -540,10 +599,14 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check that the AcquisitionDate has been retained
             self.assertEqual(anonymized_ds.AcquisitionDate, '20130730',
                         "AcquisitionDate should be the original value: expected '20130730', got {anonymized_ds.AcquisitionDate}")
+            self.logger.info(f"✓ AcquisitionDate modified: {original_value} → {anonymized_ds.AcquisitionDate}")
+            
             self.assertEqual(anonymized_ds.LongitudinalTemporalInformationModified, 'MODIFIED',
                         "LongitudinalTemporalInformationModified should be 'MODIFIED': expected 'MODIFIED', got {anonymized_ds.LongitudinalTemporalInformationModified}")
+            self.logger.info(f"✓ LongitudinalTemporalInformationModified: {anonymized_ds.LongitudinalTemporalInformationModified}")
         finally:
             os.unlink(config_path)
+            self.logger.info("Modified dates test completed and config cleaned up")
 
 if __name__ == "__main__":
     unittest.main()
