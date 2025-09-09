@@ -608,6 +608,42 @@ class TestAnonymizeScript(unittest.TestCase):
             os.unlink(config_path)
             self.logger.info("Modified dates test completed and config cleaned up")
 
+    def test_basic_clean_descriptors_should_have_clean_value(self):
+        """Test that mixing basic profile and clean descriptors clean the fields."""
+        print("Test that mixing basic profile and clean descriptors clean the fields.")
+
+        # Use the first file for testing
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        
+        # Read original file to get date/time values
+        original_ds = pydicom.dcmread(original_file)
+        original_value = original_ds['RequestedProcedureDescription'].value
+        print(f"Original RequestedProcedureDescription: '{original_value}' {original_ds['RequestedProcedureDescription'].VR}")
+        # Create test config with basic profile (which should trigger date shifting)
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile", "clean_descriptors"],
+        )
+        try:
+            self.logger.info("Starting basic profile + clean descriptors test")
+            self.logger.info(f"Original RequestedProcedureDescription to be cleaned: {original_value}")
+
+            anonymizer = LuwakAnonymizer(config_path)
+            # Run anonymization
+            result = anonymizer.anonymize()
+            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
+            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
+            anonymized_ds = pydicom.dcmread(anonymized_file)
+            # Check that the RequestedProcedureDescription has been cleaned
+            self.assertEqual(anonymized_ds.RequestedProcedureDescription, original_value,
+                        "RequestedProcedureDescription should be empty: expected '', got {anonymized_ds.RequestedProcedureDescription}")
+            self.logger.info(f"RequestedProcedureDescription cleaned: {original_value} → {anonymized_ds.RequestedProcedureDescription}")
+        finally:
+            os.unlink(config_path)
+            self.logger.info("Basic profile + clean descriptors test completed and config cleaned up")
+
 if __name__ == "__main__":
     unittest.main()
 

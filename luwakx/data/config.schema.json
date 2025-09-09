@@ -68,6 +68,18 @@
       "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
       "default": "INFO",
       "examples": ["DEBUG", "INFO", "WARNING"]
+    },
+    "cleanDescriptorsLlmBaseUrl": {
+      "type": "string",
+      "default": ""
+    },
+    "cleanDescriptorsLlmModel": {
+      "type": "string",
+      "default": "openai/gpt-oss-20b"
+    },
+    "cleanDescriptorsLlmApiKeyEnvVar": {
+      "type": "string",
+      "default": ""
     }
   },
   "required": [

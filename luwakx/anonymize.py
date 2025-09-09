@@ -8,6 +8,7 @@ import argparse
 import json
 import jsonschema
 import hashlib
+import importlib.util
 import csv
 import pydicom
 import pandas as pd
@@ -271,7 +272,7 @@ class LuwakAnonymizer:
             int: Number of days to shift backward (0-maxDateShiftDays days, consistent for entire project)
 
         Note:
-            - Uses project_hash_root to generate single shift for entire project run
+            - Uses project_hash_root to generate single shift for entire project
             - Lazy initialization - calculates shift only once per project
             This method only returns the shift amount. The actual date manipulation
             should be handled by the DEID recipe or calling code.
@@ -335,7 +336,82 @@ class LuwakAnonymizer:
             self.logger.error(f"Error in fixed datetime generation: {e}")
             return ""
     
+    def clean_descriptors_with_llm(self, item, value, field, dicom):
+        """Clean descriptive text fields using a large language model (LLM) and PHI/PII detector.
+           
+           Args:
+                item: Item identifier from deid processing (not used)
+                value: Recipe string (e.g., "func:clean_descriptors_with_llm") - not the actual DICOM value
+                field: DICOM field element containing the text tag
+                dicom: PyDicom dataset object
+            
+            Returns:
+                str: Cleaned text value or "[REDACTED]" if PHI/PII detected
+            
+            Note:
+                - Uses LLM to clean descriptive text fields
+                - Calls PHI/PII detector to check if cleaned text still contains sensitive info
+                - If PHI/PII detected, deletes the element and returns ""
+                - If no PHI/PII detected, returns original text value
+                The 'value' parameter contains the recipe string, not the actual DICOM value.
+        """
+        # Import detector.py as a module (no execution of __main__)
+        try:
+            if hasattr(field, 'element') and hasattr(field.element, 'value'):
+                original_value = str(field.element.value)
+            elif hasattr(field, 'value'):
+                original_value = str(field.value)
+            else:
+                original_value = str(value) if value else "unknown"
+        except Exception as e:
+            self.logger.error(f"  ERROR extracting original value: {e}")
+            original_value = str(value) if value else "unknown"
+        try:
+            detector_path = os.path.join(os.path.dirname(__file__), "scripts", "detector", "detector.py")
+            spec = importlib.util.spec_from_file_location("detector", detector_path)
+            detector = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(detector)
+        except Exception as e:
+            self.logger.error(f"Failed to import detector.py: {e}")
+            return str(field.element.value) if hasattr(field.element, 'value') else str(value)
 
+        # Get LLM config from self.config
+        base_url = self.config.get('cleanDescriptorsLlmBaseUrl', "http://localhost:1234/v1")
+        model = self.config.get('cleanDescriptorsLlmModel', "openai/gpt-oss-20b")
+        api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar', "OPENAI_API_KEY")
+        api_key = os.environ.get(api_key_env, "")
+
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url=base_url, api_key=api_key)
+        except Exception as e:
+            self.logger.error(f"Failed to initialize OpenAI client: {e}")
+            return str(field.element.value) if hasattr(field.element, 'value') else str(value)
+
+        tag_desc = f"{getattr(field.element, 'tag', '')} {getattr(field.element, 'keyword', '')}: {str(field.element.value) if hasattr(field.element, 'value') else str(value)}"
+        try:
+            # Call the function directly, do not execute detector.py as a script
+            result = detector.detect_phi_or_pii(client, tag_desc, model=model, DEV_MODE=True)
+            print('result:   ',result)
+            if str(result).strip() == "1":
+                # Remove the element from the DICOM dataset
+                try:
+                    del dicom[field.element.tag]
+                    self.logger.info(f"Removed PHI/PII element {field.element.tag} ({getattr(field.element, 'keyword', '')}) from DICOM file.")
+                except Exception as e:
+                    self.logger.error(f"Failed to remove element {field.element.tag}: {e}")
+                # Return correct empty value for VR type
+                vr = getattr(field.element, 'VR', None)
+                if vr == 'SQ':
+                    return []  # Empty sequence
+                else:
+                    return ""  # Empty string for other types
+            else:
+                return str(field.element.value) if hasattr(field.element, 'value') else str(value)
+        except Exception as e:
+            self.logger.error(f"Error in PHI/PII detection: {e}")
+            return str(field.element.value) if hasattr(field.element, 'value') else str(value)
+    
     def generate_hashuid(self, item, value, field, dicom):
         """Custom UID generation using combined salt as root for deterministic randomization.
         Ensures remapping: the same original UID always maps to the same anonymized UID for a given file and field.
@@ -1045,12 +1121,18 @@ class LuwakAnonymizer:
                         final_action = 'keep'
                     elif 'func:hash_increment_date' in actions:
                         final_action = 'func:hash_increment_date'
+                    elif 'func:generate_hashuid' in actions:
+                        final_action = 'func:generate_hashuid'
+                    elif 'func:clean_descriptors_with_llm' in actions:
+                        if vr == 'SQ':
+                            # For sequences, we need manual review
+                            final_action = 'manual_review'
+                        else:
+                            final_action = 'func:clean_descriptors_with_llm'
                     elif 'replace' in actions:
                         final_action = 'replace'
                     elif 'func:set_fixed_datetime' in actions:
                         final_action = 'func:set_fixed_datetime'
-                    elif 'func:generate_hashuid' in actions:
-                        final_action = 'func:generate_hashuid'
                     elif 'blank' in actions:
                         final_action = 'blank'
                     elif 'remove' in actions:
@@ -1076,7 +1158,7 @@ class LuwakAnonymizer:
                         elif vr in ["DS", "IS", "FD", "FL", "SS", "US", "SL", "UL"]:
                             line = f"REPLACE {tag} 0 # NEED to BE REVIEWED\n"
                         elif vr == 'AS':
-                            line = f"REPLACE {tag} 030Y # NEED to BE REVIEWED\n"
+                            line = f"REPLACE {tag} 000D # NEED to BE REVIEWED\n"
                         elif vr in ['SQ', 'OB']:
                             line = f"#REPLACE {tag} NEED to BE REVIEWED\n"
                     elif final_action == 'func:generate_hashuid':
@@ -1085,6 +1167,8 @@ class LuwakAnonymizer:
                         line = f"REPLACE {tag} func:set_fixed_datetime\n"
                     elif final_action == 'func:hash_increment_date':
                         line = f"JITTER {tag} func:hash_increment_date\n"
+                    elif final_action == 'func:clean_descriptors_with_llm':
+                        line = f"REPLACE {tag} func:clean_descriptors_with_llm\n"
                     elif final_action == 'clean_manually':
                         line = f"# REPLACE {tag} CLEANED NEEDS MANUAL REVIEW\n"
                     elif final_action == 'manual_review':
@@ -1257,6 +1341,7 @@ class LuwakAnonymizer:
             items[item]["generate_hashuid"] = self.generate_hashuid
             items[item]["hash_increment_date"] = self.hash_increment_date
             items[item]["set_fixed_datetime"] = self.set_fixed_datetime
+            items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
 
         output_directory = self.config.get('outputDeidentifiedFolder')
         # Perform anonymization

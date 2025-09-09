@@ -882,7 +882,7 @@ def clean_profiles(df):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
         if profile1 == 'C':
-            df.at[idx, 'Clean Desc. Opt.'] = 'clean_manually'
+            df.at[idx, 'Clean Desc. Opt.'] = 'func:clean_descriptors_with_llm'
         if profile2 == 'C':
             df.at[idx, 'Clean Struct. Cont. Opt.'] = 'clean_manually'
         if profile3 == 'C':

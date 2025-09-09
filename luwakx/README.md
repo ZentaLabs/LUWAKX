@@ -86,17 +86,17 @@ LuwakX supports multiple anonymization profiles that can be used individually or
   - Shifts dates by consistent offset
   - Maintains temporal relationships while anonymizing
 
-#### Advanced Cleaning Options (manually set)
+#### Advanced Cleaning Options
 
 - **`clean_descriptors`**: Enhanced cleaning of text fields
-  - Removes potentially identifying text descriptions
-  - Applies advanced text cleaning algorithms
+  - Removes potentially identifying text descriptions using a large language model (LLM)
+  - If PHI/PII is detected in a descriptor, the corresponding DICOM element is deleted from the file and replaced with an empty value
 
-- **`clean_structured_content`**: Cleans structured report content
+- **`clean_structured_content`(manually_set)**: Cleans structured report content
   - Processes SR (Structured Report) DICOM objects
   - Removes identifying information from structured data
 
-- **`clean_graphics`**: Removes graphic annotations
+- **`clean_graphics`(manually_set)**: Removes graphic annotations
   - Strips overlay data that might contain identifying information
   - Removes graphic annotations and text overlays
 
