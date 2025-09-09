@@ -94,7 +94,12 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
   "private_tags_csv": "data/TagsArchive/DICOM_SAFE_PRIVATE_TAGS.csv",
   "metadata_parquet": "outputs/privateMapping/metadata.parquet",
   "fixed_datetime": "2020-01-01T00:00:00",
-  "log_level": "INFO"
+  "log_level": "INFO",
+  "projectHashRoot": "your_secure_project_key",
+  "maxDateShiftDays": 1095,
+  "cleanDescriptorsLlmBaseUrl": "https://openrouter.ai/api/v1",
+  "cleanDescriptorsLlmModel": "openai/gpt-4o-mini",
+  "cleanDescriptorsLlmApiKeyEnvVar": "OPENROUTER_API_KEY"
 }
 ```
 
@@ -128,11 +133,36 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
     },
     "log_level": {
       "type": "string",
-      "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
-      "description": "Logging level for the pipeline."
+      "enum": ["PRIVATE", "DEBUG", "INFO", "WARNING", "ERROR"],
+      "description": "Logging level for the pipeline. PRIVATE includes sensitive data for debugging/audit."
+    },
+    "cleanDescriptorsLlmBaseUrl": {
+      "type": "string",
+      "description": "Base URL for the LLM API used for cleaning descriptors (e.g., 'http://localhost:1234/v1' or OpenRouter URL).",
+      "default": "http://localhost:1234/v1"
+    },
+    "cleanDescriptorsLlmModel": {
+      "type": "string", 
+      "description": "Model name for the LLM used for cleaning descriptors (e.g., 'openai/gpt-oss-20b' for OpenRouter).",
+      "default": "openai/gpt-oss-20b"
+    },
+    "cleanDescriptorsLlmApiKeyEnvVar": {
+      "type": "string",
+      "description": "Environment variable name containing the API key for the LLM service.",
+      "default": "OPENAI_API_KEY"
+    },
+    "projectHashRoot": {
+      "type": "string",
+      "description": "Root hash used for deterministic anonymization across the project."
+    },
+    "maxDateShiftDays": {
+      "type": "integer",
+      "description": "Maximum number of days for date shifting anonymization.",
+      "default": 1095,
+      "minimum": 0
     }
   },
-  "required": ["input_folder", "output_folder", "deid_recipe", "private_tags_csv", "metadata_parquet"],
+  "required": ["inputFolder", "outputDeidentifiedFolder", "outputPrivateMappingFolder", "recipesFolder", "recipes"],
   "additionalProperties": false
 }
 ```
@@ -144,3 +174,4 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
 - See the example above for typical usage.
 
 For more details, refer to the main project README or script documentation.
+

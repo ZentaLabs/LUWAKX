@@ -649,3 +649,4 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 fffa,fffa,Digital Signatures Sequence,SQ,,remove,,,,,,,,,,"(FFFA,FFFA)",@remove()
 fffc,fffc,Data Set Trailing Padding,OB,,remove,,,,,,,,,,"(FFFC,FFFC)",@remove()
 gggg,eeeewhereggggisodd,Private Attributes,,,remove,,,,,,,,,,"(gggg,eeee) where gggg is odd",Private Attributes are cleaned in Posda as part of curation
+

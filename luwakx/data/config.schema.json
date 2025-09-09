@@ -79,7 +79,7 @@
     },
     "cleanDescriptorsLlmApiKeyEnvVar": {
       "type": "string",
-      "default": ""
+      "default": "OPENROUTER_API_KEY"
     }
   },
   "required": [
@@ -91,3 +91,4 @@
   ],
   "additionalProperties": false
 }
+

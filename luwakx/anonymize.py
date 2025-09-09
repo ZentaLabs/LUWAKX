@@ -257,6 +257,10 @@ class LuwakAnonymizer:
             The 'value' parameter contains recipe-related data, not the actual DICOM field value.
             The actual determination is based on field.element.is_private and private_creator.
         """
+        self.logger.info(f"Removed tag {field.element.tag} ({getattr(field.element, 'name', '')}).")
+        # Log private tag details at PRIVATE level if it exists
+        if hasattr(field.element, 'value'):
+            self.logger.private(f"Removed private tag {field.element.tag} with value: {field.element.value}")
         return field.element.is_private and (field.element.private_creator is not None)
     
     def hash_increment_date(self, item, value, field, dicom):
@@ -283,6 +287,8 @@ class LuwakAnonymizer:
             PatientID = dicom.get("PatientID", "")
             PatientName = dicom.get("PatientName", "")
             PatientBirthDate = dicom.get("PatientBirthDate", "")
+            # Log sensitive patient data at PRIVATE level
+            self.logger.private(f"Using patient data for date shift generation - PatientID: {PatientID}, PatientName: {PatientName}, PatientBirthDate: {PatientBirthDate}")
             # Generate shift for project run and patient
             # Use project_hash_root to generate consistent shift for this project
             project_salt = f"{project_hash_root}{PatientID}{PatientName}{PatientBirthDate}"
@@ -290,6 +296,9 @@ class LuwakAnonymizer:
             hash_int = int(salt_hash[:8], 16)  # Use first 8 hex chars
             # Use configurable max_date_shift_days (default 1095)
             project_date_shift = hash_int % (self.config.get('maxDateShiftDays') + 1)  # 0 to max_date_shift_days
+            self.logger.info(f"Replacing tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) with date/time shifted.")
+            # Log the computed shift value at PRIVATE level
+            self.logger.private(f"For tag {field.element.tag} with value {field.element.value}, computed date shift: -{project_date_shift} days")
             return -project_date_shift
             
         except Exception as e:
@@ -321,16 +330,29 @@ class LuwakAnonymizer:
         try:
             # Get the VR type from the field
             vr = field.element.VR if hasattr(field, 'element') else None
-            
+            tag_str = getattr(field.element, 'tag', 'unknown') if hasattr(field, 'element') else 'unknown'
+            keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
             if vr == 'DA':  # Date format: YYYYMMDD
+                self.logger.info(f"Setting fixed date for tag {tag_str} ({keyword_str}) to '00010101'.")
+                if hasattr(field, 'element') and hasattr(field.element, 'value'):
+                    self.logger.private(f"Setting fixed date for tag {tag_str} ({keyword_str}) with value {field.element.value} to '00010101'.")
                 return "00010101"
             elif vr == 'DT':  # DateTime format: YYYYMMDDHHMMSS.FFFFFF&ZZXX
+                self.logger.info(f"Setting fixed datetime for tag {tag_str} ({keyword_str}) to '00010101010101.000000+0000'.")
+                if hasattr(field, 'element') and hasattr(field.element, 'value'):
+                    self.logger.private(f"Setting fixed datetime for tag {tag_str} ({keyword_str}) with value {field.element.value} to '00010101010101.000000+0000'.")
                 return "00010101010101.000000+0000"
             elif vr == 'TM':  # Time format: HHMMSS.FFFFFF
+                self.logger.info(f"Setting fixed time for tag {tag_str} ({keyword_str}) to '000000.00'.")
+                if hasattr(field, 'element') and hasattr(field.element, 'value'):
+                    self.logger.private(f"Setting fixed time for tag {tag_str} ({keyword_str}) with value {field.element.value} to '000000.00'.")
                 return "000000.00"
             else:
                 # For unknown VR, return the original value
-                return original_datetime_value if original_datetime_value is not None else ""
+                original_value = field.element.value if hasattr(field, 'element') and hasattr(field.element, 'value') else ""
+                tag_str = getattr(field.element, 'tag', 'unknown') if hasattr(field, 'element') else 'unknown'
+                self.logger.warning(f"Unknown VR type '{vr}' for tag {tag_str}, returning original value.")
+                return str(original_value) if original_value is not None else ""
                 
         except Exception as e:
             self.logger.error(f"Error in fixed datetime generation: {e}")
@@ -355,6 +377,7 @@ class LuwakAnonymizer:
                 - If no PHI/PII detected, returns original text value
                 The 'value' parameter contains the recipe string, not the actual DICOM value.
         """
+        from openai import OpenAI
         # Import detector.py as a module (no execution of __main__)
         try:
             if hasattr(field, 'element') and hasattr(field.element, 'value'):
@@ -363,6 +386,8 @@ class LuwakAnonymizer:
                 original_value = str(field.value)
             else:
                 original_value = str(value) if value else "unknown"
+            # Log original value at PRIVATE level
+            self.logger.private(f"Processing original value for tag {field.element.tag} ({getattr(field.element, 'keyword', '')}): {original_value}")
         except Exception as e:
             self.logger.error(f"  ERROR extracting original value: {e}")
             original_value = str(value) if value else "unknown"
@@ -382,31 +407,27 @@ class LuwakAnonymizer:
         api_key = os.environ.get(api_key_env, "")
 
         try:
-            from openai import OpenAI
             client = OpenAI(base_url=base_url, api_key=api_key)
         except Exception as e:
             self.logger.error(f"Failed to initialize OpenAI client: {e}")
             return str(field.element.value) if hasattr(field.element, 'value') else str(value)
-
+        
         tag_desc = f"{getattr(field.element, 'tag', '')} {getattr(field.element, 'keyword', '')}: {str(field.element.value) if hasattr(field.element, 'value') else str(value)}"
         try:
             # Call the function directly, do not execute detector.py as a script
-            result = detector.detect_phi_or_pii(client, tag_desc, model=model, DEV_MODE=True)
-            print('result:   ',result)
+            result = detector.detect_phi_or_pii(client, tag_desc, model=model, DEV_MODE=False)
+            self.logger.private(f"PHI/PII detection result for tag {tag_desc} : {result}")
             if str(result).strip() == "1":
                 # Remove the element from the DICOM dataset
                 try:
                     del dicom[field.element.tag]
-                    self.logger.info(f"Removed PHI/PII element {field.element.tag} ({getattr(field.element, 'keyword', '')}) from DICOM file.")
+                    self.logger.info(f"Removed tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) from DICOM file.")
                 except Exception as e:
-                    self.logger.error(f"Failed to remove element {field.element.tag}: {e}")
-                # Return correct empty value for VR type
-                vr = getattr(field.element, 'VR', None)
-                if vr == 'SQ':
-                    return []  # Empty sequence
-                else:
-                    return ""  # Empty string for other types
+                    self.logger.warning(f"Failed to remove element {field.element.tag}: {e}")
+                    self.logger.info(f"Replaced tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) to 'ANONYMIZED'.")
+                return "ANONYMIZED"  # Empty string for other types
             else:
+                self.logger.info(f"Keeping original value for tag {field.element.tag} ({getattr(field.element, 'keyword', '')}).")
                 return str(field.element.value) if hasattr(field.element, 'value') else str(value)
         except Exception as e:
             self.logger.error(f"Error in PHI/PII detection: {e}")
@@ -425,6 +446,8 @@ class LuwakAnonymizer:
                 original_uid = str(field.value)
             else:
                 original_uid = str(value) if value else "unknown"
+            # Log original UID at PRIVATE level
+            self.logger.private(f"Processing original UID for tag {field.element.tag} ({getattr(field.element, 'keyword', '')}): {original_uid}")
         except Exception as e:
             self.logger.error(f"  ERROR extracting original UID: {e}")
             original_uid = str(value) if value else "unknown"
@@ -444,7 +467,9 @@ class LuwakAnonymizer:
 
         # Combine project_hash_root and original UID as entropy for deterministic generation
         new_uid = pydicom.uid.generate_uid(entropy_srcs=[project_hash_root, original_uid])
-        
+        self.logger.info(f"Replaced tag {field.element.tag} ({getattr(field.element, 'keyword', '')}): {new_uid}")
+        # Log the UID mapping at PRIVATE level
+        self.logger.private(f"UID mapping created - Original: {original_uid} -> Anonymized: {new_uid}")
         # Store the mapping for this file, field, and original UID
         self.current_file_mappings[file_path][field_keyword] = {
             'original': original_uid,
@@ -673,6 +698,8 @@ class LuwakAnonymizer:
                     
                     # Add to metadata using the DICOM keyword as column name
                     metadata[keyword] = value
+                    # Log element value at PRIVATE level for audit purposes
+                    self.logger.private(f"Extracted element {keyword} ({elem.tag}): {value}")
                     
                 except Exception as e:
                     # If there's any issue with this element, skip it

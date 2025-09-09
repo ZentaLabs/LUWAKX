@@ -127,6 +127,66 @@ class TestLuwakLogger(unittest.TestCase):
         except ImportError as e:
             self.fail(f"Failed to import luwakx module: {e}")
 
+    def test_private_log_level(self):
+        """Test that PRIVATE log level works and logs sensitive information."""
+        # Setup logger with PRIVATE level to capture all messages
+        setup_logger(
+            log_level='PRIVATE',
+            log_file=self.test_log_file,
+            console_output=False
+        )
+        
+        # Test getting a logger and using the private method
+        logger = get_logger('test_private')
+        
+        # Test private logging directly
+        logger.private("This is a PRIVATE message with sensitive data")
+        logger.info("This is a regular INFO message")
+        logger.debug("This is a DEBUG message")
+        
+        # Verify log file was created and contains the private message
+        self.assertTrue(os.path.exists(self.test_log_file), "Log file should be created")
+        
+        with open(self.test_log_file, 'r') as f:
+            log_content = f.read()
+            self.assertGreater(len(log_content), 0, "Log file should contain content")
+            self.assertIn("PRIVATE message with sensitive data", log_content)
+            self.assertIn("regular INFO message", log_content)
+            self.assertIn("DEBUG message", log_content)
+            # Check that PRIVATE level appears in the log
+            self.assertIn("PRIVATE", log_content)
+
+    def test_private_level_filtering(self):
+        """Test that PRIVATE messages are filtered out when log level is higher."""
+        # Setup logger with INFO level (should NOT show PRIVATE messages)
+        setup_logger(
+            log_level='INFO',
+            log_file=self.test_log_file,
+            console_output=False
+        )
+        
+        # Test getting a logger and using different levels
+        logger = get_logger('test_private_filter')
+        
+        # Log messages at different levels
+        logger.private("This PRIVATE message should NOT appear")
+        logger.debug("This DEBUG message should NOT appear")
+        logger.info("This INFO message SHOULD appear")
+        logger.warning("This WARNING message SHOULD appear")
+        
+        # Verify log file filtering
+        self.assertTrue(os.path.exists(self.test_log_file), "Log file should be created")
+        
+        with open(self.test_log_file, 'r') as f:
+            log_content = f.read()
+            self.assertGreater(len(log_content), 0, "Log file should contain content")
+            # Should NOT contain PRIVATE or DEBUG messages
+            self.assertNotIn("PRIVATE message should NOT appear", log_content)
+            self.assertNotIn("DEBUG message should NOT appear", log_content)
+            # Should contain INFO and WARNING messages
+            self.assertIn("INFO message SHOULD appear", log_content)
+            self.assertIn("WARNING message SHOULD appear", log_content)
+
 
 if __name__ == "__main__":
     unittest.main()

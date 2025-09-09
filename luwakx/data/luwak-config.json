@@ -11,3 +11,4 @@
   "cleanDescriptorsLlmModel": "openai/gpt-oss-20b",
   "cleanDescriptorsLlmApiKeyEnvVar": "OPENAI_API_KEY"
 }
+

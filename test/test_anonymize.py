@@ -124,6 +124,9 @@ class TestAnonymizeScript(unittest.TestCase):
             "outputPrivateMappingFolder": output_private_mapping_folder,
             "recipesFolder": recipes_folder,
             "recipes": recipes if recipes is not None else "deid.dicom",
+            "cleanDescriptorsLlmBaseUrl": "https://openrouter.ai/api/v1",
+            "cleanDescriptorsLlmModel": "openai/gpt-oss-20b:free",  # e.g., "openrouter/mistral-7b" or another supported model
+            "cleanDescriptorsLlmApiKeyEnvVar": "OPENROUTER_API_KEY"
         }
         # Create temporary config file
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
@@ -440,7 +443,7 @@ class TestAnonymizeScript(unittest.TestCase):
                     'value': '20240315'  # Original DICOM date value
                 })()
             })()
-            
+
             # The value parameter should be the recipe string, not the original value
             fixed_da = anonymizer.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_da_field, original_ds)
             self.assertEqual(fixed_da, "00010101", f"DA fixed should be '00010101', got '{fixed_da}'")
@@ -615,11 +618,10 @@ class TestAnonymizeScript(unittest.TestCase):
         # Use the first file for testing
         original_file = os.path.join(self.test_data_dir, "00000001.dcm")
         self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
-        
         # Read original file to get date/time values
         original_ds = pydicom.dcmread(original_file)
         original_value = original_ds['RequestedProcedureDescription'].value
-        print(f"Original RequestedProcedureDescription: '{original_value}' {original_ds['RequestedProcedureDescription'].VR}")
+        
         # Create test config with basic profile (which should trigger date shifting)
         config_path = self.create_test_config(
             input_folder=original_file,
@@ -636,10 +638,12 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
             self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
             anonymized_ds = pydicom.dcmread(anonymized_file)
-            # Check that the RequestedProcedureDescription has been cleaned
-            self.assertEqual(anonymized_ds.RequestedProcedureDescription, original_value,
-                        "RequestedProcedureDescription should be empty: expected '', got {anonymized_ds.RequestedProcedureDescription}")
-            self.logger.info(f"RequestedProcedureDescription cleaned: {original_value} → {anonymized_ds.RequestedProcedureDescription}")
+            # Check that the RequestedProcedureDescription has been cleaned (tag should be removed)
+            self.assertNotIn('RequestedProcedureDescription', anonymized_ds, f"Unexpected tag RequestedProcedureDescription found in file {anonymized_file}.")
+            self.logger.info(f"RequestedProcedureDescription cleaned: {original_value} → removed")
+            self.assertEqual(anonymized_ds['PerformedProcedureStepDescription'].value, original_ds['PerformedProcedureStepDescription'].value,
+                        "PerformedProcedureStepDescription should be empty: expected {original_ds['PerformedProcedureStepDescription'].value}, got {anonymized_ds['PerformedProcedureStepDescription'].value}")
+            self.logger.info(f"PerformedProcedureStepDescription cleaned: {original_ds['PerformedProcedureStepDescription'].value} → {anonymized_ds['PerformedProcedureStepDescription'].value}")
         finally:
             os.unlink(config_path)
             self.logger.info("Basic profile + clean descriptors test completed and config cleaned up")

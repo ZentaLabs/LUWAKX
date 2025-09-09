@@ -184,7 +184,10 @@ The logger automatically creates log files in the output directory structure:
 You can control logging verbosity using the `--log_level` command line option:
 
 ```bash
-# Debug level (most verbose)
+# Private level (most verbose - includes sensitive data)
+python luwakx.py --config_path config.json --log_level PRIVATE
+
+# Debug level (verbose)
 python luwakx.py --config_path config.json --log_level DEBUG
 
 # Info level (default)
@@ -196,6 +199,18 @@ python luwakx.py --config_path config.json --log_level WARNING
 # Error level (least verbose)
 python luwakx.py --config_path config.json --log_level ERROR
 ```
+
+#### PRIVATE Log Level
+
+The PRIVATE log level (level 5) is a custom log level that captures sensitive information during the anonymization process:
+
+- **Original DICOM element values** before anonymization
+- **Patient identifiers** (PatientID, PatientName, PatientBirthDate) used for processing
+- **UID mappings** showing original → anonymized transformations
+- **Date shift calculations** showing computed offset values
+- **Private tag contents** before removal
+
+⚠️ **Security Warning**: Use PRIVATE logging only in secure environments as it logs sensitive patient data. This level is intended for debugging and audit purposes in controlled settings.
 
 ### Programmatic Logging
 
@@ -211,6 +226,19 @@ anonymizer = LuwakAnonymizer("/path/to/config.json")
 result = anonymizer.anonymize()
 ```
 
+For debugging or audit purposes, you can also configure PRIVATE logging programmatically:
+
+```python
+from luwak_logger import setup_logger
+
+# Setup PRIVATE logging (includes sensitive data)
+setup_logger(log_level='PRIVATE', log_file='audit.log', console_output=False)
+
+# Then use the anonymizer
+anonymizer = LuwakAnonymizer("/path/to/config.json")
+result = anonymizer.anonymize()
+```
+
 ### Log Content
 
 The logs include:
@@ -218,6 +246,7 @@ The logs include:
 - Recipe loading and application details
 - File processing information and statistics
 - Error messages and troubleshooting information
+- **PRIVATE level only**: Original DICOM values, patient identifiers, UID mappings, and other sensitive data for audit/debugging purposes
 
 ## Features
 
@@ -260,3 +289,4 @@ python -m unittest test.test_anonymize.TestAnonymizeScript.test_keep_specific_pr
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
+

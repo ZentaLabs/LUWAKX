@@ -5,11 +5,10 @@ from pydicom.dataset import Dataset
 import argparse
 
 
-def detect_phi_or_pii(client, dicom_tag_description, model="openai/gpt-oss-20b", DEV_MODE):
+def detect_phi_or_pii(client, dicom_tag_description, model="openai/gpt-oss-20b", DEV_MODE=False):
     """
     Detect if the DICOM tag description contains PHI/PII.
     """
-
     # Development mode, returns always 0
     if DEV_MODE:
         return 0

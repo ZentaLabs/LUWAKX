@@ -33,6 +33,14 @@ _default_config = {
     'date_format': '%Y-%m-%d %H:%M:%S'
 }
 
+PRIVATE_LEVEL = 5
+logging.addLevelName(PRIVATE_LEVEL, "PRIVATE")
+
+def private(self, message, *args, **kwargs):
+    if self.isEnabledFor(PRIVATE_LEVEL):
+        self._log(PRIVATE_LEVEL, message, args, **kwargs)
+logging.Logger.private = private
+
 
 def setup_logger(log_level: str = 'INFO', 
                 log_file: Optional[str] = None, 
@@ -68,7 +76,10 @@ def setup_logger(log_level: str = 'INFO',
     })
     
     # Convert string level to logging constant
-    numeric_level = getattr(logging, _default_config['log_level'], logging.INFO)
+    if _default_config['log_level'] == 'PRIVATE':
+        numeric_level = PRIVATE_LEVEL
+    else:
+        numeric_level = getattr(logging, _default_config['log_level'], logging.INFO)
     
     # Get root logger for Luwak
     root_logger = logging.getLogger('luwak')
