@@ -1,16 +1,22 @@
+import argparse
+
 import pandas as pd
 from openai import OpenAI
 from pydicom import datadict, dcmread
 from pydicom.dataset import Dataset
-import argparse
 
 
-def detect_phi_or_pii(client, dicom_tag_description, model="openai/gpt-oss-20b", DEV_MODE=False):
+def detect_phi_or_pii(
+    client,
+    dicom_tag_description,
+    dev_mode,
+    model="openai/gpt-oss-20b",
+):
     """
     Detect if the DICOM tag description contains PHI/PII.
     """
     # Development mode, returns always 0
-    if DEV_MODE:
+    if dev_mode:
         return 0
 
     result = client.chat.completions.create(
@@ -33,7 +39,7 @@ def detect_phi_or_pii(client, dicom_tag_description, model="openai/gpt-oss-20b",
     return result.choices[0].message.content
 
 
-def process_dataset(dataset: Dataset, client, out_dict, DEV_MODE, parent_path=""):
+def process_dataset(dataset: Dataset, client, out_dict, dev_mode, parent_path=""):
     """
     Recursively process a DICOM dataset, including sequences.
     """
@@ -59,7 +65,7 @@ def process_dataset(dataset: Dataset, client, out_dict, DEV_MODE, parent_path=""
 
             for i, item in enumerate(element.value):
                 process_dataset(
-                    item, client, out_dict, DEV_MODE, parent_path=f"{tag_path}[{i}]"
+                    item, client, out_dict, dev_mode, parent_path=f"{tag_path}[{i}]"
                 )
         else:
             value = str(element.value)
@@ -69,7 +75,7 @@ def process_dataset(dataset: Dataset, client, out_dict, DEV_MODE, parent_path=""
                 result = 0
             else:
                 result = detect_phi_or_pii(
-                    client, f"{tag} {tag_path}: {value}", DEV_MODE
+                    client, f"{tag} {tag_path}: {value}", dev_mode
                 )
 
             out_dict["Tag"].append(str(tag))
@@ -83,14 +89,14 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Detect PHI/PII in a DICOM file.")
     parser.add_argument("--fpath", required=True, help="Path to the input DICOM file")
-    parser.add_argument("--dev_mode",
-                        action="store_true",
-                        help="Run in development mode (no LLM calls)")
+    parser.add_argument(
+        "--dev_mode", action="store_true", help="Run in development mode (no LLM calls)"
+    )
     args = parser.parse_args()
 
     fpath = args.fpath
-    DEV_MODE = args.dev_mode  
-    print(f"Development mode: {DEV_MODE}")
+    dev_mode = args.dev_mode
+    print(f"Development mode: {dev_mode}")
 
     # Set up client
     client = OpenAI(base_url="http://localhost:1234/v1", api_key="")
@@ -102,7 +108,7 @@ if __name__ == "__main__":
     out_dict = {"Tag": [], "Attribute": [], "Value": [], "VR": [], "PII_or_PHI": []}
 
     # Process a single DICOM dataset
-    process_dataset(dcm, client, out_dict, DEV_MODE=DEV_MODE)
+    process_dataset(dcm, client, out_dict, dev_mode=dev_mode)
 
     # Save results as csv
     out_df = pd.DataFrame(out_dict)
