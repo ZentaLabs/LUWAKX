@@ -1,4 +1,6 @@
 import argparse
+import os
+from time import perf_counter
 
 import pandas as pd
 from openai import OpenAI
@@ -62,6 +64,7 @@ def process_dataset(dataset: Dataset, client, out_dict, dev_mode, parent_path=""
             out_dict["Value"].append(f"<Sequence with {len(element.value)} item(s)>")
             out_dict["VR"].append(vr)
             out_dict["PII_or_PHI"].append(0)
+            out_dict["Runtime_in_ms"].append(0)
 
             for i, item in enumerate(element.value):
                 process_dataset(
@@ -73,16 +76,25 @@ def process_dataset(dataset: Dataset, client, out_dict, dev_mode, parent_path=""
             # If value of a tag is empty, run no detection but classify as 0
             if not value:
                 result = 0
+                run_time = 0
             else:
+
+                # Start time
+                start_time = perf_counter()
                 result = detect_phi_or_pii(
                     client, f"{tag} {tag_path}: {value}", dev_mode
                 )
+                # End time
+                end_time = perf_counter()
+                run_time = end_time - start_time
+                run_time = run_time * 1000  # in ms
 
             out_dict["Tag"].append(str(tag))
             out_dict["Attribute"].append(tag_path)
             out_dict["Value"].append(value)
             out_dict["VR"].append(vr)
             out_dict["PII_or_PHI"].append(result)
+            out_dict["Runtime_in_ms"].append(run_time)
 
 
 if __name__ == "__main__":
@@ -105,7 +117,14 @@ if __name__ == "__main__":
     dcm = dcmread(fpath)
 
     # Dict to store detector results
-    out_dict = {"Tag": [], "Attribute": [], "Value": [], "VR": [], "PII_or_PHI": []}
+    out_dict = {
+        "Tag": [],
+        "Attribute": [],
+        "Value": [],
+        "VR": [],
+        "PII_or_PHI": [],
+        "Runtime_in_ms": [],
+    }
 
     # Process a single DICOM dataset
     process_dataset(dcm, client, out_dict, dev_mode=dev_mode)
