@@ -12,7 +12,7 @@ def detect_phi_or_pii(
     client,
     dicom_tag_description,
     dev_mode,
-    model="openai/gpt-oss-20b",
+    model,
 ):
     """
     Detect if the DICOM tag description contains PHI/PII.
@@ -41,7 +41,9 @@ def detect_phi_or_pii(
     return result.choices[0].message.content
 
 
-def process_dataset(dataset: Dataset, client, out_dict, dev_mode, parent_path=""):
+def process_dataset(
+    dataset: Dataset, client, out_dict, dev_mode, model, parent_path=""
+):
     """
     Recursively process a DICOM dataset, including sequences.
     """
@@ -68,7 +70,12 @@ def process_dataset(dataset: Dataset, client, out_dict, dev_mode, parent_path=""
 
             for i, item in enumerate(element.value):
                 process_dataset(
-                    item, client, out_dict, dev_mode, parent_path=f"{tag_path}[{i}]"
+                    item,
+                    client,
+                    out_dict,
+                    dev_mode,
+                    model,
+                    parent_path=f"{tag_path}[{i}]",
                 )
         else:
             value = str(element.value)
@@ -82,7 +89,7 @@ def process_dataset(dataset: Dataset, client, out_dict, dev_mode, parent_path=""
                 # Start time
                 start_time = perf_counter()
                 result = detect_phi_or_pii(
-                    client, f"{tag} {tag_path}: {value}", dev_mode
+                    client, f"{tag} {tag_path}: {value}", dev_mode, model
                 )
                 # End time
                 end_time = perf_counter()
@@ -101,17 +108,29 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Detect PHI/PII in a DICOM file.")
     parser.add_argument("--fpath", required=True, help="Path to the input DICOM file")
+    parser.add_argument("--model", required=True, help="Name of model")
     parser.add_argument(
         "--dev_mode", action="store_true", help="Run in development mode (no LLM calls)"
+    )
+    parser.add_argument(
+        "--use_local", action="store_true", help="Use local LLM via local host"
     )
     args = parser.parse_args()
 
     fpath = args.fpath
+    model = args.model
     dev_mode = args.dev_mode
+    use_local = args.use_local
+    print(f"Model: {model}")
     print(f"Development mode: {dev_mode}")
 
     # Set up client
-    client = OpenAI(base_url="http://localhost:1234/v1", api_key="")
+    if use_local:
+        print(f"Using local host: {"http://localhost:1234/v1"}")
+        client = OpenAI(base_url="http://localhost:1234/v1", api_key="")
+    else:
+        print("Using API")
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     # Read DICOM file
     dcm = dcmread(fpath)
@@ -127,7 +146,7 @@ if __name__ == "__main__":
     }
 
     # Process a single DICOM dataset
-    process_dataset(dcm, client, out_dict, dev_mode=dev_mode)
+    process_dataset(dcm, client, out_dict, dev_mode=dev_mode, model=model)
 
     # Save results as csv
     out_df = pd.DataFrame(out_dict)
