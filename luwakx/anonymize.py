@@ -200,7 +200,7 @@ class LuwakAnonymizer:
         )
         
         self.logger.info("Luwak Anonymizer initialization completed")
-
+        
     def _setup_logger_if_needed(self):
         """Set up logger if not already configured, using config file information."""
         
@@ -434,7 +434,7 @@ class LuwakAnonymizer:
         except Exception as e:
             self.logger.error(f"Error in PHI/PII detection: {e}")
             return str(field.element.value) if hasattr(field.element, 'value') else str(value)
-    
+
     def generate_hashuid(self, item, value, field, dicom):
         """Custom UID generation using combined salt as root for deterministic randomization.
         Ensures remapping: the same original UID always maps to the same anonymized UID for a given file and field.
@@ -1347,6 +1347,19 @@ class LuwakAnonymizer:
             - uid_mappings.csv: UID mapping table for re-identification
             - metadata.parquet: Structured metadata for analysis
         """
+        # Redirect deid.bot output to the same log file used by Luwak logger
+        from deid.logger import bot
+        log_file_path = os.path.join(self.config['recipesFolder'], 'luwak.log')
+        bot_logfile = None
+        try:
+            bot_logfile = open(log_file_path, "a")
+            bot.outputStream = bot_logfile
+            bot.errorStream = bot_logfile
+            self.logger.info("Redirected deid.bot output and error streams to Luwak log file.")
+        except Exception as e:
+            self.logger.warning(f"Could not redirect deid.bot output: {e}")
+            bot_logfile = None
+
         self.logger.info("=" * 50)
         self.logger.info("Starting DICOM anonymization process...")
         self.logger.info("=" * 50)
@@ -1356,6 +1369,13 @@ class LuwakAnonymizer:
         
         if not dicom_files:
             self.logger.warning("No files found to process")
+            # Close the bot log file if it was opened
+            if bot_logfile:
+                try:
+                    bot_logfile.close()
+                    self.logger.debug("Closed deid.bot log file.")
+                except Exception as e:
+                    self.logger.warning(f"Error closing bot log file: {e}")
             return
         
         # Get identifiers
@@ -1412,6 +1432,14 @@ class LuwakAnonymizer:
         self.logger.info("=" * 50)
         self.logger.info("DICOM anonymization process completed successfully!")
         self.logger.info("=" * 50)
+        
+        # Close the bot log file if it was opened
+        if bot_logfile:
+            try:
+                bot_logfile.close()
+                self.logger.debug("Closed deid.bot log file.")
+            except Exception as e:
+                self.logger.warning(f"Error closing bot log file: {e}")
         
         return parsed_files
 

@@ -196,6 +196,3 @@ def _setup_fallback_logger() -> None:
         log_file=None,
         console_output=False
     )
-
-
-

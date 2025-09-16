@@ -73,7 +73,7 @@ def main():
         log_file=log_file_path,
         console_output=not args.no_console
     )
-    
+
     # Get logger for this module
     logger = get_logger(__name__)
     
