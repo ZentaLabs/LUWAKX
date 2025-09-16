@@ -7,8 +7,8 @@
   "maxDateShiftDays": 1095,
   "excludedTagsFromParquet":  ["(7FE0,0010)"],
   "projectHashRoot": "7f4fsui293asdf",
-  "cleanDescriptorsLlmBaseUrl": "https://api.example.com/clean_descriptors",
-  "cleanDescriptorsLlmModel": "openai/gpt-oss-20b",
-  "cleanDescriptorsLlmApiKeyEnvVar": "OPENAI_API_KEY"
+  "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
+  "cleanDescriptorsLlmModel": "openai/gpt-4o-mini",
+  "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
 }
 

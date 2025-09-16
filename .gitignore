@@ -21,6 +21,7 @@ Thumbs.db
 # Project specific
 test_data/
 test_input_*/
+**/output/
 test_output/
 *.tar.gz
 

@@ -7,3 +7,4 @@ argparse
 jsonschema
 openai==1.103.0
 git+https://github.com/ZentaLabs/deid.git@master
+pytest

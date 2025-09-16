@@ -120,6 +120,8 @@ def register_private_tags_from_csv(csv_path):
         reader = csv.reader(csvfile)
         header = next(reader)  # Skip header if present
         for row in reader:
+            if not row or len(row) < 6 or all(not cell.strip() for cell in row):
+                continue  # Skip empty or incomplete rows
             group, element, private_creator, vr, vm, description = row[:6]
             try:
                 tag = tag_str_to_int(group, element)
@@ -401,9 +403,9 @@ class LuwakAnonymizer:
             return str(field.element.value) if hasattr(field.element, 'value') else str(value)
 
         # Get LLM config from self.config
-        base_url = self.config.get('cleanDescriptorsLlmBaseUrl', "http://localhost:1234/v1")
-        model = self.config.get('cleanDescriptorsLlmModel', "openai/gpt-oss-20b")
-        api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar', "OPENAI_API_KEY")
+        base_url = self.config.get('cleanDescriptorsLlmBaseUrl', "https://api.openai.com/v1")
+        model = self.config.get('cleanDescriptorsLlmModel', "openai/gpt-4o-mini")
+        api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar', "ZENTA_OPENAI_API_KEY")
         api_key = os.environ.get(api_key_env, "")
 
         try:

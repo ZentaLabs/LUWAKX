@@ -124,9 +124,9 @@ class TestAnonymizeScript(unittest.TestCase):
             "outputPrivateMappingFolder": output_private_mapping_folder,
             "recipesFolder": recipes_folder,
             "recipes": recipes if recipes is not None else "deid.dicom",
-            "cleanDescriptorsLlmBaseUrl": "https://openrouter.ai/api/v1",
-            "cleanDescriptorsLlmModel": "openai/gpt-oss-20b:free",  # e.g., "openrouter/mistral-7b" or another supported model
-            "cleanDescriptorsLlmApiKeyEnvVar": "OPENROUTER_API_KEY"
+            "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
+            "cleanDescriptorsLlmModel": "openai/gpt-4o-mini",
+            "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
         }
         # Create temporary config file
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
