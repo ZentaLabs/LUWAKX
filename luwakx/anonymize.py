@@ -435,6 +435,54 @@ class LuwakAnonymizer:
             self.logger.error(f"Error in PHI/PII detection: {e}")
             return str(field.element.value) if hasattr(field.element, 'value') else str(value)
 
+    def clean_recognizable_visual_features(self, dicom_dir, output_dir):
+        """Clean tags that may contain recognizable visual features using a defacing ML model or an existing mask.
+           
+           Args:
+                item: Item identifier from deid processing (not used)
+                value: Recipe string (e.g., "func:clean_recognizable_visual_features") - not the actual DICOM value
+                field: DICOM field element containing the text tag
+                dicom: PyDicom dataset object
+            
+            Returns:
+                str: 
+            
+            Note:
+                - Uses defacing ML model or existing mask to clean data
+                The 'value' parameter contains the recipe string, not the actual DICOM value.
+        """
+        import SimpleITK
+        try:
+            defacer_path = os.path.join(os.path.dirname(file), "scripts", "defacing", "image_defacer", "image_anonymization.py")
+            spec = importlib.util.spec_from_file_location("image_anonymization", defacer_path)
+            defacer = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(defacer)
+        except Exception as e:
+            self.logger.error(f"Failed to import image_anonymization.py: {e}")
+            return str(field.element.value) if hasattr(field.element, 'value') else str(value)
+        
+        reader = SimpleITK.ImageSeriesReader()
+        series_ids = reader.GetGDCMSeriesIDs(dicom_dir)
+
+        if not series_ids:
+            self.logger.error(f"No DICOM series found in: {dicom_dir}")
+        
+        dicom_filenames = reader.GetGDCMSeriesFileNames(dicom_dir, series_ids[0])
+        reader.SetFileNames(dicom_filenames)
+        image = reader.Execute()
+        modality = image.GetMetaData("0008|0060") if image.HasMetaDataKey("0008|0060") else None
+
+        image_face_segmentation = defacer.prepare_face_mask(image, modality, face_mask_path)
+        image_defaced = defacer.pixelate_face(image, image_face_segmentation)
+        defaced_array = sitk.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
+        
+        # For each slice, copy metadata and replace pixel data
+        for i, dicom_file in enumerate(dicom_names):
+            ds = pydicom.dcmread(dicom_file)
+            ds.PixelData = defaced_array[i].astype(ds.pixel_array.dtype).tobytes()
+            # Optionally update SeriesDescription, etc.
+            ds.save_as(os.path.join(output_dir, f"defaced_{os.path.basename(dicom_file)}"))
+
     def generate_hashuid(self, item, value, field, dicom):
         """Custom UID generation using combined salt as root for deterministic randomization.
         Ensures remapping: the same original UID always maps to the same anonymized UID for a given file and field.
@@ -1207,12 +1255,17 @@ class LuwakAnonymizer:
             # Add PatientIdentityRemoved if basic_profile is in the recipe list
             if 'basic_profile' in recipes_to_process:
                 outfile.write("ADD PatientIdentityRemoved YES\n")
+                # Set DeidentificationMethod based on examples from RSNA anonymizer:
+                # ds.DeidentificationMethod = "RSNA DICOM ANONYMIZER"  # (0012,0063)
+                outfile.write("ADD DeidentificationMethod LUWAK_ANONYMIZER\n")
                 if 'retain_long_full_dates' not in recipes_to_process and 'retain_long_modified_dates' not in recipes_to_process:
                     outfile.write("ADD LongitudinalTemporalInformationModified REMOVED\n")
             if 'retain_long_full_dates' in recipes_to_process:
                 outfile.write("ADD LongitudinalTemporalInformationModified UNMODIFIED\n")
             elif 'retain_long_modified_dates' in recipes_to_process:
                 outfile.write("ADD LongitudinalTemporalInformationModified MODIFIED\n")
+            if 'clean_recognizable_visual_features' in recipes_to_process:
+                outfile.write("ADD RecognizableVisualFeatures NO\n")
             
             if 'retain_safe_private_tags' in recipes_to_process:
                 with open(input_private_template, 'r') as privfile:
