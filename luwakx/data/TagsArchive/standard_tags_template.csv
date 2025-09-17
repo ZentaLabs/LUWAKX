@@ -62,33 +62,33 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0008,1140,Referenced Image Sequence,SQ,,remove,keep,,,,,,,,,"(0008,1140)",@process()
 0008,1155,Referenced SOP Instance UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0008,1155)","@hashuid(@UIDROOT,this)"
 0008,1195,Transaction UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0008,1195)","@hashuid(@UIDROOT,this)"
-0008,1301,Principal Diagnosis Code Sequence,CS,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
-0008,1302,Primary Diagnosis Code Sequence,CS,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
-0008,1303,Secondary Diagnoses Code Sequence,SH,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
-0008,1304,Histological Diagnoses Code Sequence,UI,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0008,1301,Principal Diagnosis Code Sequence,SQ,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0008,1302,Primary Diagnosis Code Sequence,SQ,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0008,1303,Secondary Diagnoses Code Sequence,SQ,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0008,1304,Histological Diagnoses Code Sequence,SQ,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
 0008,2111,Derivation Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0008,2111)",@remove()
 0008,2112,Source Image Sequence,SQ,,remove,keep,,,,,,,,,"(0008,2112)",@process()
 0008,3010,Irradiation Event UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0008,3010)","@hashuid(@UIDROOT,this)"
 0008,4000,Identifying Comments,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0008,4000)",@remove()
 0010,0010,Patient's Name,PN,,blank,,,,,,,,,,"(0010,0010)","LOOKUP(PatientID,ptid)"
-0010,0011,Person Names to Use Sequence,PN,,remove,,,,,,,,,,,
-0010,0012,Name to Use,LO,,remove,,,,,,,,,,,
-0010,0013,Name to Use Comment,SQ,,remove,,,,,,,,,,,
-0010,0014,Third Person Pronouns Sequence,LO,,remove,,,,,,,,,,,
-0010,0015,Pronoun Code Sequence,PN,,remove,,,,,,,,,,,
-0010,0016,Pronoun Comment,AS,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0010,0011,Person Names to Use Sequence,SQ,,remove,,,,,,,,,,,
+0010,0012,Name to Use,LT,,remove,,,,,,,,,,,
+0010,0013,Name to Use Comment,UT,,remove,,,,,,,,,,,
+0010,0014,Third Person Pronouns Sequence,SQ,,remove,,,,,,,,,,,
+0010,0015,Pronoun Code Sequence,SQ,,remove,,,,,,,,,,,
+0010,0016,Pronoun Comment,UT,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
 0010,0020,Patient ID,LO,,manual_review,,,,,,,,,,"(0010,0020)","LOOKUP(this,ptid)"
 0010,0021,Issuer of Patient ID,LO,,remove,,,,,,,,,,"(0010,0021)",@remove()
 0010,0030,Patient's Birth Date,DA,,func:set_fixed_datetime,,,,,,,,,,"(0010,0030)",@empty()
 0010,0032,Patient's Birth Time,TM,,remove,,,,,,,,,,"(0010,0032)",@remove()
 0010,0040,Patient's Sex,CS,,blank,,,,keep,,,,,,"(0010,0040)",@keep()
-0010,0041,Gender Identity Sequence,LO,,remove,,,,,,,,,,,
-0010,0042,Sex Parameters for Clinical Use Category Comment,LO,,remove,,,,C,,,func:clean_descriptors_with_llm,,,,
-0010,0043,Sex Parameters for Clinical Use Category Sequence,LO,,remove,,,,keep,,,,,,,
-0010,0044,Gender Identity Code Sequence,SH,,remove,,,,,,,,,,,
-0010,0045,Gender Identity Comment,SQ,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
-0010,0046,Sex Parameters for Clinical Use Category Code Sequence,LO,,remove,,,,keep,,,,,,,
-0010,0047,Sex Parameters for Clinical Use Category Reference,SH,,remove,,,,keep,,,,,,,
+0010,0041,Gender Identity Sequence,SQ,,remove,,,,,,,,,,,
+0010,0042,Sex Parameters for Clinical Use Category Comment,UT,,remove,,,,C,,,func:clean_descriptors_with_llm,,,,
+0010,0043,Sex Parameters for Clinical Use Category Sequence,SQ,,remove,,,,keep,,,,,,,
+0010,0044,Gender Identity Code Sequence,SQ,,remove,,,,,,,,,,,
+0010,0045,Gender Identity Comment,UT,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0010,0046,Sex Parameters for Clinical Use Category Code Sequence,SQ,,remove,,,,keep,,,,,,,
+0010,0047,Sex Parameters for Clinical Use Category Reference,UR,,remove,,,,keep,,,,,,,
 0010,0050,Patient's Insurance Plan Code Sequence,SQ,,remove,,,,,,,,,,"(0010,0050)",@remove()
 0010,0101,Patient's Primary Language Code Sequence,SQ,,remove,,,,,,,,,,"(0010,0101)",@remove()
 0010,0102,Patient's Primary Language Modifier Code Sequence,SQ,,remove,,,,,,,,,,"(0010,0102)",@remove()
@@ -114,7 +114,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0010,2155,Patient's Telecom Information,LT,,remove,,,,,,,,,,"(0010,2155)",@remove()
 0010,2160,Ethnic Group,SH,,remove,,,,keep,,,,,,"(0010,2160)",@keep()
 0010,2161,Ethnic Group Code Sequence,SQ,,remove,,,,keep,,,,,,,
-0010,2162,Ethnic Groups,PN,,remove,,,,keep,,,,,,,
+0010,2162,Ethnic Groups,UC,,remove,,,,keep,,,,,,,
 0010,2180,Occupation,SH,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0010,2180)",@remove()
 0010,21a0,Smoking Status,CS,,remove,,,,keep,,,,,,"(0010,21A0)",@keep()
 0010,21b0,Additional Patient History,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0010,21B0)",@keep()
@@ -397,8 +397,8 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,a030,Verification DateTime,DT,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0040,A030)","@incrementdate(this,@DATEINC)"
 0040,a032,Observation DateTime,DT,,func:hash_increment_date,,,,,keep,func:hash_increment_date,,,,"(0040,A032)","@incrementdate(this,@DATEINC)"
 0040,a033,Observation Start DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,A033)","@incrementdate(this,@DATEINC)"
-0040,a034,Effective Start DateTime,LO,,remove,,,,,keep,func:hash_increment_date,,,,,
-0040,a035,Effective Stop DateTime,SQ,,remove,,,,,keep,func:hash_increment_date,,,,,
+0040,a034,Effective Start DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,,
+0040,a035,Effective Stop DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,,
 0040,a073,Verifying Observer Sequence,SQ,,replace,,,,,,,,,,"(0040,A073)",@process()
 0040,a075,Verifying Observer Name,PN,,replace,,,,,,,,,,"(0040,A075)",removed
 0040,a078,Author Observer Sequence,SQ,,remove,,,,,,,,,,"(0040,A078)",@remove()
@@ -425,10 +425,10 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,a358,Verbal Source Identifier Code Sequence (Trial),SQ,,remove,,,,,,,,,,"(0040,A358)",@remove()
 0040,a402,Observation Subject UID (Trial),UI,,func:generate_hashuid,keep,,,,,,,,,"(0040,A402)","@hashuid(@UIDROOT,this)"
 0040,a730,Content Sequence,SQ,,replace,,,,,,,,clean_manually,,"(0040,A730)",@process()
-0040,b034,Annotation DateTime,LO,,remove,,,,,keep,func:hash_increment_date,,,,,
-0040,b036,Segment Definition DateTime,SQ,,remove,,,,,keep,func:hash_increment_date,,,,,
-0040,b03b,Montage Name,SQ,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
-0040,b03f,Montage Channel Label,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0040,b034,Annotation DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,,
+0040,b036,Segment Definition DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,,
+0040,b03b,Montage Name,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0040,b03f,Montage Channel Label,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
 0040,db06,Template Version,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,DB06)",@keep()
 0040,db07,Template Local Version,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,DB07)",@keep()
 0040,db0c,Template Extension Organization UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0040,DB0C)","@hashuid(@UIDROOT,this)"
@@ -649,4 +649,3 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 fffa,fffa,Digital Signatures Sequence,SQ,,remove,,,,,,,,,,"(FFFA,FFFA)",@remove()
 fffc,fffc,Data Set Trailing Padding,OB,,remove,,,,,,,,,,"(FFFC,FFFC)",@remove()
 gggg,eeeewhereggggisodd,Private Attributes,,,remove,,,,,,,,,,"(gggg,eeee) where gggg is odd",Private Attributes are cleaned in Posda as part of curation
-

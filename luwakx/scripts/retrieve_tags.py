@@ -448,30 +448,30 @@ def fill_missing_vr(df):
     """
     # Map of tag (as string "gggg,eeee") to VR
     missing_vr_map = {
-        "0008,1301": "CS",
-        "0008,1302": "CS",
-        "0008,1303": "SH",
-        "0008,1304": "UI",
-        "0010,0011": "PN",
-        "0010,0012": "LO",
-        "0010,0013": "SQ",
-        "0010,0014": "LO",
-        "0010,0015": "PN",
-        "0010,0016": "AS",
-        "0010,0041": "LO",
-        "0010,0042": "LO",
-        "0010,0043": "LO",
-        "0010,0044": "SH",
-        "0010,0045": "SQ",
-        "0010,0046": "LO",
-        "0010,0047": "SH",
-        "0010,2162": "PN",
-        "0040,a034": "LO",
-        "0040,a035": "SQ",
-        "0040,b034": "LO",
-        "0040,b036": "SQ",
-        "0040,b03b": "SQ",
-        "0040,b03f": "ST",
+        "0008,1301": "SQ",  # Principal Diagnosis Code Sequence
+        "0008,1302": "SQ",  # Primary Diagnosis Code Sequence
+        "0008,1303": "SQ",  # Secondary Diagnoses Code Sequence
+        "0008,1304": "SQ",  # Histological Diagnoses Code Sequence
+        "0010,0011": "SQ",  # Person Names to Use Sequence
+        "0010,0012": "LT",  # Name to Use
+        "0010,0013": "UT",  # Name to Use Comment
+        "0010,0014": "SQ",  # Third Person Pronouns Sequence
+        "0010,0015": "SQ",  # Pronoun Code Sequence
+        "0010,0016": "UT",  # Pronoun Comment
+        "0010,0041": "SQ",  # Gender Identity Sequence
+        "0010,0042": "UT",  # Sex Parameters for Clinical Use Category Comment
+        "0010,0043": "SQ",  # Sex Parameters for Clinical Use Category Sequence
+        "0010,0044": "SQ",  # Gender Identity Code Sequence
+        "0010,0045": "UT",  # Gender Identity Comment
+        "0010,0046": "SQ",  # Sex Parameters for Clinical Use Category Code Sequence
+        "0010,0047": "UR",  # Sex Parameters for Clinical Use Category Reference
+        "0010,2162": "UC",  # Ethnic Groups
+        "0040,a034": "DT",  # Effective Start DateTime
+        "0040,a035": "DT",  # Effective Stop DateTime
+        "0040,b034": "DT",  # Annotation DateTime
+        "0040,b036": "DT",  # Segment Definition DateTime
+        "0040,b03b": "LT",  # Montage Name
+        "0040,b03f": "LO",  # Montage Channel Label
     }
     # Normalize tag format for matching
     def normalize_tag(row):
