@@ -417,7 +417,7 @@ class LuwakAnonymizer:
         tag_desc = f"{getattr(field.element, 'tag', '')} {getattr(field.element, 'keyword', '')}: {str(field.element.value) if hasattr(field.element, 'value') else str(value)}"
         try:
             # Call the function directly, do not execute detector.py as a script
-            result = detector.detect_phi_or_pii(client, tag_desc, model=model, DEV_MODE=False)
+            result = detector.detect_phi_or_pii(client, tag_desc, model=model, dev_mode=False)
             self.logger.private(f"PHI/PII detection result for tag {tag_desc} : {result}")
             if str(result).strip() == "1":
                 # Remove the element from the DICOM dataset
@@ -453,7 +453,7 @@ class LuwakAnonymizer:
         """
         import SimpleITK
         try:
-            defacer_path = os.path.join(os.path.dirname(file), "scripts", "defacing", "image_defacer", "image_anonymization.py")
+            defacer_path = os.path.join(os.path.dirname(__file__), "scripts", "defacing", "image_defacer", "image_anonymization.py")
             spec = importlib.util.spec_from_file_location("image_anonymization", defacer_path)
             defacer = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(defacer)
@@ -474,7 +474,7 @@ class LuwakAnonymizer:
 
         image_face_segmentation = defacer.prepare_face_mask(image, modality, face_mask_path)
         image_defaced = defacer.pixelate_face(image, image_face_segmentation)
-        defaced_array = sitk.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
+        defaced_array = SimpleITK.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
         
         # For each slice, copy metadata and replace pixel data
         for i, dicom_file in enumerate(dicom_names):
@@ -1446,6 +1446,10 @@ class LuwakAnonymizer:
             items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
 
         output_directory = self.config.get('outputDeidentifiedFolder')
+        # TODO implement call to clean_recognizable_visual_features if in recipes
+        # recipes_list = self.config.get('recipes')
+        # if 'clean_recognizable_visual_features' in recipes_list:
+        #     clean_recognizable_visual_features(dicom_files, output_directory)
         # Perform anonymization
         self.logger.info("Performing anonymization...")
         parsed_files = replace_identifiers(
