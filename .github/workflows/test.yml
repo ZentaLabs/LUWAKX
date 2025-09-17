@@ -57,6 +57,6 @@ jobs:
     # Run tests
     - name: Run tests
       env:
-        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        ZENTA_OPENAI_API_KEY: ${{ secrets.ZENTA_OPENAI_API_KEY }}
       run: |
         python -m unittest discover test -v
