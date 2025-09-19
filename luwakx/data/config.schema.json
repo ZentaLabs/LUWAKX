@@ -79,7 +79,7 @@
     },
     "cleanDescriptorsLlmApiKeyEnvVar": {
       "type": "string",
-      "default": "ZENTA_OPENAI_API_KEY"
+      "default": ""
     }
   },
   "required": [

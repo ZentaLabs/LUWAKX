@@ -490,7 +490,7 @@ class LuwakAnonymizer:
                 try:
                     reader.SetFileNames(dicom_filenames)
                     image = reader.Execute()
-                    image_face_segmentation = defacer.prepare_face_mask(image, modality, face_mask_path)
+                    image_face_segmentation = defacer.prepare_face_mask(image, modality)
                     image_defaced = defacer.pixelate_face(image, image_face_segmentation)
                     defaced_array = SimpleITK.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
                 except Exception as e:
