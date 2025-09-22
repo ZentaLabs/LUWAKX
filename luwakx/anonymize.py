@@ -513,7 +513,7 @@ class LuwakAnonymizer:
                     except Exception as e:
                         self.logger.error(f"Failed to save defaced DICOM for {dicom_file}: {e}")
                         continue
-            self.logger.info(f"Defaced DICOM series number {series_count}saved: {output_path}")
+                self.logger.info(f"Defaced DICOM series number {series_count}saved: {output_path}")
             else:
                 self.logger.info(f"Skipping defacing for modality {modality} and series number {series_count}.")
                 # Copy all files in dicom_filenames to output_dir
