@@ -3,7 +3,7 @@
   "outputDeidentifiedFolder": "./outputs/deidentified",
   "outputPrivateMappingFolder": "./outputs/privateMapping",
   "recipesFolder": "./recipes",
-  "recipes": ["basic_profile", "retain_safe_private_tags", "retain_uids"],
+  "recipes": ["basic_profile", "retain_safe_private_tags", "clean_recognizable_visual_features"],
   "maxDateShiftDays": 1095,
   "excludedTagsFromParquet":  ["(7FE0,0010)"],
   "projectHashRoot": "7f4fsui293asdf",

@@ -259,11 +259,13 @@ class LuwakAnonymizer:
             The 'value' parameter contains recipe-related data, not the actual DICOM field value.
             The actual determination is based on field.element.is_private and private_creator.
         """
-        self.logger.info(f"Removed tag {field.element.tag} ({getattr(field.element, 'name', '')}).")
         # Log private tag details at PRIVATE level if it exists
-        if hasattr(field.element, 'value'):
-            self.logger.private(f"Removed private tag {field.element.tag} with value: {field.element.value}")
-        return field.element.is_private and (field.element.private_creator is not None)
+        if field.element.is_private and (field.element.private_creator is not None):
+            self.logger.info(f"Removed private tag {field.element.tag} ({getattr(field.element, 'name', '')}).")
+            if hasattr(field.element, 'value'):
+                self.logger.private(f"Removed private tag {field.element.tag} with value: {field.element.value}")
+            return True
+        return False
     
     def hash_increment_date(self, item, value, field, dicom):
         """Generate single date/time shift value for entire anonymization project.
@@ -435,11 +437,11 @@ class LuwakAnonymizer:
             self.logger.error(f"Error in PHI/PII detection: {e}")
             return str(field.element.value) if hasattr(field.element, 'value') else str(value)
 
-    def clean_recognizable_visual_features(self, dicom_dir, output_dir):
+    def clean_recognizable_visual_features(self, input_folder, output_dir):
         """Clean tags that may contain recognizable visual features using a defacing ML model or an existing mask.
            
            Args:
-                dicom_dir: Directory containing DICOM files to process
+                input_folder: Directory containing DICOM files to process
                 output_dir: Directory to save defaced DICOM files
             
             Returns:
@@ -465,19 +467,20 @@ class LuwakAnonymizer:
         
         reader = SimpleITK.ImageSeriesReader()
         try:
-            series_ids = reader.GetGDCMSeriesIDs(dicom_dir)
+            series_ids = reader.GetGDCMSeriesIDs(input_folder)
         except Exception as e:
-            self.logger.error(f"Failed to get DICOM series IDs in {dicom_dir}: {e}")
+            self.logger.error(f"Failed to get DICOM series IDs in {input_folder}: {e}")
             return
 
         if not series_ids:
-            self.logger.error(f"No DICOM series found in: {dicom_dir}")
+            self.logger.error(f"No DICOM series found in: {input_folder}")
             return
+        series_count = 0 
         for series_id in series_ids:
             try:
-                dicom_filenames = reader.GetGDCMSeriesFileNames(dicom_dir, series_id)
+                dicom_filenames = reader.GetGDCMSeriesFileNames(input_folder, series_id)
             except Exception as e:
-                self.logger.error(f"Failed to get DICOM filenames for series {series_id} in {dicom_dir}: {e}")
+                self.logger.error(f"Failed to get DICOM filenames for series {series_id} in {input_folder}: {e}")
                 continue
             try:
                 ds = pydicom.dcmread(dicom_filenames[0])
@@ -486,15 +489,18 @@ class LuwakAnonymizer:
             except Exception as e:
                 self.logger.error(f"Failed to read DICOM file {dicom_filenames[0]}: {e}")
                 continue
-            if modality.upper() == "CT" and body_part.upper() in ["HEAD", "BRAIN", "FACE", "NECK"]:
+            if modality.upper() == "CT": #and body_part.upper() in ["HEAD", "BRAIN", "FACE", "NECK"]:
+                series_count += 1
                 try:
+                    self.logger.info(f"Defacing series number {series_count}.")
+                    self.logger.private(f"Defacing series {series_id} in {input_folder} with modality {modality} and body part {body_part}.")
                     reader.SetFileNames(dicom_filenames)
                     image = reader.Execute()
                     image_face_segmentation = defacer.prepare_face_mask(image, modality)
                     image_defaced = defacer.pixelate_face(image, image_face_segmentation)
                     defaced_array = SimpleITK.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
                 except Exception as e:
-                    self.logger.error(f"Defacing failed for series {series_id} in {dicom_dir}: {e}")
+                    self.logger.error(f"Defacing failed for series {series_id} in {input_folder}: {e}")
                     continue
                 # For each slice, copy metadata and replace pixel data
                 for i, dicom_file in enumerate(dicom_filenames):
@@ -504,13 +510,14 @@ class LuwakAnonymizer:
                         # Optionally update SeriesDescription, etc.
                         output_path = os.path.join(output_dir, os.path.basename(dicom_file))
                         ds.save_as(output_path)
-                        self.logger.info(f"Defaced DICOM saved: {output_path}")
                     except Exception as e:
                         self.logger.error(f"Failed to save defaced DICOM for {dicom_file}: {e}")
                         continue
+            self.logger.info(f"Defaced DICOM series number {series_count}saved: {output_path}")
             else:
-                self.logger.info(f"Skipping defacing for modality {modality} and body part {body_part}.")
+                self.logger.info(f"Skipping defacing for modality {modality} and series number {series_count}.")
                 # Copy all files in dicom_filenames to output_dir
+                series_count += 1
                 import shutil
                 for src_file in dicom_filenames:
                     output_path = os.path.join(output_dir, os.path.basename(src_file))
@@ -1460,19 +1467,19 @@ class LuwakAnonymizer:
 
         output_directory = self.config.get('outputDeidentifiedFolder')
         # TODO implement call to clean_recognizable_visual_features if in recipes
-        # recipes_list = self.config.get('recipes')
-        # if 'clean_recognizable_visual_features' in recipes_list:
-        # Create a temporary directory for defaced DICOMs
-        #   defaced_dir = os.path.join(output_directory, "defaced_dicom")
-        #   os.makedirs(defaced_dir, exist_ok=True)
-
-        #   self.clean_recognizable_visual_features(input_folder, defaced_dir)
-        # If defaced_dir contains files, use it as the new input_folder
-        #    if any(os.scandir(defaced_dir)):
-        #        self.logger.info(f"Defaced DICOMs found in {defaced_dir}, using as new input folder.")
-        ##        input_folder = defaced_dir
-        #    else:
-        #        self.logger.info(f"No defaced DICOMs found in {defaced_dir}, continuing with original input folder.")
+        recipes_list = self.config.get('recipes')
+        if 'clean_recognizable_visual_features' in recipes_list:
+            # Create a temporary directory for defaced DICOMs
+            defaced_dir = os.path.join(output_directory, "defaced_dicom")
+            os.makedirs(defaced_dir, exist_ok=True)
+            self.logger.info("Cleaning recognizable visual features from DICOM files...")
+            self.clean_recognizable_visual_features(input_folder, defaced_dir)
+            # If defaced_dir contains files, use it as the new input_folder
+            if any(os.scandir(defaced_dir)):
+                self.logger.info(f"Defaced DICOMs found in {defaced_dir}, using as new input folder.")
+                input_folder = defaced_dir
+            else:
+                self.logger.info(f"No defaced DICOMs found in {defaced_dir}, continuing with original input folder.")
 
         # Get DICOM files
         dicom_files = self.get_dicom_files(input_folder)
@@ -1551,13 +1558,13 @@ class LuwakAnonymizer:
                 self.logger.warning(f"Error closing bot log file: {e}")
         
         # Clean up the defaced_dicom directory if it exists
-        #if os.path.exists(defaced_dir):
-        #    import shutil
-        #    try:
-        #        shutil.rmtree(defaced_dir)
-        #        self.logger.info(f"Temporary defaced_dicom directory removed: {defaced_dir}")
-        #    except Exception as e:
-        #        self.logger.warning(f"Could not remove temporary defaced_dicom directory {defaced_dir}: {e}")
+        if os.path.exists(defaced_dir):
+            import shutil
+            try:
+                shutil.rmtree(defaced_dir)
+                self.logger.info(f"Temporary defaced_dicom directory removed: {defaced_dir}")
+            except Exception as e:
+                self.logger.warning(f"Could not remove temporary defaced_dicom directory {defaced_dir}: {e}")
 
         return parsed_files
 
