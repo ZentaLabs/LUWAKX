@@ -196,3 +196,6 @@ def _setup_fallback_logger() -> None:
         log_file=None,
         console_output=False
     )
+
+def get_log_file_path():
+    return _default_config['log_file']

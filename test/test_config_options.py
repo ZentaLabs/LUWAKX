@@ -16,7 +16,7 @@ class TestConfigOptions(unittest.TestCase):
             "inputFolder": "./inputs",
             "outputDeidentifiedFolder": "./outputs/deidentified",
             "outputPrivateMappingFolder": "./outputs/privateMapping",
-            "recipesFolder": "./recipes",
+            "recipesFolder": "./outputs/recipes",
             "recipes": ["basic_profile"],
             "maxDateShiftDays": 1095,
             "excludedTagsFromParquet": ["(7FE0,0010)"],
@@ -58,9 +58,9 @@ class TestConfigOptions(unittest.TestCase):
         self.assertEqual(anonymizer.config["outputPrivateMappingFolder"], expected)
 
     def test_recipes_folder(self):
-        config_path = self.make_config({"recipesFolder": "./test_recipes"})
+        config_path = self.make_config({"recipesFolder": "./output/test_recipes"})
         anonymizer = LuwakAnonymizer(config_path)
-        expected = os.path.abspath(os.path.join(anonymizer.config['outputDeidentifiedFolder'], "test_recipes"))        
+        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "output/test_recipes"))        
         self.assertEqual(anonymizer.config["recipesFolder"], expected)
 
     def test_recipes(self):

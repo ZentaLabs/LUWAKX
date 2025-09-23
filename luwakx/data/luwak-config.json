@@ -2,7 +2,7 @@
   "inputFolder": "./inputs",
   "outputDeidentifiedFolder": "./outputs/deidentified",
   "outputPrivateMappingFolder": "./outputs/privateMapping",
-  "recipesFolder": "./recipes",
+  "recipesFolder": "./outputs/recipes",
   "recipes": ["basic_profile", "retain_safe_private_tags", "clean_recognizable_visual_features"],
   "maxDateShiftDays": 1095,
   "excludedTagsFromParquet":  ["(7FE0,0010)"],

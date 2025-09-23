@@ -17,7 +17,7 @@ from datetime import datetime
 from pydicom.datadict import add_private_dict_entry
 
 # Import the centralized logger
-from luwak_logger import get_logger, setup_logger
+from luwak_logger import get_logger, setup_logger, get_log_file_path
 
 def setup_deid_repo():
     logger = get_logger('setup_deid_repo')
@@ -261,9 +261,9 @@ class LuwakAnonymizer:
         """
         # Log private tag details at PRIVATE level if it exists
         if field.element.is_private and (field.element.private_creator is not None):
-            self.logger.info(f"Removed private tag {field.element.tag} ({getattr(field.element, 'name', '')}).")
             if hasattr(field.element, 'value'):
                 self.logger.private(f"Removed private tag {field.element.tag} with value: {field.element.value}")
+                self.logger.info(f"Removed private tag {field.element.tag} ({getattr(field.element, 'name', '')}).")
             return True
         return False
     
@@ -499,14 +499,18 @@ class LuwakAnonymizer:
                     image_face_segmentation = defacer.prepare_face_mask(image, modality)
                     image_defaced = defacer.pixelate_face(image, image_face_segmentation)
                     defaced_array = SimpleITK.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
-                except Exception as e:
+                except Exception as e: 
                     self.logger.error(f"Defacing failed for series {series_id} in {input_folder}: {e}")
                     continue
                 # For each slice, copy metadata and replace pixel data
                 for i, dicom_file in enumerate(dicom_filenames):
                     try:
                         ds = pydicom.dcmread(dicom_file)
-                        ds.PixelData = defaced_array[i].astype(ds.pixel_array.dtype).tobytes()
+                        rescale_slope = getattr(ds, 'RescaleSlope', 1.0)
+                        rescale_intercept = getattr(ds, 'RescaleIntercept', 0.0)
+                        # Apply inverse scaling to get back to raw values
+                        raw_pixels = ((defaced_array[i] - rescale_intercept) / rescale_slope).round().astype(ds.pixel_array.dtype)
+                        ds.PixelData = raw_pixels.tobytes()
                         # Optionally update SeriesDescription, etc.
                         output_path = os.path.join(output_dir, os.path.basename(dicom_file))
                         ds.save_as(output_path)
@@ -1107,7 +1111,7 @@ class LuwakAnonymizer:
         self.config['outputDeidentifiedFolder'] = output_directory
         self.config['outputPrivateMappingFolder'] = private_map_folder
         # Recipes folder should be a subfolder inside the output directory
-        recipes_folder = os.path.join(output_directory, os.path.basename(recipes_folder))
+        #recipes_folder = os.path.join(output_directory, os.path.basename(recipes_folder))
         self.config['recipesFolder'] = recipes_folder
         os.makedirs(recipes_folder, exist_ok=True)
 
@@ -1448,7 +1452,8 @@ class LuwakAnonymizer:
         """
         # Redirect deid.bot output to the same log file used by Luwak logger
         from deid.logger import bot
-        log_file_path = os.path.join(self.config['recipesFolder'], 'luwak.log')
+
+        log_file_path = get_log_file_path()
         bot_logfile = None
         try:
             bot_logfile = open(log_file_path, "a")
@@ -1466,11 +1471,10 @@ class LuwakAnonymizer:
         input_folder = self.config.get('inputFolder')
 
         output_directory = self.config.get('outputDeidentifiedFolder')
-        # TODO implement call to clean_recognizable_visual_features if in recipes
+        defaced_dir = os.path.join(output_directory, "defaced_dicom")
         recipes_list = self.config.get('recipes')
         if 'clean_recognizable_visual_features' in recipes_list:
             # Create a temporary directory for defaced DICOMs
-            defaced_dir = os.path.join(output_directory, "defaced_dicom")
             os.makedirs(defaced_dir, exist_ok=True)
             self.logger.info("Cleaning recognizable visual features from DICOM files...")
             self.clean_recognizable_visual_features(input_folder, defaced_dir)
