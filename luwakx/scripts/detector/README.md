@@ -75,7 +75,7 @@ Table (csv) containing the Tag, Attribute, Value, Value Representation (VR), PII
 
 ## Benchmarks
 #### Original Dataset
-The validation (n=216 studies, XXX series) and test (n=322 studies, XXX series) datasets from the MIDI-B De-identification Challenge were used.
+The validation (n=216 studies, 280 series) and test (n=322 studies, 428 series) datasets from the MIDI-B De-identification Challenge were used.
 
 Download: https://www.cancerimagingarchive.net/collection/midi-b-test-midi-b-validation/
 
