@@ -406,10 +406,9 @@ class LuwakAnonymizer:
 
         # Get LLM config from self.config
         base_url = self.config.get('cleanDescriptorsLlmBaseUrl', "https://api.openai.com/v1")
-        model = self.config.get('cleanDescriptorsLlmModel', "openai/gpt-4o-mini")
+        model = self.config.get('cleanDescriptorsLlmModel', "gpt-4o-mini")
         api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar', "ZENTA_OPENAI_API_KEY")
         api_key = os.environ.get(api_key_env, "")
-
         try:
             client = OpenAI(base_url=base_url, api_key=api_key)
         except Exception as e:
@@ -425,11 +424,11 @@ class LuwakAnonymizer:
                 # Remove the element from the DICOM dataset
                 try:
                     del dicom[field.element.tag]
-                    self.logger.info(f"Removed tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) from DICOM file.")
+                    self.logger.info(f"Removed tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) from DICOM file as the detector found PHI information in its text.")
                 except Exception as e:
                     self.logger.warning(f"Failed to remove element {field.element.tag}: {e}")
-                    self.logger.info(f"Replaced tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) to 'ANONYMIZED'.")
-                return "ANONYMIZED"  # Empty string for other types
+                    self.logger.info(f"Replaced tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) to 'ANONYMIZED' as the detector found PHI information in its text.")
+                    return "ANONYMIZED"
             else:
                 self.logger.info(f"Keeping original value for tag {field.element.tag} ({getattr(field.element, 'keyword', '')}).")
                 return str(field.element.value) if hasattr(field.element, 'value') else str(value)

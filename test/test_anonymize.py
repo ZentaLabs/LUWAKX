@@ -113,7 +113,7 @@ class TestAnonymizeScript(unittest.TestCase):
         # Setup logger with the actual output and recipe paths
         log_file_path = os.path.join(self.test_output_dir, './recipes', 'luwak_test.log')
         os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
-        setup_logger(log_level='INFO', log_file=log_file_path, console_output=False)
+        setup_logger(log_level='INFO', log_file=log_file_path, console_output=True)
         self.logger = get_logger('test_anonymize')
         self.logger.info(f"Setting up test configuration with output: {output_folder}, recipes: {recipes_folder}")
         
@@ -125,7 +125,7 @@ class TestAnonymizeScript(unittest.TestCase):
             "recipesFolder": recipes_folder,
             "recipes": recipes if recipes is not None else "deid.dicom",
             "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
-            "cleanDescriptorsLlmModel": "openai/gpt-4o-mini",
+            "cleanDescriptorsLlmModel": "gpt-4o-mini",
             "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
         }
         # Create temporary config file
