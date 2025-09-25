@@ -23,7 +23,7 @@ def setup_deid_repo():
     logger = get_logger('setup_deid_repo')
     
     repo_url = "https://github.com/ZentaLabs/deid.git"
-    branch = "master"
+    branch = "speed-optimization"
     repo_dir = os.path.expanduser("~/deid")  # Set repo_dir to the home directory
 
     # Check if the repository is already cloned
@@ -1227,7 +1227,7 @@ class LuwakAnonymizer:
                 reader = csv.DictReader(csvfile)
                 
                 for row in reader:
-                    tag = f"({row['Group']},{row['Element']})"
+                    tag = (f"({row['Group']},{row['Element']})").upper()
                     
                     name = row['Name']
                     comment = f" # {name}" if name else ""
@@ -1321,8 +1321,8 @@ class LuwakAnonymizer:
                     privreader = csv.DictReader(privfile)
                     for row in privreader:
                         private_creator = row['Private Creator']
-                        group = row['Group']
-                        element = row['Element'][-2:]  # Last two hex digits
+                        group = row['Group'].upper()
+                        element = row['Element'][-2:].upper()  # Last two hex digits
                         name = row['Meaning']
                         comment = f" # {name}" if name else ""
                         line = f"{comment}\n"

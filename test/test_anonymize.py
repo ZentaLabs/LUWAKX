@@ -51,7 +51,7 @@ class TestAnonymizeScript(unittest.TestCase):
         try:
             # Perform cleanup of the test_data_dir
             if os.path.exists(cls.test_data_dir):
-                shutil.rmtree(cls.test_data_dir)
+                pass#shutil.rmtree(cls.test_data_dir)
         finally:
             pass
 
@@ -89,7 +89,7 @@ class TestAnonymizeScript(unittest.TestCase):
     def tearDown(self):
         # Clean up output directory after each test
         if os.path.exists(self.test_output_dir):
-            shutil.rmtree(self.test_output_dir)
+            pass#shutil.rmtree(self.test_output_dir)
         # Clean up limited input directory
         if os.path.exists(self.limited_input_dir):
             shutil.rmtree(self.limited_input_dir)
@@ -170,7 +170,7 @@ class TestAnonymizeScript(unittest.TestCase):
     def test_keep_specific_private_tags_should_be_original_value(self):
         """Test KEEP private tags using retain_safe_private_tags recipe."""
         print("Test KEEP private tags with retain_safe_private_tags recipe (first 50 input files)")
-        
+
         # Create test config with retain_safe_private_tags recipe
         config_path = self.create_test_config(
             input_folder=self.limited_input_dir,
@@ -611,7 +611,6 @@ class TestAnonymizeScript(unittest.TestCase):
             os.unlink(config_path)
             self.logger.info("Modified dates test completed and config cleaned up")
     
-    
     def test_basic_clean_descriptors_should_have_clean_value(self):
         """Test that mixing basic profile and clean descriptors clean the fields."""
         print("Test that mixing basic profile and clean descriptors clean the fields.")
@@ -648,7 +647,6 @@ class TestAnonymizeScript(unittest.TestCase):
         finally:
             os.unlink(config_path)
             self.logger.info("Basic profile + clean descriptors test completed and config cleaned up")
-    
 
 if __name__ == "__main__":
     unittest.main()
