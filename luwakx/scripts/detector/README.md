@@ -80,7 +80,7 @@ The validation (n=216 studies, 280 series) and test (n=322 studies, 428 series) 
 Download: https://www.cancerimagingarchive.net/collection/midi-b-test-midi-b-validation/
 
 #### Benchmark Dataset
-Starting from the original dataset, we treated the first Dicom file of each series (within each study) as the representative file for that series. From each representative file we extracted all free-text/annotations fields and any private or vendor-specific Dicom tags. Finally, any Dicom field whose Value Representation (VR) is UI (Unique Identifier) was removed from the extracted data.
+Starting from the original dataset, we treated the first Dicom file of each series (within each study) as the representative file for that series. From each representative file we extracted all free-text/annotations fields and any private or vendor-specific Dicom tags. Finally, any Dicom field whose Value Representation (VR) is UI (Unique Identifier) was removed from the extracted data. While unique identifiers are not inherently PII/PHI, they are globally unique and persistent, which makes them indirect identifiers capable of linking back to a patient’s study. Because our detector is designed to classify explicit PII/PHI content, we excluded UIDs from the benchmark dataset; they can instead be handled using deterministic rule-based approaches outside of the benchmark.
 
 The following <b>free-text</b> tags were extracted if present:
 
@@ -140,5 +140,10 @@ Benchmark performance of the detector on the entire benchmark dataset.
 |             |     10     |        1000        |     0.84    |     0.99    |            0.9            |            0.99           |        **0.91**       |   **0.85**   |
 
 <b>Test dataset (n=21,793):</b>
+| Model       | Tags/Batch | Tags not processed | Sensitivity | Specificity | Positive predictive value | Negative predictive value | **Balanced Accuracy** | **F2-Score** |
+|-------------|:----------:|:------------------:|:-----------:|:-----------:|:-------------------------:|:-------------------------:|:---------------------:|:------------:|
+| gpt-oss-20b |      1     |          0         |     0.97    |     0.98    |            0.8            |            1.0            |        **0.98**       |   **0.93**   |
+|             |      5     |          5         |             |             |                           |                           |                       |              |
+|             |     10     |        1000        |             |             |                           |                           |                       |              |
 
 In progress/Running
