@@ -51,7 +51,7 @@ class TestAnonymizeScript(unittest.TestCase):
         try:
             # Perform cleanup of the test_data_dir
             if os.path.exists(cls.test_data_dir):
-                pass#shutil.rmtree(cls.test_data_dir)
+                shutil.rmtree(cls.test_data_dir)
         finally:
             pass
 
@@ -89,7 +89,7 @@ class TestAnonymizeScript(unittest.TestCase):
     def tearDown(self):
         # Clean up output directory after each test
         if os.path.exists(self.test_output_dir):
-            pass#shutil.rmtree(self.test_output_dir)
+            shutil.rmtree(self.test_output_dir)
         # Clean up limited input directory
         if os.path.exists(self.limited_input_dir):
             shutil.rmtree(self.limited_input_dir)

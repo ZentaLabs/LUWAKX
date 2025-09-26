@@ -25,24 +25,39 @@ Create a JSON configuration file with the following structure:
 ```json
 {
   "inputFolder": "/path/to/input/dicom/files",
-  "outputDeidentifiedFolder": "/path/to/output/directory",
-  "outputPrivateMappingFolder": "/path/to/output/directory/privateMapping",
-  "recipesFolder": "./recipes",
+  "outputDeidentifiedFolder": "/path/to/output/deidentified",
+  "outputPrivateMappingFolder": "/path/to/output/privateMapping",
+  "recipesFolder": "/path/to/output/recipes",
   "recipes": ["basic_profile"],
-  "outputFolderHierarchy": "copy_from_input",
-  "projectHashRoot": "your_encryption_key"
+  "projectHashRoot": "your_encryption_key",
+  "maxDateShiftDays": 1095,
+  "excludedTagsFromParquet": ["(7FE0,0010)"],
+  "logLevel": "INFO",
+  "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
+  "cleanDescriptorsLlmModel": "gpt-4o-mini",
+  "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
 }
 ```
 
 ### Configuration Parameters
 
+#### Required Parameters
+
 - **`inputFolder`**: Path to input DICOM file or directory
 - **`outputDeidentifiedFolder`**: Output directory for anonymized files
-- **`outputPrivateMappingFolder`**: Directory for private tag mappings
+- **`outputPrivateMappingFolder`**: Directory for private tag mappings and metadata exports
 - **`recipesFolder`**: Directory containing deid recipe files
 - **`recipes`**: List of recipe names to apply (e.g., `["basic_profile", "retain_safe_private_tags"]`)
-- **`outputFolderHierarchy`**: How to structure output (`"copy_from_input"` or `"flat"`)
-- **`projectHashRoot`**: Encryption key for anonymization
+
+#### Optional Parameters
+
+- **`projectHashRoot`**: Salt for deterministic UID generation and date shifting (default: "myproject2025")
+- **`maxDateShiftDays`**: Maximum number of days for date shifting (default: 1095)
+- **`excludedTagsFromParquet`**: List of DICOM tags to exclude from Parquet export (default: ["(7FE0,0010)"])
+- **`logLevel`**: Logging level - PRIVATE, DEBUG, INFO, WARNING, ERROR (default: "INFO")
+- **`cleanDescriptorsLlmBaseUrl`**: Base URL for LLM API used in descriptor cleaning (optional)
+- **`cleanDescriptorsLlmModel`**: LLM model name for descriptor cleaning (default: "openai/gpt-4o-mini")
+- **`cleanDescriptorsLlmApiKeyEnvVar`**: Environment variable name containing the LLM API key (optional)
 
 ### Built-in Recipes
 
@@ -63,18 +78,18 @@ LuwakX supports multiple anonymization profiles that can be used individually or
 
 #### Retention Options (can be combined with basic profiles)
 
-- **`retain_uids`**: Preserves original UIDs
+- **`retain_uid`**: Preserves original UIDs
   - Useful for maintaining study relationships
 
-- **`retain_device_identifiers`**: Keeps device-related information
+- **`retain_device_id`**: Keeps device-related information
   - Preserves manufacturer, model, software version
   - Maintains equipment traceability
 
-- **`retain_institution_identifiers`**: Keeps institution information
+- **`retain_institution_id`**: Keeps institution information
   - Preserves institution name, department
   - Maintains organizational context
 
-- **`retain_patient_characteristics`**: Keeps non-identifying patient data
+- **`retain_patient_chars`**: Keeps non-identifying patient data
   - Preserves age, sex, body part examined
   - Maintains clinical context without identification
 
@@ -92,13 +107,10 @@ LuwakX supports multiple anonymization profiles that can be used individually or
   - Removes potentially identifying text descriptions using a large language model (LLM)
   - If PHI/PII is detected in a descriptor, the corresponding DICOM element is deleted from the file and replaced with an empty value
 
-- **`clean_structured_content`(manually_set)**: Cleans structured report content
-  - Processes SR (Structured Report) DICOM objects
-  - Removes identifying information from structured data
+- **`clean_recognizable_visual_features`**: Uses ML-based defacing for images
+  - Applies defacing to CT images to remove recognizable features
+  - Uses specialized models to detect and anonymize faces
 
-- **`clean_graphics`(manually_set)**: Removes graphic annotations
-  - Strips overlay data that might contain identifying information
-  - Removes graphic annotations and text overlays
 
 #### Recipe Combination Examples
 
@@ -106,7 +118,7 @@ You can combine multiple recipes for customized anonymization:
 
 ```json
 {
-  "recipes": ["basic_profile", "retain_safe_private_tags", "retain_patient_characteristics"]
+  "recipes": ["basic_profile", "retain_safe_private_tags", "retain_patient_chars"]
 }
 ```
 
@@ -118,7 +130,7 @@ You can combine multiple recipes for customized anonymization:
 
 ```json
 {
-  "recipes": ["retain_uids", "retain_device_identifiers"]
+  "recipes": ["retain_uid", "retain_device_id"]
 }
 ```
 
@@ -138,6 +150,27 @@ Run the script using a JSON configuration file:
 ```bash
 python luwakx.py --config_path /path/to/config.json
 ```
+
+#### Command Line Options
+
+- **`--config_path`** (required): Path to the JSON configuration file
+- **`--no-console`** (optional): Disable console logging output; logs will only be written to the log file
+
+#### Logging Behavior
+
+The logging level is controlled by the `logLevel` setting in the configuration file (defaults to "INFO" if not specified). Both command-line and programmatic interfaces use the same config file setting for consistency.
+
+#### Examples
+
+```bash
+# Basic usage
+python luwakx.py --config_path config.json
+
+# Log only to file (no console output)
+python luwakx.py --config_path config.json --no-console
+```
+
+**Note**: To change the logging level, modify the `logLevel` property in your configuration file (e.g., set it to "DEBUG" for verbose logging).
 
 ### Programmatic Interface
 
@@ -163,7 +196,6 @@ result = anonymizer.anonymize()
   "outputPrivateMappingFolder": "/data/anonymized/privateMapping",
   "recipesFolder": "./recipes",
   "recipes": ["retain_safe_private_tags"],
-  "outputFolderHierarchy": "copy_from_input",
   "projectHashRoot": "my_secure_key"
 }
 ```
@@ -254,9 +286,10 @@ The logs include:
 - **Multiple recipe support**: Apply multiple anonymization recipes simultaneously
 - **Comprehensive logging**: Detailed process tracking with configurable log levels
 - **Path resolution**: Supports both relative and absolute paths with `{shared_config}` placeholders
-- **Hierarchical output**: Preserve or flatten directory structures
 - **Performance optimized**: Efficient processing of large DICOM datasets
 - **Test coverage**: Comprehensive test suite with automated CI/CD
+- **Metadata export**: Exports anonymized metadata to Parquet format for analysis
+- **UID mapping**: Maintains mappings between original and anonymized UIDs for re-identification
 
 ## Notes
 
@@ -287,6 +320,4 @@ python -m unittest test.test_anonymize.TestAnonymizeScript.test_keep_specific_pr
 - **Performance issues**: For large datasets, monitor the `replace_identifiers` operation which can be time-intensive
 
 ## License
-
-This project is licensed under the MIT License. See the LICENSE file for details.
 

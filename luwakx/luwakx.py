@@ -22,12 +22,6 @@ def main():
         help="Show what would be processed without actually processing"
     )
     parser.add_argument(
-        "--log-level",
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-        default='INFO',
-        help="Set the logging level (default: INFO)"
-    )
-    parser.add_argument(
         "--no-console",
         action="store_true",
         help="Disable console logging (only log to file)"
@@ -67,9 +61,12 @@ def main():
     os.makedirs(recipe_folder, exist_ok=True)
     log_file_path = os.path.join(recipe_folder, 'luwak.log')
     
-    # Configure logging with config-based file path and args-based level
+    # Get log level from config file (with fallback to INFO)
+    log_level = config.get('logLevel', 'INFO')
+    
+    # Configure logging with config-based file path and level
     setup_logger(
-        log_level=args.log_level,
+        log_level=log_level,
         log_file=log_file_path,
         console_output=not args.no_console
     )
@@ -83,7 +80,7 @@ def main():
     logger.info("=" * 50)
     logger.info("Command-line arguments:")
     logger.info(f"  Config file: {args.config_path}")
-    logger.info(f"  Log level: {args.log_level}")
+    logger.info(f"  Log level: {log_level} (from config)")
     logger.info(f"  Console output: {not args.no_console}")
     logger.info(f"  Dry run: {args.dry_run}")
     logger.info(f"  Log file: {log_file_path}")

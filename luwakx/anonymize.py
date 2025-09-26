@@ -228,9 +228,12 @@ class LuwakAnonymizer:
             os.makedirs(recipe_folder, exist_ok=True)
             log_file_path = os.path.join(recipe_folder, 'luwak.log')
             
+            # Get log level from config (with fallback to INFO)
+            log_level = config.get('logLevel', 'INFO')
+            
             # Configure logging with same settings as luwakx.py
             setup_logger(
-                log_level='INFO',
+                log_level=log_level,
                 log_file=log_file_path,
                 console_output=False
             )
@@ -263,7 +266,7 @@ class LuwakAnonymizer:
         if field.element.is_private and (field.element.private_creator is not None):
             if hasattr(field.element, 'value'):
                 self.logger.private(f"Removed private tag {field.element.tag} with value: {field.element.value}")
-                self.logger.info(f"Removed private tag {field.element.tag} ({getattr(field.element, 'name', '')}).")
+                # self.logger.info(f"Removed private tag {field.element.tag} ({getattr(field.element, 'name', '')}).")
             return True
         return False
     

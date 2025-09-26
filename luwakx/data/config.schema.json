@@ -65,7 +65,7 @@
     "logLevel": {
       "type": "string",
       "description": "Logging level for the anonymization process.",
-      "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+      "enum": ["PRIVATE", "DEBUG", "INFO", "WARNING", "ERROR"],
       "default": "INFO",
       "examples": ["DEBUG", "INFO", "WARNING"]
     },
@@ -75,7 +75,7 @@
     },
     "cleanDescriptorsLlmModel": {
       "type": "string",
-      "default": "openai/gpt-4o-mini"
+      "default": "gpt-4o-mini"
     },
     "cleanDescriptorsLlmApiKeyEnvVar": {
       "type": "string",
