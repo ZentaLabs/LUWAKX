@@ -87,7 +87,12 @@ def main():
     logger.info("-" * 50)
     
     logger.info(f"Using configuration file: {args.config_path}")
-    
+    # Set environment variable for deid logging based on log level
+    if log_level == "PRIVATE":
+        os.environ["MESSAGELEVEL"] = "DEBUG"
+    else:
+        os.environ["MESSAGELEVEL"] = "INFO"
+
     if args.dry_run:
         logger.info("DRY RUN MODE - Configuration will be loaded but no files will be processed")
         # Import here to avoid circular imports
