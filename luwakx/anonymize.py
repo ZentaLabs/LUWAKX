@@ -501,6 +501,7 @@ class LuwakAnonymizer:
                     image_face_segmentation = defacer.prepare_face_mask(image, modality)
                     image_defaced = defacer.pixelate_face(image, image_face_segmentation)
                     defaced_array = SimpleITK.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
+                    self.logger.info(f"Defacing series number {series_count} completed.")
                 except Exception as e: 
                     self.logger.error(f"Defacing failed for series {series_id} in {input_folder}: {e}")
                     continue
@@ -519,7 +520,7 @@ class LuwakAnonymizer:
                     except Exception as e:
                         self.logger.error(f"Failed to save defaced DICOM for {dicom_file}: {e}")
                         continue
-                self.logger.info(f"Defaced DICOM series number {series_count}saved: {output_path}")
+                self.logger.info(f"Defaced DICOM series number {series_count} saved in {output_dir}")
             else:
                 self.logger.info(f"Skipping defacing for modality {modality} and series number {series_count}.")
                 # Copy all files in dicom_filenames to output_dir
