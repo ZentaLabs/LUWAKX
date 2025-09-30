@@ -24,6 +24,7 @@ test_input_*/
 **/output/
 test_output/
 *.tar.gz
+**/llm_cache/
 
 # Logs and temp files
 *.log

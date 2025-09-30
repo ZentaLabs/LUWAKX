@@ -80,6 +80,19 @@
     "cleanDescriptorsLlmApiKeyEnvVar": {
       "type": "string",
       "default": ""
+    },
+    "llmCacheFolder": {
+      "type": "string",
+      "description": "Path to folder for LLM cache files.",
+      "default": "./llm_cache",
+      "examples": ["./llm_cache", "/path/to/shared/cache"]
+    },
+    "llmCacheTtlDays": {
+      "type": "integer",
+      "description": "Time-to-live for cached LLM results in days. Older entries are automatically cleaned up.",
+      "default": 365,
+      "minimum": 1,
+      "examples": [7, 30, 90]
     }
   },
   "required": [

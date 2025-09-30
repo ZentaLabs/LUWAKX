@@ -55,9 +55,32 @@ Create a JSON configuration file with the following structure:
 - **`maxDateShiftDays`**: Maximum number of days for date shifting (default: 1095)
 - **`excludedTagsFromParquet`**: List of DICOM tags to exclude from Parquet export (default: ["(7FE0,0010)"])
 - **`logLevel`**: Logging level - PRIVATE, DEBUG, INFO, WARNING, ERROR (default: "INFO")
+
+#### LLM Integration Parameters
+
 - **`cleanDescriptorsLlmBaseUrl`**: Base URL for LLM API used in descriptor cleaning (optional)
 - **`cleanDescriptorsLlmModel`**: LLM model name for descriptor cleaning (default: "openai/gpt-4o-mini")
 - **`cleanDescriptorsLlmApiKeyEnvVar`**: Environment variable name containing the LLM API key (optional)
+
+#### LLM Caching Parameters
+
+- **`llmCacheFolder`**: SQLite cache folder path (default: "./llm_cache")
+
+**LLM Caching Benefits:**
+- **Cost Savings**: Avoids redundant API calls for previously analyzed content
+- **Performance**: Faster processing for repeated DICOM tags across files
+- **Parallel Safe**: Thread-safe SQLite implementation for concurrent processing
+- **Persistent**: Cache survives process restarts and can be shared across runs
+
+**Example LLM configuration with caching:**
+```json
+{
+  "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
+  "cleanDescriptorsLlmModel": "gpt-4o-mini", 
+  "cleanDescriptorsLlmApiKeyEnvVar": "OPENAI_API_KEY",
+  "llmCacheFolder": "./llm_cache",
+}
+```
 
 ### Built-in Recipes
 

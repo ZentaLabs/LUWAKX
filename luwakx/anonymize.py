@@ -13,11 +13,240 @@ import csv
 import pydicom
 import pandas as pd
 import logging
+import sqlite3
+import threading
+import time
 from datetime import datetime
 from pydicom.datadict import add_private_dict_entry
 
 # Import the centralized logger
 from luwak_logger import get_logger, setup_logger, get_log_file_path
+
+
+class LLMResultCache:
+    """
+    Thread-safe SQLite-based cache for LLM results in DICOM anonymization.
+    
+    Provides persistent caching of LLM PHI/PII detection results to avoid
+    redundant API calls across parallel processing and multiple runs.
+    """
+    
+    def __init__(self, cache_file_path, project_hash_root="", cache_ttl_days=30):
+        """
+        Initialize the LLM result cache.
+        
+        Args:
+            cache_file_path (str): Path to SQLite cache file
+            project_hash_root (str): Project hash root for cache key generation
+            cache_ttl_days (int): Cache TTL in days (default: 30)
+        """
+        self.cache_file_path = cache_file_path
+        self.project_hash_root = project_hash_root
+        self.cache_ttl_days = cache_ttl_days
+        self.logger = get_logger('llm_cache')
+        
+        # Thread-local storage for database connections
+        self._local = threading.local()
+        
+        # Initialize database
+        self._init_database()
+    
+    def _get_connection(self):
+        """Get thread-local database connection."""
+        if not hasattr(self._local, 'connection'):
+            # Create connection with thread-safe settings
+            self._local.connection = sqlite3.connect(
+                self.cache_file_path,
+                timeout=30.0,  # 30 second timeout
+                check_same_thread=False
+            )
+            # Enable WAL mode for better concurrent access
+            self._local.connection.execute("PRAGMA journal_mode=WAL")
+            self._local.connection.execute("PRAGMA synchronous=NORMAL")
+            self._local.connection.execute("PRAGMA busy_timeout=30000")  # 30 seconds
+        return self._local.connection
+    
+    def _init_database(self):
+        """Initialize the SQLite database with required schema."""
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.cache_file_path), exist_ok=True)
+            
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Create cache table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS llm_phi_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    input_text TEXT NOT NULL,
+                    llm_model TEXT NOT NULL,
+                    phi_result INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    project_hash TEXT NOT NULL
+                )
+            """)
+            
+            # Create index for faster lookups
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_cache_key_project 
+                ON llm_phi_cache(cache_key, project_hash)
+            """)
+            
+            # Create index for cleanup by timestamp
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_created_at 
+                ON llm_phi_cache(created_at)
+            """)
+            
+            conn.commit()
+            self.logger.debug(f"Initialized LLM cache database: {self.cache_file_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize LLM cache database: {e}")
+            raise
+    
+    def _generate_cache_key(self, input_text, model):
+        """
+        Generate a deterministic cache key for the input.
+        
+        Args:
+            input_text (str): Input text to cache
+            model (str): LLM model name
+            
+        Returns:
+            str: Hexadecimal cache key
+        """
+        # Combine input text, and model for uniqueness
+        key_source = f"{model}:{input_text}"
+        return hashlib.sha256(key_source.encode('utf-8')).hexdigest()
+    
+    def get_cached_result(self, input_text, model):
+        """
+        Retrieve cached LLM result if available and not expired.
+        
+        Args:
+            input_text (str): Input text to check
+            model (str): LLM model name
+            
+        Returns:
+            int or None: Cached PHI result (0/1) or None if not cached/expired
+        """
+        try:
+            cache_key = self._generate_cache_key(input_text, model)
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Query with expiration check
+            cursor.execute("""
+                SELECT phi_result 
+                FROM llm_phi_cache 
+                WHERE cache_key = ? 
+                  AND datetime(created_at, '+{} days') > datetime('now')
+            """.format(self.cache_ttl_days), (cache_key,))
+            
+            result = cursor.fetchone()
+            if result:
+                self.logger.debug(f"Cache HIT for key: {cache_key[:16]}...")
+                return result[0]
+            
+            self.logger.debug(f"Cache MISS for key: {cache_key[:16]}...")
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Error retrieving from LLM cache: {e}")
+            return None
+    
+    def store_result(self, input_text, model, phi_result):
+        """
+        Store LLM result in cache.
+        
+        Args:
+            input_text (str): Input text that was processed
+            model (str): LLM model name used
+            phi_result (int): PHI detection result (0 or 1)
+        """
+        try:
+            cache_key = self._generate_cache_key(input_text, model)
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Use INSERT OR REPLACE to handle duplicates
+            cursor.execute("""
+                INSERT OR REPLACE INTO llm_phi_cache 
+                (cache_key, input_text, llm_model, phi_result, project_hash, created_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+            """, (cache_key, input_text, model, phi_result, self.project_hash_root))
+            
+            conn.commit()
+            self.logger.debug(f"Cached result for key: {cache_key[:16]}... -> {phi_result}")
+            
+        except Exception as e:
+            self.logger.warning(f"Error storing to LLM cache: {e}")
+    
+    def cleanup_expired(self):
+        """Remove expired entries from cache."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                DELETE FROM llm_phi_cache 
+                WHERE datetime(created_at, '+{} days') <= datetime('now')
+            """.format(self.cache_ttl_days))
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            
+            if deleted_count > 0:
+                self.logger.info(f"Cleaned up {deleted_count} expired cache entries")
+                
+        except Exception as e:
+            self.logger.warning(f"Error cleaning up LLM cache: {e}")
+    
+    def get_cache_stats(self):
+        """Get cache statistics."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total_entries,
+                    COUNT(CASE WHEN datetime(created_at, '+{} days') > datetime('now') THEN 1 END) as valid_entries,
+                    MAX(created_at) as latest_entry
+                FROM llm_phi_cache 
+                WHERE project_hash = ?
+            """.format(self.cache_ttl_days), (self.project_hash_root,))
+            
+            result = cursor.fetchone()
+            return {
+                'total_entries': result[0] or 0,
+                'valid_entries': result[1] or 0,
+                'latest_entry': result[2],
+                'cache_file': self.cache_file_path
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"Error getting cache stats: {e}")
+            return {'error': str(e)}
+    
+    def close(self):
+        """Close database connection for current thread."""
+        if hasattr(self._local, 'connection'):
+            try:
+                self._local.connection.close()
+                delattr(self._local, 'connection')
+            except Exception as e:
+                self.logger.warning(f"Error closing LLM cache connection: {e}")
+    
+    def __del__(self):
+        """Destructor to ensure database connections are closed."""
+        try:
+            self.close()
+        except:
+            pass  # Ignore errors during cleanup
+
 
 def setup_deid_repo():
     logger = get_logger('setup_deid_repo')
@@ -191,7 +420,35 @@ class LuwakAnonymizer:
         self.current_file_mappings = {}
         # Initialize metadata storage for Parquet export
         self.dicom_metadata = []
-        # Initialize single date shift for entire project run
+        
+        # Initialize LLM cache if enabled
+        self.llm_cache = None        
+        if 'clean_descriptors' in self.config.get('recipes', []):
+            try:
+                cache_folder = self.config.get('llmCacheFolder')
+                cache_file = os.path.join(cache_folder, 'llm_cache.db')
+                cache_ttl_days = self.config.get('llmCacheTtlDays', 30)
+                project_hash_root = self.config.get('projectHashRoot', '')
+                
+                self.llm_cache = LLMResultCache(
+                    cache_file_path=cache_file,
+                    project_hash_root=project_hash_root,
+                    cache_ttl_days=cache_ttl_days
+                )
+                
+                # Clean up expired entries on startup
+                self.llm_cache.cleanup_expired()
+                
+                # Log cache statistics
+                stats = self.llm_cache.get_cache_stats()
+                self.logger.info(f"LLM cache initialized: {stats['valid_entries']}/{stats['total_entries']} valid entries")
+                self.logger.debug(f"Cache file: {cache_file}")
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize LLM cache: {e}")
+                self.llm_cache = None
+        else:
+            self.logger.info("LLM caching disabled by configuration or no LLM calls requested")
         
         self.logger.info("Registering private tags from CSV...")
         # Register private tags from CSV
@@ -303,7 +560,7 @@ class LuwakAnonymizer:
             hash_int = int(salt_hash[:8], 16)  # Use first 8 hex chars
             # Use configurable max_date_shift_days (default 1095)
             project_date_shift = hash_int % (self.config.get('maxDateShiftDays') + 1)  # 0 to max_date_shift_days
-            self.logger.info(f"Replacing tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) with date/time shifted.")
+            self.logger.debug(f"Replacing tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) with date/time shifted.")
             # Log the computed shift value at PRIVATE level
             self.logger.private(f"For tag {field.element.tag} with value {field.element.value}, computed date shift: -{project_date_shift} days")
             return -project_date_shift
@@ -340,17 +597,17 @@ class LuwakAnonymizer:
             tag_str = getattr(field.element, 'tag', 'unknown') if hasattr(field, 'element') else 'unknown'
             keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
             if vr == 'DA':  # Date format: YYYYMMDD
-                self.logger.info(f"Setting fixed date for tag {tag_str} ({keyword_str}) to '00010101'.")
+                self.logger.debug(f"Setting fixed date for tag {tag_str} ({keyword_str}) to '00010101'.")
                 if hasattr(field, 'element') and hasattr(field.element, 'value'):
                     self.logger.private(f"Setting fixed date for tag {tag_str} ({keyword_str}) with value {field.element.value} to '00010101'.")
                 return "00010101"
             elif vr == 'DT':  # DateTime format: YYYYMMDDHHMMSS.FFFFFF&ZZXX
-                self.logger.info(f"Setting fixed datetime for tag {tag_str} ({keyword_str}) to '00010101010101.000000+0000'.")
+                self.logger.debug(f"Setting fixed datetime for tag {tag_str} ({keyword_str}) to '00010101010101.000000+0000'.")
                 if hasattr(field, 'element') and hasattr(field.element, 'value'):
                     self.logger.private(f"Setting fixed datetime for tag {tag_str} ({keyword_str}) with value {field.element.value} to '00010101010101.000000+0000'.")
                 return "00010101010101.000000+0000"
             elif vr == 'TM':  # Time format: HHMMSS.FFFFFF
-                self.logger.info(f"Setting fixed time for tag {tag_str} ({keyword_str}) to '000000.00'.")
+                self.logger.debug(f"Setting fixed time for tag {tag_str} ({keyword_str}) to '000000.00'.")
                 if hasattr(field, 'element') and hasattr(field.element, 'value'):
                     self.logger.private(f"Setting fixed time for tag {tag_str} ({keyword_str}) with value {field.element.value} to '000000.00'.")
                 return "000000.00"
@@ -378,14 +635,16 @@ class LuwakAnonymizer:
                 str: Cleaned text value or "[REDACTED]" if PHI/PII detected
             
             Note:
-                - Uses LLM to clean descriptive text fields
+                - Uses LLM to clean descriptive text fields with persistent caching
                 - Calls PHI/PII detector to check if cleaned text still contains sensitive info
                 - If PHI/PII detected, deletes the element and returns ""
                 - If no PHI/PII detected, returns original text value
+                - Results are cached to avoid redundant LLM calls
                 The 'value' parameter contains the recipe string, not the actual DICOM value.
         """
         from openai import OpenAI
-        # Import detector.py as a module (no execution of __main__)
+        
+        # Extract original value
         try:
             if hasattr(field, 'element') and hasattr(field.element, 'value'):
                 original_value = str(field.element.value)
@@ -398,47 +657,70 @@ class LuwakAnonymizer:
         except Exception as e:
             self.logger.error(f"  ERROR extracting original value: {e}")
             original_value = str(value) if value else "unknown"
-        try:
-            detector_path = os.path.join(os.path.dirname(__file__), "scripts", "detector", "detector.py")
-            spec = importlib.util.spec_from_file_location("detector", detector_path)
-            detector = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(detector)
-        except Exception as e:
-            self.logger.error(f"Failed to import detector.py: {e}")
-            return str(field.element.value) if hasattr(field.element, 'value') else str(value)
-
+        
         # Get LLM config from self.config
         base_url = self.config.get('cleanDescriptorsLlmBaseUrl', "https://api.openai.com/v1")
         model = self.config.get('cleanDescriptorsLlmModel', "gpt-4o-mini")
         api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar', "")
         api_key = os.environ.get(api_key_env, "")
-        try:
-            client = OpenAI(base_url=base_url, api_key=api_key)
-        except Exception as e:
-            self.logger.error(f"Failed to initialize OpenAI client: {e}")
-            return str(field.element.value) if hasattr(field.element, 'value') else str(value)
         
-        tag_desc = f"{getattr(field.element, 'tag', '')} {getattr(field.element, 'keyword', '')}: {str(field.element.value) if hasattr(field.element, 'value') else str(value)}"
-        try:
-            # Call the function directly, do not execute detector.py as a script
-            result = detector.detect_phi_or_pii(client, tag_desc, model=model, dev_mode=False)
-            self.logger.private(f"PHI/PII detection result for tag {tag_desc} : {result}")
-            if str(result).strip() == "1":
-                # Remove the element from the DICOM dataset
-                try:
-                    del dicom[field.element.tag]
-                    self.logger.info(f"Removed tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) from DICOM file as the detector found PHI information in its text.")
-                except Exception as e:
-                    self.logger.warning(f"Failed to remove element {field.element.tag}: {e}")
-                    self.logger.info(f"Replaced tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) to 'ANONYMIZED' as the detector found PHI information in its text.")
-                    return "ANONYMIZED"
-            else:
-                self.logger.info(f"Keeping original value for tag {field.element.tag} ({getattr(field.element, 'keyword', '')}).")
-                return str(field.element.value) if hasattr(field.element, 'value') else str(value)
-        except Exception as e:
-            self.logger.error(f"Error in PHI/PII detection: {e}")
-            return str(field.element.value) if hasattr(field.element, 'value') else str(value)
+        # Check cache first
+        result = None
+        if self.llm_cache:
+            result = self.llm_cache.get_cached_result(original_value, model)
+            self.logger.debug(f"LLM cache result for tag {field.element.tag} ({getattr(field.element, 'keyword', '')}): {result}")
+        if result==None:
+            # No cache hit - proceed with LLM call
+            try:
+                # Import detector module
+                detector_path = os.path.join(os.path.dirname(__file__), "scripts", "detector", "detector.py")
+                spec = importlib.util.spec_from_file_location("detector", detector_path)
+                detector = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(detector)
+            except Exception as e:
+                self.logger.error(f"Failed to import detector.py: {e}")
+                return original_value
+        
+            try:
+                client = OpenAI(base_url=base_url, api_key=api_key)
+            except Exception as e:
+                self.logger.error(f"Failed to initialize OpenAI client: {e}")
+                return original_value
+        
+            try:
+                # Prepare input for PHI/PII detection
+                tag_desc = f"{getattr(field.element, 'tag', '')} {getattr(field.element, 'keyword', '')}: {original_value}" 
+                # Call the LLM for PHI/PII detection
+                result = detector.detect_phi_or_pii(client, tag_desc, model=model, dev_mode=False)
+                self.logger.private(f"PHI/PII detection result for tag {tag_desc} : {result}")
+            
+                # Store result in cache
+                if self.llm_cache:
+                    try:
+                        self.llm_cache.store_result(original_value, model, int(str(result).strip()))
+                    except Exception as cache_error:
+                        self.logger.warning(f"Failed to cache LLM result: {cache_error}")
+            except Exception as e:
+                self.logger.error(f"Error in PHI/PII detection: {e}")
+                return original_value
 
+
+        # Apply result
+        if str(result).strip() == "1":
+            # PHI detected - remove/anonymize
+            try:
+                del dicom[field.element.tag]
+                self.logger.debug(f"Removed tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) from DICOM file as the detector found PHI information in its text.")
+                return None
+            except Exception as e:
+                    self.logger.warning(f"Failed to remove element {field.element.tag}: {e}")
+                    self.logger.debug(f"Replaced tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) to 'ANONYMIZED' as the detector found PHI information in its text.")
+                    return "ANONYMIZED"
+        else:
+            # No PHI detected - keep original
+            self.logger.debug(f"Keeping original value for tag {field.element.tag} ({getattr(field.element, 'keyword', '')}).")
+            return original_value
+                
     def clean_recognizable_visual_features(self, input_folder, output_dir):
         """Clean tags that may contain recognizable visual features using a defacing ML model or an existing mask.
            
@@ -570,7 +852,7 @@ class LuwakAnonymizer:
 
         # Combine project_hash_root and original UID as entropy for deterministic generation
         new_uid = pydicom.uid.generate_uid(entropy_srcs=[project_hash_root, original_uid])
-        self.logger.info(f"Replaced tag {field.element.tag} ({getattr(field.element, 'keyword', '')}): {new_uid}")
+        self.logger.debug(f"Replaced tag {field.element.tag} ({getattr(field.element, 'keyword', '')}): {new_uid}")
         # Log the UID mapping at PRIVATE level
         self.logger.private(f"UID mapping created - Original: {original_uid} -> Anonymized: {new_uid}")
         # Store the mapping for this file, field, and original UID
@@ -1127,7 +1409,12 @@ class LuwakAnonymizer:
         self.logger.info(f"  Output directory: {output_directory}")
         self.logger.info(f"  Private mapping folder: {private_map_folder}")
         self.logger.info(f"  Recipes folder: {recipes_folder}")
-        
+        if 'clean_descriptors' in self.config.get('recipes', []):
+            cache_folder = self.config.get('llmCacheFolder')
+            cache_folder = self.resolve_path(cache_folder, is_output=True)
+            self.config['llmCacheFolder'] = cache_folder
+            os.makedirs(cache_folder, exist_ok=True)
+            self.logger.info(f"  LLM cache folder: {cache_folder}")
         # Log configuration info
         self.logger.info(f"Configuration loaded from: {self.config_path}")
         self.logger.debug(f"  Config keys: {list(self.config.keys())}")
@@ -1555,6 +1842,20 @@ class LuwakAnonymizer:
         self.logger.info("=" * 50)
         self.logger.info("DICOM anonymization process completed successfully!")
         self.logger.info("=" * 50)
+        
+        # Close the LLM cache if it was initialized
+        if self.llm_cache:
+            try:
+                # Final cleanup of expired entries
+                self.llm_cache.cleanup_expired()
+                # Get final cache statistics
+                stats = self.llm_cache.get_cache_stats()
+                self.logger.info(f"LLM cache final stats: {stats['valid_entries']} valid entries")
+                # Close cache connection
+                self.llm_cache.close()
+                self.logger.debug("Closed LLM cache connection.")
+            except Exception as e:
+                self.logger.warning(f"Error closing LLM cache: {e}")
         
         # Close the bot log file if it was opened
         if bot_logfile:
