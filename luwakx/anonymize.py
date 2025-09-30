@@ -410,7 +410,7 @@ class LuwakAnonymizer:
         # Get LLM config from self.config
         base_url = self.config.get('cleanDescriptorsLlmBaseUrl', "https://api.openai.com/v1")
         model = self.config.get('cleanDescriptorsLlmModel', "gpt-4o-mini")
-        api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar', "ZENTA_OPENAI_API_KEY")
+        api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar', "")
         api_key = os.environ.get(api_key_env, "")
         try:
             client = OpenAI(base_url=base_url, api_key=api_key)
