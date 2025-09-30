@@ -126,7 +126,7 @@ if __name__ == "__main__":
 
     # Set up client
     if use_local:
-        print(f"Using local host: {"http://localhost:1234/v1"}")
+        print(f"Using local host: {'http://localhost:1234/v1'}")
         client = OpenAI(base_url="http://localhost:1234/v1", api_key="")
     else:
         print("Using API")
