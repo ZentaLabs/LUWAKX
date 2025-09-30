@@ -109,6 +109,16 @@ There are two classes:
 - No PHI/PII (Label 0): Dicom tag value was not changed by the TCIA curation team
 - PHI/PII (Label 1): Dicom tag value was changed/removed/replaced by the TCIA curation team
 
+
+|                | Ground truth | Validation | Test  |
+|----------------|--------------|------------|-------|
+| All tags       | No PII/PHI   | 13972      | 20383 |
+|                | PII/PHI      | 1017       | 1410  |
+| Free-text tags | No PII/PHI   | 533        | 819   |
+|                | PII/PHI      | 573        | 832   |
+| Private tags   | No PII/PHI   | 13439      | 19564 |
+|                | PII/PHI      | 444        | 578   |
+
 As this metric is not 100% perfect (e.g., due to curation artifacts), we performed additionally a manual consistency check of the ground truths.
 
 <b>Why is it not 100% perfect?</b> For example: The private dicom tag (0013,1010) has the value "MIDI-B-Synthetic-Test" in its test Dicom file and "MIDI-B-Curated-Test" in its curated version. Hence, its generated ground truth label would indiciate PHI/PII as the tag was changed by the curation team, however, this tag does not contain any PHI/PII and its change is a result of the curation process (curation artifact).   
