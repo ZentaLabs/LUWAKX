@@ -1163,11 +1163,26 @@ class LuwakAnonymizer:
                     if elem.VR in ['PN']:  # Person Name
                         value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['DA']:  # Date
-                        value = str(elem.value) if elem.value else ''
+                        if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                            # Multi-value date field - convert to string list representation
+                            value = str(list(elem.value)) if elem.value else ''
+                        else:
+                            # Single date value
+                            value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['TM']:  # Time
-                        value = str(elem.value) if elem.value else ''
+                        if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                            # Multi-value time field - convert to string list representation
+                            value = str(list(elem.value)) if elem.value else ''
+                        else:
+                            # Single time value
+                            value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['DT']:  # DateTime
-                        value = str(elem.value) if elem.value else ''
+                        if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                            # Multi-value datetime field - convert to string list representation
+                            value = str(list(elem.value)) if elem.value else ''
+                        else:
+                            # Single datetime value
+                            value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['UI']:  # Unique Identifier
                         value = str(elem.value) if elem.value else ''
                     elif elem.VR in ['SH', 'LO', 'ST', 'LT', 'UT', 'AE', 'CS', 'AS']:  # String types
@@ -1322,12 +1337,35 @@ class LuwakAnonymizer:
                         pass
                 
                 # Convert dates to proper datetime format if they look like DICOM dates
-                if col.endswith('Date') and all(isinstance(v, str) and len(v) == 8 and v.isdigit() for v in sample_values):
-                    try:
-                        df[col] = pd.to_datetime(df[col], format='%Y%m%d', errors='coerce')
-                        continue
-                    except:
-                        pass
+                if col.endswith('Date'):
+                    # Check if all non-null values are either single dates or multi-value date strings
+                    is_date_column = True
+                    for v in sample_values:
+                        if isinstance(v, str):
+                            # Handle single date: "20210715"
+                            if len(v) == 8 and v.isdigit():
+                                continue
+                            # Handle multi-value date string: "['20210715', '20210506']"
+                            elif v.startswith('[') and v.endswith(']'):
+                                try:
+                                    # Try to parse as list of dates
+                                    import ast
+                                    date_list = ast.literal_eval(v)
+                                    if isinstance(date_list, list) and all(isinstance(d, str) and len(d) == 8 and d.isdigit() for d in date_list):
+                                        continue
+                                except:
+                                    pass
+                        is_date_column = False
+                        break
+                    
+                    if is_date_column:
+                        try:
+                            # Convert to string format - keep multi-value dates as string for now
+                            # since pandas datetime doesn't handle multi-value fields well
+                            df[col] = df[col].astype('string')
+                            continue
+                        except:
+                            pass
                 
                 # Default to string for everything else
                 try:
@@ -2267,8 +2305,11 @@ class LuwakAnonymizer:
         
         # Export metadata to Parquet
         if self.dicom_metadata:
-            self.export_metadata_to_parquet()
-        
+            try:
+                self.export_metadata_to_parquet()
+            except Exception as e:
+                self.logger.error(f"Error exporting metadata to Parquet: {e}")
+
         self.logger.info("=" * 50)
         self.logger.info("DICOM anonymization process completed successfully!")
         self.logger.info("=" * 50)
