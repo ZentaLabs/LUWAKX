@@ -2233,12 +2233,10 @@ class LuwakAnonymizer:
             for series_folder_name in series_folders:
                 series_folder_path = os.path.join(input_folder, series_folder_name)
                 series_files = self._get_directory_contents(series_folder_path, "files")
-                
-                for original_file in series_files:
-                    # For organized structure, maintain the relative path structure
+                if series_files:
+                    original_file = series_files[0]  # Only process the first file
                     relative_path = os.path.join(series_folder_name, os.path.basename(original_file))
                     anonymized_file = os.path.join(output_directory, relative_path)
-                    
                     if os.path.exists(anonymized_file):
                         self.extract_dicom_metadata(original_file, anonymized_file)
                     else:

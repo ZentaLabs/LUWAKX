@@ -79,7 +79,7 @@ class TestExports(unittest.TestCase):
         all_files.sort()
 
         # Take only first 2 files for faster export testing
-        files_to_copy = all_files[:2]
+        files_to_copy = all_files[:20]
 
         # Copy the first 2 files to the limited input directory
         for file in files_to_copy:
@@ -339,17 +339,18 @@ class TestExports(unittest.TestCase):
 
             # Count expected files in input directory
             input_files = [f for f in os.listdir(self.limited_input_dir) if f.endswith('.dcm')]
-            expected_count = len(input_files)
-            self.logger.info(f"Processing {expected_count} DICOM files from input directory")
+            # Only one metadata row per series is expected now
+            expected_count = 1  # Assume all test files are from the same series
+            self.logger.info(f"Processing {len(input_files)} DICOM files from input directory, expecting {expected_count} metadata row(s)")
 
             # Read and verify the Parquet file content
             try:
                 df = pd.read_parquet(parquet_file)
                 
-                # Should have one row per input file
+                # Should have one row per series (not per file)
                 self.assertEqual(len(df), expected_count, 
-                               f"Expected {expected_count} rows in Parquet file, got {len(df)}")
-                self.logger.info(f"✓ Parquet file contains {len(df)} row(s) as expected")
+                               f"Expected {expected_count} row(s) in Parquet file (one per series), got {len(df)}")
+                self.logger.info(f"✓ Parquet file contains {len(df)} row(s) as expected (one per series)")
  
                 # Check that essential tracking columns exist
                 required_columns = ['AnonymizedFilePath']
@@ -357,11 +358,11 @@ class TestExports(unittest.TestCase):
                     self.assertIn(column, df.columns, f"Required column '{column}' missing from Parquet file")
                 self.logger.info(f"✓ Required columns present: {required_columns}")
                 
-                # Verify that we have the expected number of unique file paths
+                # Verify that we have the expected number of unique file paths (one per series)
                 unique_paths = df['AnonymizedFilePath'].nunique()
                 self.assertEqual(unique_paths, expected_count,
-                               f"Expected {expected_count} unique file paths, got {unique_paths}")
-                self.logger.info(f"✓ Found {unique_paths} unique file paths")
+                               f"Expected {expected_count} unique file path(s), got {unique_paths}")
+                self.logger.info(f"✓ Found {unique_paths} unique file path(s)")
                 
                 # Check that we have DICOM metadata columns beyond just file paths
                 non_tracking_columns = [col for col in df.columns if col != 'AnonymizedFilePath']
@@ -437,17 +438,20 @@ class TestExports(unittest.TestCase):
             
             df = pd.read_parquet(parquet_file)
             
-            # Should have same number of files processed
-            self.assertEqual(len(csv_rows), len(df), 
-                           f"CSV has {len(csv_rows)} rows but Parquet has {len(df)} rows")
-            self.logger.info(f"✓ Both files contain {len(csv_rows)} rows")
+            # Should have same number of series processed (not files)
+            self.assertEqual(len(csv_rows), 20, 
+                           f"CSV has {len(csv_rows)} rows but should be 20 rows (should match series count)")
+            self.assertEqual(len(df), 1, 
+                           f"Parquet has {len(df)} rows but should be 1 row (should have 1 row per series)")
+
+            self.logger.info(f"✓ Both files contain the right amount of lines per series")
             
             # Check that file names are consistent
             csv_files = set(row['file_path'] for row in csv_rows)
             parquet_files = set(df['AnonymizedFilePath'].tolist())
-            
-            self.assertEqual(csv_files, parquet_files,
-                           f"File names don't match between CSV and Parquet: CSV={csv_files}, Parquet={parquet_files}")
+
+            self.assertTrue(parquet_files.issubset(csv_files),
+                f"Parquet file names should be a subset of CSV file names: CSV={csv_files}, Parquet={parquet_files}")
             
             self.logger.info(f"✓ File names consistent between formats: {csv_files}")
             self.logger.info(f"Successfully verified consistency between CSV ({len(csv_rows)} files) and Parquet ({len(df)} files)")
