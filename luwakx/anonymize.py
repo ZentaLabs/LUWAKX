@@ -469,7 +469,6 @@ class LuwakAnonymizer:
             # Resolve log file path from config (same logic as luwakx.py)
             config_dir = os.path.dirname(os.path.abspath(self.config_path))
             output_folder = config.get('outputDeidentifiedFolder', 'output')
-            recipe_folder = config.get('recipesFolder', 'recipes')
             
             # Resolve paths relative to config file
             if not os.path.isabs(output_folder):
@@ -477,14 +476,11 @@ class LuwakAnonymizer:
                     output_folder = os.path.expanduser(output_folder)
                 else:
                     output_folder = os.path.join(config_dir, output_folder)
-            
-            if not os.path.isabs(recipe_folder):
-                recipe_folder = os.path.join(output_folder, recipe_folder)
-            
+                        
             # Create log file path
-            os.makedirs(recipe_folder, exist_ok=True)
-            log_file_path = os.path.join(recipe_folder, 'luwak.log')
-            
+            os.makedirs(output_folder, exist_ok=True)
+            log_file_path = os.path.join(output_folder, 'luwak.log')
+
             # Get log level from config (with fallback to INFO)
             log_level = config.get('logLevel', 'INFO')
             
@@ -725,21 +721,24 @@ class LuwakAnonymizer:
         """Clean tags that may contain recognizable visual features using a defacing ML model or an existing mask.
            
            Args:
-                input_folder: Directory containing DICOM files to process
-                output_dir: Directory to save defaced DICOM files
+                input_folder: Directory containing DICOM files organized by series (from get_dicom_files)
+                output_dir: Directory to save defaced DICOM files (maintains folder structure)
             
             Returns:
-                str: Path to the defaced DICOM file or an error message
+                list: List of processed DICOM file paths
 
             Note:
                 - Uses defacing ML model to clean data
+                - Expects input_folder to be organized by SeriesInstanceUID in subfolders
+                - Maintains the folder structure in output_dir
         """
         if not os.path.exists(input_folder):
             self.logger.error(f"Input folder does not exist: {input_folder}")
             return None
         
-        # Check that the log does not leak sensitive info and in case move the log to PRIVATE level
+        # Import required modules
         import SimpleITK
+        import shutil
         try:
             defacer_path = os.path.join(os.path.dirname(__file__), "scripts", "defacing", "image_defacer", "image_anonymization.py")
             spec = importlib.util.spec_from_file_location("image_anonymization", defacer_path)
@@ -747,76 +746,200 @@ class LuwakAnonymizer:
             spec.loader.exec_module(defacer)
         except Exception as e:
             self.logger.error(f"Failed to import image_anonymization.py: {e}")
-            return str(field.element.value) if hasattr(field.element, 'value') else str(value)
+            return None
         
+        processed_files = []
         reader = SimpleITK.ImageSeriesReader()
-        try:
-            series_ids = reader.GetGDCMSeriesIDs(input_folder)
-        except Exception as e:
-            self.logger.error(f"Failed to get DICOM series IDs in {input_folder}: {e}")
-            return
+        
+        # Process each series folder in the input directory
+        series_folders = [f for f in os.listdir(input_folder) if os.path.isdir(os.path.join(input_folder, f))]
+        
+        if not series_folders:
+            self.logger.warning(f"No series folders found in {input_folder}")
+            return []
+        
+        self.logger.info(f"Processing {len(series_folders)} series folders for defacing...")
+        
+        series_count = 0
+        for series_folder_name in series_folders:
+            series_folder_path = os.path.join(input_folder, series_folder_name)
+            
+            # Create corresponding output folder
+            output_series_folder = os.path.join(output_dir, series_folder_name)
+            os.makedirs(output_series_folder, exist_ok=True)
+            
+            # Get all DICOM files in this series folder
+            try:
+                series_ids = reader.GetGDCMSeriesIDs(series_folder_path)
+            except Exception as e:
+                self.logger.error(f"Failed to get DICOM series IDs in {series_folder_path}: {e}")
+                # Copy files without defacing if GDCM fails
+                self._copy_files(series_folder_path, output_series_folder, processed_files)
+                continue
 
-        if not series_ids:
-            self.logger.error(f"No DICOM series found in: {input_folder}")
-            return
-        series_count = 0 
-        for series_id in series_ids:
-            try:
-                dicom_filenames = reader.GetGDCMSeriesFileNames(input_folder, series_id)
-            except Exception as e:
-                self.logger.error(f"Failed to get DICOM filenames for series {series_id} in {input_folder}: {e}")
+            if not series_ids:
+                self.logger.warning(f"No DICOM series found in {series_folder_path}")
+                # Copy files without defacing
+                self._copy_files(series_folder_path, output_series_folder, processed_files)
                 continue
-            try:
-                ds = pydicom.dcmread(dicom_filenames[0])
-                modality = ds.Modality if 'Modality' in ds else None
-                body_part = ds.BodyPartExamined if 'BodyPartExamined' in ds else None
-            except Exception as e:
-                self.logger.error(f"Failed to read DICOM file {dicom_filenames[0]}: {e}")
-                continue
-            if modality.upper() == "CT": #and body_part.upper() in ["HEAD", "BRAIN", "FACE", "NECK"]:
-                series_count += 1
+            
+            # Process each series in the folder (typically just one per folder)
+            for series_id in series_ids:
                 try:
-                    self.logger.info(f"Defacing series number {series_count}.")
-                    self.logger.private(f"Defacing series {series_id} in {input_folder} with modality {modality} and body part {body_part}.")
-                    reader.SetFileNames(dicom_filenames)
-                    image = reader.Execute()
-                    image_face_segmentation = defacer.prepare_face_mask(image, modality)
-                    image_defaced = defacer.pixelate_face(image, image_face_segmentation)
-                    defaced_array = SimpleITK.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
-                    self.logger.info(f"Defacing series number {series_count} completed.")
-                except Exception as e: 
-                    self.logger.error(f"Defacing failed for series {series_id} in {input_folder}: {e}")
+                    dicom_filenames = reader.GetGDCMSeriesFileNames(series_folder_path, series_id)
+                except Exception as e:
+                    self.logger.error(f"Failed to get DICOM filenames for series {series_id} in {series_folder_path}: {e}")
                     continue
-                # For each slice, copy metadata and replace pixel data
-                for i, dicom_file in enumerate(dicom_filenames):
+                
+                if not dicom_filenames:
+                    self.logger.warning(f"No files found for series {series_id} in {series_folder_name}")
+                    continue
+                    
+                try:
+                    ds = pydicom.dcmread(dicom_filenames[0])
+                    modality = ds.Modality if 'Modality' in ds else None
+                    body_part = ds.BodyPartExamined if 'BodyPartExamined' in ds else None
+                except Exception as e:
+                    self.logger.error(f"Failed to read DICOM file {dicom_filenames[0]}: {e}")
+                    continue
+                    
+                if modality.upper() == "CT": #and body_part.upper() in ["HEAD", "BRAIN", "FACE", "NECK"]:
+                    series_count += 1
                     try:
-                        ds = pydicom.dcmread(dicom_file)
-                        rescale_slope = getattr(ds, 'RescaleSlope', 1.0)
-                        rescale_intercept = getattr(ds, 'RescaleIntercept', 0.0)
-                        # Apply inverse scaling to get back to raw values
-                        raw_pixels = ((defaced_array[i] - rescale_intercept) / rescale_slope).round().astype(ds.pixel_array.dtype)
-                        ds.PixelData = raw_pixels.tobytes()
-                        # Optionally update SeriesDescription, etc.
-                        output_path = os.path.join(output_dir, os.path.basename(dicom_file))
-                        ds.save_as(output_path)
-                    except Exception as e:
-                        self.logger.error(f"Failed to save defaced DICOM for {dicom_file}: {e}")
+                        self.logger.info(f"Defacing series number {series_count} in folder {series_folder_name}.")
+                        self.logger.private(f"Defacing series {series_id} in {series_folder_name} with modality {modality} and body part {body_part}.")
+                        
+                        reader.SetFileNames(dicom_filenames)
+                        image = reader.Execute()
+                        image_face_segmentation = defacer.prepare_face_mask(image, modality)
+                        image_defaced = defacer.pixelate_face(image, image_face_segmentation)
+                        defaced_array = SimpleITK.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
+                        
+                        self.logger.info(f"Defacing series number {series_count} completed.")
+                        
+                        # For each slice, copy metadata and replace pixel data
+                        for i, dicom_file in enumerate(dicom_filenames):
+                            try:
+                                ds = pydicom.dcmread(dicom_file)
+                                rescale_slope = getattr(ds, 'RescaleSlope', 1.0)
+                                rescale_intercept = getattr(ds, 'RescaleIntercept', 0.0)
+                                # Apply inverse scaling to get back to raw values
+                                raw_pixels = ((defaced_array[i] - rescale_intercept) / rescale_slope).round().astype(ds.pixel_array.dtype)
+                                ds.PixelData = raw_pixels.tobytes()
+                                
+                                # Save to output folder maintaining structure
+                                output_path = os.path.join(output_series_folder, os.path.basename(dicom_file))
+                                ds.save_as(output_path)
+                                processed_files.append(output_path)
+                                
+                            except Exception as e:
+                                self.logger.error(f"Failed to save defaced DICOM for {dicom_file}: {e}")
+                                continue
+                                
+                        self.logger.info(f"Defaced DICOM series number {series_count} saved in {output_series_folder}")
+                        
+                    except Exception as e: 
+                        self.logger.error(f"Defacing failed for series {series_id} in {series_folder_name}: {e}")
+                        # Copy files without defacing as fallback
+                        self._copy_files(dicom_filenames, output_series_folder, processed_files)
                         continue
-                self.logger.info(f"Defaced DICOM series number {series_count} saved in {output_dir}")
-            else:
-                self.logger.info(f"Skipping defacing for modality {modality} and series number {series_count}.")
-                # Copy all files in dicom_filenames to output_dir
-                series_count += 1
-                import shutil
-                for src_file in dicom_filenames:
-                    output_path = os.path.join(output_dir, os.path.basename(src_file))
-                    try:
-                        shutil.copy2(src_file, output_path)
-                        self.logger.info(f"Copied DICOM file to output: {output_path}")
-                    except Exception as e:
-                        self.logger.error(f"Failed to copy {src_file} to {output_path}: {e}")
-                continue
+                        
+                else:
+                    series_count += 1
+                    self.logger.info(f"Skipping defacing for modality {modality} in series folder {series_folder_name}.")
+                    # Copy all files without defacing
+                    self._copy_files(dicom_filenames, output_series_folder, processed_files)
+        
+        self.logger.info(f"Visual feature cleaning completed. Processed {len(processed_files)} files across {series_count} series.")
+        return processed_files
+    
+    def _copy_files(self, source_files, dest_folder, processed_files_list=None):
+        """Copy files to destination folder.
+        
+        Args:
+            source_files (str or list): Either a source folder path or list of file paths
+            dest_folder (str): Destination folder path
+            processed_files_list (list, optional): List to append copied file paths to
+            
+        Returns:
+            list: List of copied file paths
+        """
+        import shutil
+        if processed_files_list is None:
+            processed_files_list = []
+        
+        # Ensure destination folder exists
+        os.makedirs(dest_folder, exist_ok=True)
+        
+        # Handle both folder path and file list inputs
+        if isinstance(source_files, str):
+            # Source is a folder - copy all files from it
+            if not os.path.exists(source_files):
+                self.logger.warning(f"Source folder does not exist: {source_files}")
+                return processed_files_list
+            
+            files_to_copy = []
+            try:
+                for file in os.listdir(source_files):
+                    source_file = os.path.join(source_files, file)
+                    if os.path.isfile(source_file):
+                        files_to_copy.append(source_file)
+            except Exception as e:
+                self.logger.error(f"Failed to list files in {source_files}: {e}")
+                return processed_files_list
+        else:
+            # Source is a list of files
+            files_to_copy = source_files
+        
+        # Copy each file
+        for src_file in files_to_copy:
+            try:
+                dest_file = os.path.join(dest_folder, os.path.basename(src_file))
+                shutil.copy2(src_file, dest_file)
+                processed_files_list.append(dest_file)
+                self.logger.debug(f"Copied file to output: {dest_file}")
+            except Exception as e:
+                self.logger.error(f"Failed to copy {src_file} to {dest_folder}: {e}")
+        
+        return processed_files_list
 
+    def _get_directory_contents(self, directory_path, content_type="both"):
+        """Get directory contents with flexible filtering.
+        
+        Args:
+            directory_path (str): Path to directory
+            content_type (str): What to return - "folders", "files", or "both"
+            
+        Returns:
+            list: List of paths or names based on content_type
+        """
+        if not os.path.exists(directory_path):
+            self.logger.error(f"Directory does not exist: {directory_path}")
+            return []
+        
+        try:
+            all_items = os.listdir(directory_path)
+            
+            if content_type == "folders":
+                items = [f for f in all_items if os.path.isdir(os.path.join(directory_path, f))]
+                item_type = "folders"
+            elif content_type == "files":
+                items = [os.path.join(directory_path, f) for f in all_items if os.path.isfile(os.path.join(directory_path, f))]
+                item_type = "files"
+            else:  # both
+                items = all_items
+                item_type = "items"
+            
+            if not items:
+                self.logger.warning(f"No {item_type} found in {directory_path}")
+                return []
+            
+            self.logger.debug(f"Found {len(items)} {item_type} in {os.path.basename(directory_path)}: {items}")
+            return items
+            
+        except Exception as e:
+            self.logger.error(f"Error reading directory {directory_path}: {e}")
+            return []
 
     def generate_hashuid(self, item, value, field, dicom):
         """Custom UID generation using combined salt as root for deterministic randomization.
@@ -1426,8 +1549,16 @@ class LuwakAnonymizer:
             self.logger.warning(f"Recipes folder does not exist: {recipes_folder}")
             self.logger.warning("  Make sure recipe files are available at this location or adjust the config.")
     
-    def get_dicom_files(self, input_folder):
-        """Get all DICOM files from the input folder."""
+    def get_dicom_files(self, input_folder, create_series_structure=False):
+        """Get all DICOM files from the input folder, optionally organizing them by SeriesInstanceUID.
+        
+        Args:
+            input_folder (str): Path to input folder containing DICOM files
+            create_series_structure (bool): If True, creates a folder structure organized by SeriesInstanceUID
+            
+        Returns:
+            list: List of DICOM file paths, organized by series if create_series_structure=True
+        """
         if not os.path.exists(input_folder):
             self.logger.error(f"Input folder does not exist: {input_folder}")
             return None
@@ -1439,8 +1570,124 @@ class LuwakAnonymizer:
             for root, dirs, files in os.walk(input_folder):
                 for file in files:
                     dicom_files.append(os.path.join(root, file))
-        self.logger.info(f"Found {len(dicom_files)} files to process")
-        return dicom_files
+        
+        if not create_series_structure:
+            self.logger.info(f"Found {len(dicom_files)} files to process")
+            return dicom_files
+        
+        # Group files by SeriesInstanceUID and create organized structure
+        return self._create_series_organized_structure(dicom_files, input_folder)
+    
+    def _create_series_organized_structure(self, dicom_files, input_folder):
+        """Create a folder structure organized by SeriesInstanceUID.
+        
+        Args:
+            dicom_files (list): List of DICOM file paths
+            input_folder (str): Original input folder path
+            
+        Returns:
+            list: List of organized DICOM file paths in series-based structure
+        """
+        import shutil
+        
+        # Create a temporary organized structure in the output directory
+        output_directory = self.config.get('outputDeidentifiedFolder')
+        organized_input_dir = os.path.join(output_directory, "temp_organized_input")
+        
+        # Clean up any existing organized directory
+        if os.path.exists(organized_input_dir):
+            shutil.rmtree(organized_input_dir)
+        os.makedirs(organized_input_dir, exist_ok=True)
+        
+        # Group files by SeriesInstanceUID
+        series_groups = {}
+        series_folder_names = {}  # Track folder names for each series
+        
+        self.logger.info("Organizing DICOM files by SeriesInstanceUID...")
+        
+        for file_path in dicom_files:
+            try:
+                ds = pydicom.dcmread(file_path, stop_before_pixels=True)
+                series_uid = getattr(ds, 'SeriesInstanceUID', 'unknown_series')
+                
+                # Clean series UID for folder name (remove invalid characters)
+                clean_series_uid = "".join(c for c in series_uid if c.isalnum() or c in ".-_").rstrip()
+                if not clean_series_uid:
+                    clean_series_uid = "unknown_series"
+                
+                # Create a meaningful folder name using additional DICOM info
+                try:
+                    series_desc = getattr(ds, 'SeriesDescription', '')
+                    series_number = getattr(ds, 'SeriesNumber', '')
+                    modality = getattr(ds, 'Modality', '')
+                    
+                    # Create folder name: SeriesNumber_Modality_SeriesDescription
+                    folder_parts = []
+                    if series_number:
+                        folder_parts.append(f"{series_number:03d}" if isinstance(series_number, int) else str(series_number))
+                    if modality:
+                        folder_parts.append(modality)
+                    if series_desc:
+                        # Clean series description for folder name
+                        clean_desc = "".join(c for c in series_desc if c.isalnum() or c in " -_").strip()
+                        clean_desc = "_".join(clean_desc.split())  # Replace spaces with underscores
+                        if clean_desc:
+                            folder_parts.append(clean_desc)
+                    
+                    if folder_parts:
+                        folder_name = "_".join(folder_parts)
+                    else:
+                        folder_name = clean_series_uid
+                        
+                    # Ensure folder name is not too long
+                    if len(folder_name) > 100:
+                        folder_name = folder_name[:100] + "_" + clean_series_uid[-10:]
+                        
+                except Exception as e:
+                    self.logger.warning(f"Could not create descriptive folder name for {file_path}: {e}")
+                    folder_name = clean_series_uid
+                
+                # Store the folder name for this series (use first file's folder name)
+                if series_uid not in series_folder_names:
+                    series_folder_names[series_uid] = folder_name
+                
+                if series_uid not in series_groups:
+                    series_groups[series_uid] = []
+                
+                series_groups[series_uid].append(file_path)
+                
+            except Exception as e:
+                self.logger.warning(f"Could not read DICOM file {file_path}: {e}")
+                # Add to unknown series group
+                if 'unknown' not in series_groups:
+                    series_groups['unknown'] = []
+                    series_folder_names['unknown'] = 'unknown_series'
+                series_groups['unknown'].append(file_path)
+        
+        # Create organized folder structure and copy files
+        organized_files = []
+        
+        for series_uid, files in series_groups.items():
+            folder_name = series_folder_names[series_uid]
+            series_folder = os.path.join(organized_input_dir, folder_name)
+            os.makedirs(series_folder, exist_ok=True)
+            
+            self.logger.debug(f"Created series folder: {series_folder} for SeriesInstanceUID: {series_uid}")
+            
+            for file_path in files:
+                try:
+                    # Copy file to organized structure
+                    filename = os.path.basename(file_path)
+                    organized_file_path = os.path.join(series_folder, filename)
+                    shutil.copy2(file_path, organized_file_path)
+                    organized_files.append(organized_file_path)
+                except Exception as e:
+                    self.logger.warning(f"Could not copy file {file_path} to organized structure: {e}")
+        
+        self.logger.info(f"Organized {len(organized_files)} files into {len(series_groups)} series folders")
+        self.logger.info(f"Organized structure created at: {organized_input_dir}")
+        
+        return organized_files
     
     def _collect_actions_for_row(self, row, recipes_to_process, recipe_column_map):
         """
@@ -1759,24 +2006,69 @@ class LuwakAnonymizer:
         self.logger.info("=" * 50)
         
         input_folder = self.config.get('inputFolder')
-
         output_directory = self.config.get('outputDeidentifiedFolder')
-        defaced_dir = os.path.join(output_directory, "defaced_dicom")
         recipes_list = self.config.get('recipes')
+        
+        # Check if input is a single file or directory
+        single_file_processing = os.path.isfile(input_folder)
+        
+        if single_file_processing:
+            self.logger.info("Processing single DICOM file...")
+            dicom_files = self.get_dicom_files(input_folder, create_series_structure=False)
+            organized_files = dicom_files
+            input_folder_for_processing = input_folder
+        else:
+            # Always organize DICOM files by SeriesInstanceUID for better volume handling
+            self.logger.info("Organizing DICOM files by SeriesInstanceUID...")
+            organized_files = self.get_dicom_files(input_folder, create_series_structure=True)
+            input_folder_for_processing = input_folder
+        
+        if not organized_files:
+            self.logger.warning("No files found to process")
+            if bot_logfile:
+                try:
+                    bot_logfile.close()
+                    self.logger.debug("Closed deid.bot log file.")
+                except Exception as e:
+                    self.logger.warning(f"Error closing bot log file: {e}")
+            return
+        
+        if single_file_processing:
+            # For single files, get the organized input directory or use the original file
+            input_folder = input_folder_for_processing
+        else:
+            # Get the organized input directory (temp_organized_input)
+            organized_input_dir = os.path.join(output_directory, "temp_organized_input")
+            input_folder = organized_input_dir
+        
+        # Check if visual features cleaning is needed
         if 'clean_recognizable_visual_features' in recipes_list:
-            # Create a temporary directory for defaced DICOMs
-            os.makedirs(defaced_dir, exist_ok=True)
-            self.logger.info("Cleaning recognizable visual features from DICOM files...")
-            self.clean_recognizable_visual_features(input_folder, defaced_dir)
-            # If defaced_dir contains files, use it as the new input_folder
-            if any(os.scandir(defaced_dir)):
-                self.logger.info(f"Defaced DICOMs found in {defaced_dir}, using as new input folder.")
-                input_folder = defaced_dir
+            if single_file_processing:
+                self.logger.warning("Visual features cleaning not supported for single file processing. Skipping.")
+                dicom_files = organized_files
             else:
-                self.logger.info(f"No defaced DICOMs found in {defaced_dir}, continuing with original input folder.")
-
-        # Get DICOM files
-        dicom_files = self.get_dicom_files(input_folder)
+                # Create a temporary directory for defaced DICOMs with organized structure
+                defaced_dir = os.path.join(output_directory, "temp_defaced_organized")
+                os.makedirs(defaced_dir, exist_ok=True)
+                
+                self.logger.info("Cleaning recognizable visual features from organized DICOM files...")
+                processed_files = self.clean_recognizable_visual_features(input_folder, defaced_dir)
+                
+                if processed_files:
+                    self.logger.info(f"Visual features cleaned. Using {len(processed_files)} processed files for anonymization.")
+                    dicom_files = processed_files
+                    # Update input_folder to point to the defaced organized structure
+                    input_folder = defaced_dir
+                else:
+                    self.logger.warning("No files were processed during visual features cleaning. Using original organized files.")
+                    dicom_files = organized_files
+        else:
+            # Use organized files directly without visual features cleaning
+            if single_file_processing:
+                self.logger.info("Using single DICOM file for anonymization (no visual features cleaning).")
+            else:
+                self.logger.info("Using organized DICOM files for anonymization (no visual features cleaning).")
+            dicom_files = organized_files
         
         if not dicom_files:
             self.logger.warning("No files found to process")
@@ -1789,47 +2081,154 @@ class LuwakAnonymizer:
                     self.logger.warning(f"Error closing bot log file: {e}")
             return
         
-        # Get identifiers
-        self.logger.info("Getting DICOM identifiers...")
-        items = get_identifiers(dicom_files)
-        
-        # Create recipe
+        # Create recipe once for all processing
         self.logger.info("Creating anonymization recipe...")
         recipe = self.create_deid_recipe()
-        for item in items:
-            items[item]["is_tag_private"] = self.is_tag_private
-            items[item]["generate_hashuid"] = self.generate_hashuid
-            items[item]["hash_increment_date"] = self.hash_increment_date
-            items[item]["set_fixed_datetime"] = self.set_fixed_datetime
-            items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
+        
+        if single_file_processing:
+            # Process single file directly
+            self.logger.info(f"Anonymizing single file: {input_folder}")
+            
+            # Get identifiers for the single file
+            items = get_identifiers([input_folder], expand_sequences=True)
+            
+            # Inject custom functions
+            for item in items:
+                items[item]["is_tag_private"] = self.is_tag_private
+                items[item]["generate_hashuid"] = self.generate_hashuid
+                items[item]["hash_increment_date"] = self.hash_increment_date
+                items[item]["set_fixed_datetime"] = self.set_fixed_datetime
+                items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
 
-        # Perform anonymization
-        self.logger.info("Performing anonymization...")
-        parsed_files = replace_identifiers(
-            dicom_files=dicom_files, 
-            deid=recipe, 
-            strip_sequences=False,
-            ids=items,
-            remove_private=False,  # Let recipes handle private tag removal
-            save=True, 
-            output_folder=output_directory,
-            overwrite=True,
-            force=True
-        )
+            # Perform anonymization
+            self.logger.info(f"Anonymizing single file to {output_directory}")
+            all_parsed_files = replace_identifiers(
+                dicom_files=[input_folder], 
+                deid=recipe, 
+                strip_sequences=False,
+                ids=items,
+                remove_private=False,  # Let recipes handle private tag removal
+                save=True, 
+                output_folder=output_directory,
+                overwrite=True,
+                force=True
+            )
+            
+            if all_parsed_files:
+                self.logger.info(f"Completed anonymizing single file: {len(all_parsed_files)} files processed")
+            else:
+                all_parsed_files = []
+                
+        else:
+            # Process series folders separately to preserve structure
+            self.logger.info("Processing series folders individually to preserve folder structure...")
+            
+            # Get series folders and process each one
+            series_folders = self._get_directory_contents(input_folder, "folders")
+            
+            if not series_folders:
+                self.logger.error(f"No series folders found in {input_folder}")
+                if bot_logfile:
+                    try:
+                        bot_logfile.close()
+                        self.logger.debug("Closed deid.bot log file.")
+                    except Exception as e:
+                        self.logger.warning(f"Error closing bot log file: {e}")
+                return
+            
+            self.logger.info(f"Anonymizing {len(series_folders)} series folders...")
+            
+            all_parsed_files = []
+            total_processed_files = 0
+            
+            for series_folder_name in series_folders:
+                series_folder_path = os.path.join(input_folder, series_folder_name)
+                series_output_path = os.path.join(output_directory, series_folder_name)
+                
+                # Get files in this series folder
+                series_files = self._get_directory_contents(series_folder_path, "files")
+                
+                if not series_files:
+                    self.logger.warning(f"No files found in series folder: {series_folder_name}")
+                    continue
+                
+                # Create output directory for this series
+                os.makedirs(series_output_path, exist_ok=True)
+                
+                # Process this series
+                try:
+                    self.logger.info(f"Processing series '{series_folder_name}' with {len(series_files)} files...")
+                    
+                    # Get identifiers for this series
+                    series_items = get_identifiers(series_files, expand_sequences=True)
+                    
+                    # Inject custom functions for this series
+                    for item in series_items:
+                        series_items[item]["is_tag_private"] = self.is_tag_private
+                        series_items[item]["generate_hashuid"] = self.generate_hashuid
+                        series_items[item]["hash_increment_date"] = self.hash_increment_date
+                        series_items[item]["set_fixed_datetime"] = self.set_fixed_datetime
+                        series_items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
+
+                    # Perform anonymization for this series
+                    self.logger.info(f"Anonymizing series '{series_folder_name}' to {series_output_path}")
+                    series_parsed_files = replace_identifiers(
+                        dicom_files=series_files, 
+                        deid=recipe, 
+                        strip_sequences=False,
+                        ids=series_items,
+                        remove_private=False,  # Let recipes handle private tag removal
+                        save=True, 
+                        output_folder=series_output_path,
+                        overwrite=True,
+                        force=True
+                    )
+                    
+                    if series_parsed_files:
+                        all_parsed_files.extend(series_parsed_files)
+                        total_processed_files += len(series_files)
+                        self.logger.info(f"Completed anonymizing series '{series_folder_name}': {len(series_parsed_files)} files processed")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error processing series '{series_folder_name}': {e}")
+                    continue
+            
+            series_count = len(series_folders)
+            self.logger.info(f"Processed {total_processed_files} files across {series_count} series")
+        
+        self.logger.info("Anonymization completed!")
+        self.logger.info(f"Processed {len(all_parsed_files)} files")
+        self.logger.info(f"Output saved to: {output_directory}")
         
         # Extract metadata from anonymized files for Parquet export
         self.logger.info("Extracting metadata for Parquet export...")
-        for original_file in dicom_files:
-            # Find corresponding anonymized file
-            original_basename = os.path.basename(original_file)
-            anonymized_file = os.path.join(output_directory, original_basename)
+        
+        if single_file_processing:
+            # For single file, extract metadata directly
+            original_file = input_folder_for_processing
+            anonymized_file = os.path.join(output_directory, os.path.basename(original_file))
             
             if os.path.exists(anonymized_file):
                 self.extract_dicom_metadata(original_file, anonymized_file)
-        
-        self.logger.info("Anonymization completed!")
-        self.logger.info(f"Processed {len(parsed_files)} files")
-        self.logger.info(f"Output saved to: {output_directory}")
+            else:
+                self.logger.warning(f"Could not find anonymized file for: {original_file}")
+        else:
+            # For series folders, extract metadata maintaining structure
+            # Use helper method to get all files from organized structure for metadata extraction
+            series_folders = self._get_directory_contents(input_folder, "folders")
+            for series_folder_name in series_folders:
+                series_folder_path = os.path.join(input_folder, series_folder_name)
+                series_files = self._get_directory_contents(series_folder_path, "files")
+                
+                for original_file in series_files:
+                    # For organized structure, maintain the relative path structure
+                    relative_path = os.path.join(series_folder_name, os.path.basename(original_file))
+                    anonymized_file = os.path.join(output_directory, relative_path)
+                    
+                    if os.path.exists(anonymized_file):
+                        self.extract_dicom_metadata(original_file, anonymized_file)
+                    else:
+                        self.logger.warning(f"Could not find anonymized file for: {original_file}")
         
         # Save all UID mappings to CSV after processing is complete
         if self.current_file_mappings:
@@ -1865,16 +2264,98 @@ class LuwakAnonymizer:
             except Exception as e:
                 self.logger.warning(f"Error closing bot log file: {e}")
         
-        # Clean up the defaced_dicom directory if it exists
-        if os.path.exists(defaced_dir):
-            import shutil
+        # Clean up temporary directories if they exist
+        import shutil
+        temp_dirs_to_clean = []
+        
+        if not single_file_processing:
+            # Always clean up organized input directory since we always use it for multiple files
+            organized_input_dir = os.path.join(output_directory, "temp_organized_input")
+            if os.path.exists(organized_input_dir):
+                temp_dirs_to_clean.append(("organized input", organized_input_dir))
+        
+        # Clean up defaced organized directory if visual features cleaning was used
+        if 'clean_recognizable_visual_features' in recipes_list and not single_file_processing:
+            defaced_dir = os.path.join(output_directory, "temp_defaced_organized")
+            if os.path.exists(defaced_dir):
+                temp_dirs_to_clean.append(("defaced organized", defaced_dir))
+        
+        for dir_type, dir_path in temp_dirs_to_clean:
             try:
-                shutil.rmtree(defaced_dir)
-                self.logger.info(f"Temporary defaced_dicom directory removed: {defaced_dir}")
+                shutil.rmtree(dir_path)
+                self.logger.info(f"Temporary {dir_type} directory removed: {dir_path}")
             except Exception as e:
-                self.logger.warning(f"Could not remove temporary defaced_dicom directory {defaced_dir}: {e}")
+                self.logger.warning(f"Could not remove temporary {dir_type} directory {dir_path}: {e}")
 
-        return parsed_files
+        return all_parsed_files
+
+    def get_output_path_for_file(self, input_file_path):
+        """Get the expected output path for a given input file, accounting for series organization.
+        
+        Args:
+            input_file_path (str): Path to the original input file
+            
+        Returns:
+            str: Expected path where the anonymized file will be located
+            
+        Note:
+            - For single files: Returns path in output directory (no series organization)
+            - For multiple files: Returns path in series subfolder based on SeriesInstanceUID
+            - This method reads the DICOM file to determine the series organization
+        """
+        output_directory = self.config.get('outputDeidentifiedFolder')
+        
+        # Check if input was a single file
+        input_folder = self.config.get('inputFolder')
+        if os.path.isfile(input_folder):
+            # Single file processing - output goes directly to output directory
+            return os.path.join(output_directory, os.path.basename(input_file_path))
+        else:
+            # Multiple files processing - need to determine series folder
+            try:
+                # Read DICOM to get SeriesInstanceUID
+                ds = pydicom.dcmread(input_file_path, stop_before_pixels=True)
+                series_uid = getattr(ds, 'SeriesInstanceUID', 'unknown_series')
+                
+                # Create the same folder name logic as in _create_series_organized_structure
+                clean_series_uid = "".join(c for c in series_uid if c.isalnum() or c in ".-_").rstrip()
+                if not clean_series_uid:
+                    clean_series_uid = "unknown_series"
+                
+                # Create meaningful folder name using additional DICOM info
+                try:
+                    series_desc = getattr(ds, 'SeriesDescription', '')
+                    series_number = getattr(ds, 'SeriesNumber', '')
+                    modality = getattr(ds, 'Modality', '')
+                    
+                    # Create folder name: SeriesNumber_Modality_SeriesDescription
+                    folder_parts = []
+                    if series_number:
+                        folder_parts.append(f"{series_number:03d}")
+                    if modality:
+                        folder_parts.append(modality)
+                    if series_desc:
+                        # Clean series description for folder name
+                        clean_desc = "".join(c for c in series_desc if c.isalnum() or c in " -_").strip()
+                        clean_desc = "_".join(clean_desc.split())  # Replace spaces with underscores
+                        if clean_desc:
+                            folder_parts.append(clean_desc[:30])  # Limit length
+                    
+                    if folder_parts:
+                        folder_name = "_".join(folder_parts)
+                    else:
+                        folder_name = clean_series_uid
+                        
+                except Exception:
+                    folder_name = clean_series_uid
+                
+                # Return path in series subfolder
+                return os.path.join(output_directory, folder_name, os.path.basename(input_file_path))
+                
+            except Exception as e:
+                self.logger.warning(f"Could not determine series folder for {input_file_path}: {e}")
+                # Fallback to direct output path
+                return os.path.join(output_directory, os.path.basename(input_file_path))
 
 
 if __name__ == "__main__":

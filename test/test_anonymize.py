@@ -111,7 +111,7 @@ class TestAnonymizeScript(unittest.TestCase):
         output_private_mapping_folder = os.path.join(output_folder, "private")
         
         # Setup logger with the actual output and recipe paths
-        log_file_path = os.path.join(self.test_output_dir, './recipes', 'luwak_test.log')
+        log_file_path = os.path.join(self.test_output_dir, 'luwak_test.log')
         os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
         setup_logger(log_level='INFO', log_file=log_file_path, console_output=False)
         self.logger = get_logger('test_anonymize')
@@ -157,10 +157,10 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymizer = LuwakAnonymizer(config_path)
             result = anonymizer.anonymize()
 
-            # Check if the output directory contains the anonymized file
-            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
-            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file `00000001.dcm` not found in output directory")
-            self.logger.info(f"Successfully anonymized file: {anonymized_file}")
+            # Get the correct output path for the file using the new helper method
+            expected_output_path = anonymizer.get_output_path_for_file(first_file)
+            self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file `00000001.dcm` not found at expected path: {expected_output_path}")
+            self.logger.info(f"Successfully anonymized file: {expected_output_path}")
             
         finally:
             # Clean up config file
@@ -226,9 +226,12 @@ class TestAnonymizeScript(unittest.TestCase):
         """Test that the luwakx.py wrapper script works with config files."""
         print("Test luwakx.py wrapper script with config file")
 
+        # Define the input file path
+        input_file = os.path.join(self.test_data_dir, "00000001.dcm")
+
         # Create test config
         config_path = self.create_test_config(
-            input_folder=os.path.join(self.test_data_dir, "00000001.dcm"),
+            input_folder=input_file,
             output_folder=self.test_output_dir,
             recipes=None
         )
@@ -251,10 +254,11 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check if the script ran without errors  
             self.assertEqual(result.returncode, 0, f"luwakx.py failed with error: {result.stderr}")
 
-            # Check if the output file was created
-            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
-            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found from luwakx.py")
-            self.logger.info(f"Successfully created anonymized file via luwakx wrapper: {anonymized_file}")
+            # Create a temporary anonymizer to get the expected output path
+            temp_anonymizer = LuwakAnonymizer(config_path)
+            expected_output_path = temp_anonymizer.get_output_path_for_file(input_file)
+            self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found from luwakx.py at expected path: {expected_output_path}")
+            self.logger.info(f"Successfully created anonymized file via luwakx wrapper: {expected_output_path}")
             
         finally:
             # Clean up config file
@@ -295,12 +299,12 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymizer = LuwakAnonymizer(config_path)
             result = anonymizer.anonymize()
             
-            # Check if the anonymized file was created
-            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
-            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
+            # Get the correct output path for the file using the new helper method
+            expected_output_path = anonymizer.get_output_path_for_file(original_file)
+            self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
 
             # Read the anonymized file and check that UIDs have been changed
-            anonymized_ds = pydicom.dcmread(anonymized_file)
+            anonymized_ds = pydicom.dcmread(expected_output_path)
             anonymized_uids = {
                 'StudyInstanceUID': getattr(anonymized_ds, 'StudyInstanceUID', None),
                 'SeriesInstanceUID': getattr(anonymized_ds, 'SeriesInstanceUID', None),
@@ -351,9 +355,9 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             result = anonymizer.anonymize()
-            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
-            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
-            anonymized_ds = pydicom.dcmread(anonymized_file)
+            expected_output_path = anonymizer.get_output_path_for_file(original_file)
+            self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
+            anonymized_ds = pydicom.dcmread(expected_output_path)
             anonymized_uids = {
                 'StudyInstanceUID': getattr(anonymized_ds, 'StudyInstanceUID', None),
                 'SeriesInstanceUID': getattr(anonymized_ds, 'SeriesInstanceUID', None),
@@ -399,9 +403,9 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             result = anonymizer.anonymize()
-            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
-            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
-            anonymized_ds = pydicom.dcmread(anonymized_file)
+            expected_output_path = anonymizer.get_output_path_for_file(original_file)
+            self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
+            anonymized_ds = pydicom.dcmread(expected_output_path)
             # Check that the SeriesDate has been shifted correctly (if present)
             self.assertEqual(anonymized_ds.SeriesDate, '20130730',
                         "SeriesDate should be shifted by 181 days: expected '20130730', got {anonymized_ds.SeriesDate}")
@@ -514,12 +518,12 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymizer = LuwakAnonymizer(config_path)
             result = anonymizer.anonymize()
             
-            # Check if the anonymized file was created
-            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
-            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
+            # Get the correct output path for the file
+            expected_output_path = anonymizer.get_output_path_for_file(original_file)
+            self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
             
             # Read the anonymized file and check specific fields
-            anonymized_ds = pydicom.dcmread(anonymized_file)
+            anonymized_ds = pydicom.dcmread(expected_output_path)
             
             # Check date fields (DA VR) - should be "00010101"
             self.assertEqual(anonymized_ds['00080020'].value, "00010101", f"DA fixed should be '00010101', got '{anonymized_ds['00080020'].value}'")
@@ -561,9 +565,9 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             result = anonymizer.anonymize()
-            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
-            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
-            anonymized_ds = pydicom.dcmread(anonymized_file)
+            expected_output_path = anonymizer.get_output_path_for_file(original_file)
+            self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
+            anonymized_ds = pydicom.dcmread(expected_output_path)
             # Check that the AcquisitionDate has been retained
             self.assertEqual(anonymized_ds.AcquisitionDate, original_value,
                         "AcquisitionDate should be the original value: expected {original_value}, got {anonymized_ds.AcquisitionDate}")
@@ -596,9 +600,9 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             result = anonymizer.anonymize()
-            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
-            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
-            anonymized_ds = pydicom.dcmread(anonymized_file)
+            expected_output_path = anonymizer.get_output_path_for_file(original_file)
+            self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
+            anonymized_ds = pydicom.dcmread(expected_output_path)
             # Check that the AcquisitionDate has been retained
             self.assertEqual(anonymized_ds.AcquisitionDate, '20130730',
                         "AcquisitionDate should be the original value: expected '20130730', got {anonymized_ds.AcquisitionDate}")
@@ -635,11 +639,11 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             result = anonymizer.anonymize()
-            anonymized_file = os.path.join(self.test_output_dir, "00000001.dcm")
-            self.assertTrue(os.path.exists(anonymized_file), "Anonymized file not found.")
-            anonymized_ds = pydicom.dcmread(anonymized_file)
+            expected_output_path = anonymizer.get_output_path_for_file(original_file)
+            self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
+            anonymized_ds = pydicom.dcmread(expected_output_path)
             # Check that the RequestedProcedureDescription has been cleaned (tag should be removed)
-            self.assertNotIn('RequestedProcedureDescription', anonymized_ds, f"Unexpected tag RequestedProcedureDescription found in file {anonymized_file}.")
+            self.assertNotIn('RequestedProcedureDescription', anonymized_ds, f"Unexpected tag RequestedProcedureDescription found in file {expected_output_path}.")
             self.logger.info(f"RequestedProcedureDescription cleaned: {original_value} → removed")
             self.assertEqual(anonymized_ds['PerformedProcedureStepDescription'].value, original_ds['PerformedProcedureStepDescription'].value,
                         "PerformedProcedureStepDescription should be empty: expected {original_ds['PerformedProcedureStepDescription'].value}, got {anonymized_ds['PerformedProcedureStepDescription'].value}")

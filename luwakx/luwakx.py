@@ -45,7 +45,6 @@ def main():
     # Resolve log file path from config
     config_dir = os.path.dirname(os.path.abspath(args.config_path))
     output_folder = config.get('outputDeidentifiedFolder', 'output')
-    recipe_folder = config.get('recipesFolder', 'recipes')
     
     # Resolve paths relative to config file
     if not os.path.isabs(output_folder):
@@ -53,14 +52,11 @@ def main():
             output_folder = os.path.expanduser(output_folder)
         else:
             output_folder = os.path.join(config_dir, output_folder)
-    
-    if not os.path.isabs(recipe_folder):
-        recipe_folder = os.path.join(output_folder, recipe_folder)
-    
+        
     # Create log file path
-    os.makedirs(recipe_folder, exist_ok=True)
-    log_file_path = os.path.join(recipe_folder, 'luwak.log')
-    
+    os.makedirs(output_folder, exist_ok=True)
+    log_file_path = os.path.join(output_folder, 'luwak.log')
+
     # Get log level from config file (with fallback to INFO)
     log_level = config.get('logLevel', 'INFO')
     
