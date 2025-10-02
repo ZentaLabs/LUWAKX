@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import shutil
 import subprocess
 import sys
 import os
@@ -738,7 +739,6 @@ class LuwakAnonymizer:
         
         # Import required modules
         import SimpleITK
-        import shutil
         try:
             defacer_path = os.path.join(os.path.dirname(__file__), "scripts", "defacing", "image_defacer", "image_anonymization.py")
             spec = importlib.util.spec_from_file_location("image_anonymization", defacer_path)
@@ -813,6 +813,10 @@ class LuwakAnonymizer:
                         image = reader.Execute()
                         image_face_segmentation = defacer.prepare_face_mask(image, modality)
                         image_defaced = defacer.pixelate_face(image, image_face_segmentation)
+                        nrrd_image_path = os.path.join(output_series_folder, "image.nrrd")
+                        nrrd_defaced_path = os.path.join(output_series_folder, "image_defaced.nrrd")
+                        SimpleITK.WriteImage(image, nrrd_image_path)
+                        SimpleITK.WriteImage(image_defaced, nrrd_defaced_path)
                         defaced_array = SimpleITK.GetArrayFromImage(image_defaced) # Shape: [slices, height, width]
                         
                         self.logger.info(f"Defacing series number {series_count} completed.")
@@ -864,7 +868,6 @@ class LuwakAnonymizer:
         Returns:
             list: List of copied file paths
         """
-        import shutil
         if processed_files_list is None:
             processed_files_list = []
         
@@ -1588,7 +1591,6 @@ class LuwakAnonymizer:
         Returns:
             list: List of organized DICOM file paths in series-based structure
         """
-        import shutil
         
         # Create a temporary organized structure in the output directory
         output_directory = self.config.get('outputDeidentifiedFolder')
@@ -2144,17 +2146,29 @@ class LuwakAnonymizer:
             for series_folder_name in series_folders:
                 series_folder_path = os.path.join(input_folder, series_folder_name)
                 series_output_path = os.path.join(output_directory, series_folder_name)
-                
+                # Paths where NRRD files are initially saved (if applicable)
+                nrrd_image_src = os.path.join(series_folder_path, "image.nrrd")
+                nrrd_defaced_src = os.path.join(series_folder_path, "image_defaced.nrrd")
+                # Paths where NRRD files should be moved
+                nrrd_image_dst = os.path.join(series_output_path, "image.nrrd")
+                nrrd_defaced_dst = os.path.join(series_output_path, "image_defaced.nrrd")
+
+                # Create output directory for this series
+                os.makedirs(series_output_path, exist_ok=True)
+                # Move files if source and destination differ
+                if os.path.exists(nrrd_image_src):
+                    shutil.move(nrrd_image_src, nrrd_image_dst)
+                if os.path.exists(nrrd_defaced_src):
+                    shutil.move(nrrd_defaced_src, nrrd_defaced_dst)
                 # Get files in this series folder
                 series_files = self._get_directory_contents(series_folder_path, "files")
                 
                 if not series_files:
+                    # Remove the series_output_path directory if needed
+                    shutil.rmtree(series_output_path)
                     self.logger.warning(f"No files found in series folder: {series_folder_name}")
                     continue
-                
-                # Create output directory for this series
-                os.makedirs(series_output_path, exist_ok=True)
-                
+                                
                 # Process this series
                 try:
                     self.logger.info(f"Processing series '{series_folder_name}' with {len(series_files)} files...")
@@ -2265,7 +2279,6 @@ class LuwakAnonymizer:
                 self.logger.warning(f"Error closing bot log file: {e}")
         
         # Clean up temporary directories if they exist
-        import shutil
         temp_dirs_to_clean = []
         
         if not single_file_processing:
