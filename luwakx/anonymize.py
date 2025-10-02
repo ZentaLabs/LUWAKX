@@ -1040,8 +1040,20 @@ class LuwakAnonymizer:
 
             # Write one row per file
             for file_path, mappings in self.current_file_mappings.items():
+                # Calculate the relative path from output folder (including series subfolder)
+                output_folder = self.config.get('outputDeidentifiedFolder')
+                try:
+                    # Get the expected output path for this input file
+                    expected_output_path = self.get_output_path_for_file(file_path)
+                    # Calculate relative path from output folder
+                    rel_path = os.path.relpath(expected_output_path, output_folder)
+                    # Ensure we use forward slashes for consistent path representation
+                    rel_path = rel_path.replace(os.sep, '/')
+                except Exception:
+                    rel_path = os.path.basename(file_path)
+                
                 row = {
-                    'file_path': os.path.basename(file_path)
+                    'file_path': rel_path
                 }
 
                 # Try to read patient info from the DICOM file
@@ -1105,9 +1117,16 @@ class LuwakAnonymizer:
             # Read the anonymized DICOM file
             ds = pydicom.dcmread(anonymized_file_path, force=True)
             
-            # Start with minimal file tracking information
+            # Compute relative path to output folder for AnonymizedFilePath
+            output_folder = self.config.get('outputDeidentifiedFolder')
+            try:
+                rel_path = os.path.relpath(anonymized_file_path, output_folder)
+                # Ensure we use forward slashes for consistent path representation
+                rel_path = rel_path.replace(os.sep, '/')
+            except Exception:
+                rel_path = os.path.basename(anonymized_file_path)
             metadata = {
-                'AnonymizedFilePath': os.path.basename(anonymized_file_path),
+                'AnonymizedFilePath': rel_path,
             }
             # Initialize private tag counter
             private_tag_counter = 0

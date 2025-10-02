@@ -114,7 +114,7 @@ class TestExports(unittest.TestCase):
         output_private_mapping_folder = os.path.join(output_folder, "private")
         
         # Setup logger with the actual output and recipe paths
-        log_file_path = os.path.join(self.test_output_dir, './recipes', 'luwak_test_exports.log')
+        log_file_path = os.path.join(output_folder, 'luwak_test_exports.log')
         os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
         setup_logger(log_level='INFO', log_file=log_file_path, console_output=False)
         self.logger = get_logger('test_exports')
@@ -473,7 +473,7 @@ class TestExports(unittest.TestCase):
             recipes=["basic_profile"]
         )
         # The logger file path as set in create_test_config
-        log_file_path = os.path.join(self.test_output_dir, './recipes', 'luwak_test_exports.log')
+        log_file_path = os.path.join(self.test_output_dir, 'luwak_test_exports.log')
         try:
             # Run a minimal anonymization to trigger logging
             anonymizer = LuwakAnonymizer(config_path)
