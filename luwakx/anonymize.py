@@ -24,6 +24,20 @@ from pydicom.datadict import add_private_dict_entry
 # Import the centralized logger
 from luwak_logger import get_logger, setup_logger, get_log_file_path
 
+# Helper to log only project stack trace frames
+def log_project_stacktrace(logger, exc):
+    tb_list = traceback.extract_tb(exc.__traceback__)
+    project_path = os.path.abspath(os.path.dirname(__file__))
+    # Find the first frame from your project
+    start_idx = next(
+        (i for i, frame in enumerate(tb_list)
+         if project_path in os.path.abspath(frame.filename)),
+        0
+    )
+    # Print all frames from start_idx onward
+    filtered = tb_list[start_idx:]
+    formatted = ''.join(traceback.format_list(filtered))
+    logger.error(f"Error: {exc}\nProject stack trace block:\n{formatted}")
 
 class LLMResultCache:
     """
@@ -107,7 +121,7 @@ class LLMResultCache:
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"Failed to initialize LLM cache database: {e}{line_info}")
+            log_project_stacktrace(self.logger, e)
             raise
     
     def _generate_cache_key(self, input_text, model):
@@ -419,7 +433,7 @@ class LuwakAnonymizer:
         except ConfigurationError as e:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"Configuration error: {e}{line_info}")
+            log_project_stacktrace(self.logger, e)
             sys.exit(1)
             
         # Initialize mapping storage for each file
@@ -570,7 +584,7 @@ class LuwakAnonymizer:
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"Error in date shift generation: {e}{line_info}")
+            log_project_stacktrace(self.logger, e)
             return 0  # Return 0 days shift on error
     
     def set_fixed_datetime(self, item, value, field, dicom):
@@ -625,7 +639,7 @@ class LuwakAnonymizer:
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"Error in fixed datetime generation: {e}{line_info}")
+            log_project_stacktrace(self.logger, e)
             return ""
     
     def clean_descriptors_with_llm(self, item, value, field, dicom):
@@ -663,7 +677,7 @@ class LuwakAnonymizer:
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"  ERROR extracting original value: {e}{line_info}")
+            log_project_stacktrace(self.logger, e)
             original_value = str(value) if value else "unknown"
         
         # Get LLM config from self.config
@@ -688,7 +702,7 @@ class LuwakAnonymizer:
             except Exception as e:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                self.logger.error(f"Failed to import detector.py: {e}{line_info}")
+                log_project_stacktrace(self.logger, e)
                 return original_value
         
             try:
@@ -696,7 +710,7 @@ class LuwakAnonymizer:
             except Exception as e:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                self.logger.error(f"Failed to initialize OpenAI client: {e}{line_info}")
+                log_project_stacktrace(self.logger, e)
                 return original_value
         
             try:
@@ -715,7 +729,7 @@ class LuwakAnonymizer:
             except Exception as e:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                self.logger.error(f"Error in PHI/PII detection: {e}{line_info}")
+                log_project_stacktrace(self.logger, e)
                 return original_value
 
 
@@ -755,7 +769,7 @@ class LuwakAnonymizer:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             tb = traceback.extract_tb(exc_traceback)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"Input folder does not exist: {input_folder}{line_info}")
+            log_project_stacktrace(self.logger, Exception(f"Input folder does not exist: {input_folder}"))
             return None
         
         # Import required modules
@@ -768,7 +782,7 @@ class LuwakAnonymizer:
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"Failed to import image_anonymization.py: {e}{line_info}")
+            log_project_stacktrace(self.logger, e)
             return None
         
         processed_files = []
@@ -797,7 +811,7 @@ class LuwakAnonymizer:
             except Exception as e:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                self.logger.error(f"Failed to get DICOM series IDs in {series_folder_path}: {e}{line_info}")
+                log_project_stacktrace(self.logger, e)
                 # Copy files without defacing if GDCM fails
                 self._copy_files(series_folder_path, output_series_folder, processed_files)
                 continue
@@ -815,7 +829,7 @@ class LuwakAnonymizer:
                 except Exception as e:
                     tb = traceback.extract_tb(e.__traceback__)
                     line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                    self.logger.error(f"Failed to get DICOM filenames for series {series_id} in {series_folder_path}: {e}{line_info}")
+                    log_project_stacktrace(self.logger, e)
                     continue
                 
                 if not dicom_filenames:
@@ -829,7 +843,7 @@ class LuwakAnonymizer:
                 except Exception as e:
                     tb = traceback.extract_tb(e.__traceback__)
                     line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                    self.logger.error(f"Failed to read DICOM file {dicom_filenames[0]}: {e}{line_info}")
+                    log_project_stacktrace(self.logger, e)
                     continue
                     
                 if modality.upper() == "CT": #and body_part.upper() in ["HEAD", "BRAIN", "FACE", "NECK"]:
@@ -868,7 +882,7 @@ class LuwakAnonymizer:
                             except Exception as e:
                                 tb = traceback.extract_tb(e.__traceback__)
                                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                                self.logger.error(f"Failed to save defaced DICOM for {dicom_file}: {e}{line_info}")
+                                log_project_stacktrace(self.logger, e)
                                 continue
                                 
                         self.logger.info(f"Defaced DICOM series number {series_count} saved in {output_series_folder}")
@@ -876,7 +890,7 @@ class LuwakAnonymizer:
                     except Exception as e: 
                         tb = traceback.extract_tb(e.__traceback__)
                         line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                        self.logger.error(f"Defacing failed for series {series_id} in {series_folder_name}: {e}{line_info}")
+                        log_project_stacktrace(self.logger, e)
                         # Copy files without defacing as fallback
                         self._copy_files(dicom_filenames, output_series_folder, processed_files)
                         continue
@@ -923,7 +937,7 @@ class LuwakAnonymizer:
             except Exception as e:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                self.logger.error(f"Failed to list files in {source_files}: {e}{line_info}")
+                log_project_stacktrace(self.logger, e)
                 return processed_files_list
         else:
             # Source is a list of files
@@ -939,7 +953,7 @@ class LuwakAnonymizer:
             except Exception as e:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                self.logger.error(f"Failed to copy {src_file} to {dest_folder}: {e}{line_info}")
+                log_project_stacktrace(self.logger, e)
         
         return processed_files_list
 
@@ -958,7 +972,7 @@ class LuwakAnonymizer:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             tb = traceback.extract_tb(exc_traceback)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"Directory does not exist: {directory_path}{line_info}")
+            log_project_stacktrace(self.logger, Exception(f"Directory does not exist: {directory_path}"))
             return []
         
         try:
@@ -984,7 +998,7 @@ class LuwakAnonymizer:
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"Error reading directory {directory_path}: {e}{line_info}")
+            log_project_stacktrace(self.logger, e)
             return []
 
     def generate_hashuid(self, item, value, field, dicom):
@@ -1005,7 +1019,7 @@ class LuwakAnonymizer:
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            self.logger.error(f"  ERROR extracting original UID: {e}{line_info}")
+            log_project_stacktrace(self.logger, e)
             original_uid = str(value) if value else "unknown"
 
         # Extract file path from the dicom dataset filename attribute
@@ -1411,7 +1425,7 @@ class LuwakAnonymizer:
                 except Exception as e:
                     tb = traceback.extract_tb(e.__traceback__)
                     line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-                    self.logger.error(f"Error processing column '{col}' during type optimization: {e}{line_info}")
+                    log_project_stacktrace(self.logger, e)
                     continue
             
             # Create Parquet file path - use fixed name as requested

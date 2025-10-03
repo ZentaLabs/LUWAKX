@@ -126,7 +126,7 @@ class TestAnonymizeScript(unittest.TestCase):
             "recipes": recipes if recipes is not None else "deid.dicom",
             "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
             "cleanDescriptorsLlmModel": "gpt-4o-mini",
-            "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
+            "cleanDescriptorsLlmApiKeyEnvVar": ""
         }
         # Create temporary config file
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)

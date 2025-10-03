@@ -71,7 +71,7 @@
     },
     "cleanDescriptorsLlmBaseUrl": {
       "type": "string",
-      "default": ""
+      "default": "https://api.openai.com/v1"
     },
     "cleanDescriptorsLlmModel": {
       "type": "string",
