@@ -23,6 +23,8 @@ from pydicom.datadict import add_private_dict_entry
 
 # Import the centralized logger
 from luwak_logger import get_logger, setup_logger, get_log_file_path
+# Import the DeidProgressHandler for progress reporting
+from deid_logger_handler import DeidProgressHandler
 
 # Helper to log only project stack trace frames
 def log_project_stacktrace(logger, exc):
@@ -2104,17 +2106,6 @@ class LuwakAnonymizer:
         # Redirect deid.bot output to the same log file used by Luwak logger
         from deid.logger import bot
 
-        log_file_path = get_log_file_path()
-        bot_logfile = None
-        try:
-            bot_logfile = open(log_file_path, "a")
-            bot.outputStream = bot_logfile
-            bot.errorStream = bot_logfile
-            self.logger.info("Redirected deid.bot output and error streams to Luwak log file.")
-        except Exception as e:
-            self.logger.warning(f"Could not redirect deid.bot output: {e}")
-            bot_logfile = None
-
         self.logger.info("=" * 50)
         self.logger.info("Starting DICOM anonymization process...")
         self.logger.info("=" * 50)
@@ -2139,12 +2130,6 @@ class LuwakAnonymizer:
         
         if not organized_files:
             self.logger.warning("No files found to process")
-            if bot_logfile:
-                try:
-                    bot_logfile.close()
-                    self.logger.debug("Closed deid.bot log file.")
-                except Exception as e:
-                    self.logger.warning(f"Error closing bot log file: {e}")
             return
         
         if single_file_processing:
@@ -2186,13 +2171,6 @@ class LuwakAnonymizer:
         
         if not dicom_files:
             self.logger.warning("No files found to process")
-            # Close the bot log file if it was opened
-            if bot_logfile:
-                try:
-                    bot_logfile.close()
-                    self.logger.debug("Closed deid.bot log file.")
-                except Exception as e:
-                    self.logger.warning(f"Error closing bot log file: {e}")
             return
         
         # Create recipe once for all processing
@@ -2202,10 +2180,17 @@ class LuwakAnonymizer:
         if single_file_processing:
             # Process single file directly
             self.logger.info(f"Anonymizing single file: {input_folder}")
-            
+            # Progress handler for single file
+            try:
+                progress_handler = DeidProgressHandler(self.logger, len(dicom_files))
+                bot.outputStream = progress_handler
+                bot.errorStream = progress_handler
+            except Exception as e:
+                self.logger.warning(f"Could not redirect deid.bot output: {e}")
+                
             # Get identifiers for the single file
             items = get_identifiers([input_folder], expand_sequences=True)
-            
+
             # Inject custom functions
             for item in items:
                 items[item]["is_tag_private"] = self.is_tag_private
@@ -2214,47 +2199,43 @@ class LuwakAnonymizer:
                 items[item]["set_fixed_datetime"] = self.set_fixed_datetime
                 items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
 
-            # Perform anonymization
-            self.logger.info(f"Anonymizing single file to {output_directory}")
-            all_parsed_files = replace_identifiers(
-                dicom_files=[input_folder], 
-                deid=recipe, 
-                strip_sequences=False,
-                ids=items,
-                remove_private=False,  # Let recipes handle private tag removal
-                save=True, 
-                output_folder=output_directory,
-                overwrite=True,
-                force=True
-            )
-            
-            if all_parsed_files:
-                self.logger.info(f"Completed anonymizing single file: {len(all_parsed_files)} files processed")
-            else:
-                all_parsed_files = []
-                
+            try:
+                # Perform anonymization
+                self.logger.info(f"Anonymizing single file to {output_directory}")
+                all_parsed_files = replace_identifiers(
+                    dicom_files=[input_folder], 
+                    deid=recipe, 
+                    strip_sequences=False,
+                    ids=items,
+                    remove_private=False,  # Let recipes handle private tag removal
+                    save=True, 
+                    output_folder=output_directory,
+                    overwrite=True,
+                    force=True
+                )
+                if all_parsed_files:
+                    self.logger.info(f"Completed anonymizing single file: {len(all_parsed_files)} files processed")
+                else:
+                    all_parsed_files = []
+            finally:
+                progress_handler.close()
+
         else:
             # Process series folders separately to preserve structure
             self.logger.info("Processing series folders individually to preserve folder structure...")
-            
+
             # Get series folders and process each one
             series_folders = self._get_directory_contents(input_folder, "folders")
-            
+
             if not series_folders:
                 self.logger.error(f"No series folders found in {input_folder}")
-                if bot_logfile:
-                    try:
-                        bot_logfile.close()
-                        self.logger.debug("Closed deid.bot log file.")
-                    except Exception as e:
-                        self.logger.warning(f"Error closing bot log file: {e}")
                 return
-            
+
             self.logger.info(f"Anonymizing {len(series_folders)} series folders...")
-            
+
             all_parsed_files = []
             total_processed_files = 0
-            
+
             for series_folder_name in series_folders:
                 series_folder_path = os.path.join(input_folder, series_folder_name)
                 series_output_path = os.path.join(output_directory, series_folder_name)
@@ -2274,20 +2255,28 @@ class LuwakAnonymizer:
                     shutil.move(nrrd_defaced_src, nrrd_defaced_dst)
                 # Get files in this series folder
                 series_files = self._get_directory_contents(series_folder_path, "files")
-                
+
                 if not series_files:
                     # Remove the series_output_path directory if needed
                     shutil.rmtree(series_output_path)
                     self.logger.warning(f"No files found in series folder: {series_folder_name}")
                     continue
-                                
-                # Process this series
+
                 try:
+                    # Progress handler for this series
+                    progress_handler = DeidProgressHandler(self.logger, len(series_files),series_folder_name=series_folder_name)
+                    bot.outputStream = progress_handler
+                    bot.errorStream = progress_handler
+                except Exception as e:
+                    self.logger.warning(f"Could not redirect deid.bot output: {e}")
+
+                try:
+                    # Process this series
                     self.logger.info(f"Processing series '{series_folder_name}' with {len(series_files)} files...")
-                    
+
                     # Get identifiers for this series
                     series_items = get_identifiers(series_files, expand_sequences=True)
-                    
+
                     # Inject custom functions for this series
                     for item in series_items:
                         series_items[item]["is_tag_private"] = self.is_tag_private
@@ -2309,15 +2298,17 @@ class LuwakAnonymizer:
                         overwrite=True,
                         force=True
                     )
-                    
+
                     if series_parsed_files:
                         all_parsed_files.extend(series_parsed_files)
                         total_processed_files += len(series_files)
                         self.logger.info(f"Completed anonymizing series '{series_folder_name}': {len(series_parsed_files)} files processed")
-                    
+
                 except Exception as e:
                     self.logger.error(f"Error processing series '{series_folder_name}': {e}")
                     continue
+                finally:
+                    progress_handler.close()
             
             series_count = len(series_folders)
             self.logger.info(f"Processed {total_processed_files} files across {series_count} series")
@@ -2382,15 +2373,7 @@ class LuwakAnonymizer:
                 self.logger.debug("Closed LLM cache connection.")
             except Exception as e:
                 self.logger.warning(f"Error closing LLM cache: {e}")
-        
-        # Close the bot log file if it was opened
-        if bot_logfile:
-            try:
-                bot_logfile.close()
-                self.logger.debug("Closed deid.bot log file.")
-            except Exception as e:
-                self.logger.warning(f"Error closing bot log file: {e}")
-        
+                
         # Clean up temporary directories if they exist
         temp_dirs_to_clean = []
         
