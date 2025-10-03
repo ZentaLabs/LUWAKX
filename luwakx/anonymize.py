@@ -580,7 +580,7 @@ class LuwakAnonymizer:
             project_date_shift = hash_int % (self.config.get('maxDateShiftDays') + 1)  # 0 to max_date_shift_days
             self.logger.debug(f"Replacing tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) with date/time shifted.")
             # Log the computed shift value at PRIVATE level
-            self.logger.private(f"For tag {field.element.tag} with value {field.element.value}, computed date shift: -{project_date_shift} days")
+            self.logger.private(f"For tag {field.element.tag} with value {field.element.value}, computed date shift: -{project_date_shift} days")                
             return -project_date_shift
             
         except Exception as e:
@@ -1786,10 +1786,17 @@ class LuwakAnonymizer:
         for series_uid, files in series_groups.items():
             folder_name = series_folder_names[series_uid]
             series_folder = os.path.join(organized_input_dir, folder_name)
+            # Ensure unique folder name if it already exists
+            base_folder_name = folder_name
+            suffix = 1
+            while os.path.exists(series_folder):
+                folder_name = f"{base_folder_name}_{suffix}"
+                series_folder = os.path.join(organized_input_dir, folder_name)
+                suffix += 1
             os.makedirs(series_folder, exist_ok=True)
-            
+
             self.logger.debug(f"Created series folder: {series_folder} for SeriesInstanceUID: {series_uid}")
-            
+
             for file_path in files:
                 try:
                     # Copy file to organized structure
