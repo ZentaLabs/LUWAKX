@@ -17,6 +17,7 @@ import logging
 import sqlite3
 import threading
 import time
+import traceback
 from datetime import datetime
 from pydicom.datadict import add_private_dict_entry
 
@@ -104,7 +105,9 @@ class LLMResultCache:
             self.logger.debug(f"Initialized LLM cache database: {self.cache_file_path}")
             
         except Exception as e:
-            self.logger.error(f"Failed to initialize LLM cache database: {e}")
+            tb = traceback.extract_tb(e.__traceback__)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"Failed to initialize LLM cache database: {e}{line_info}")
             raise
     
     def _generate_cache_key(self, input_text, model):
@@ -414,7 +417,9 @@ class LuwakAnonymizer:
             self.load_config()
             self.setup_paths()
         except ConfigurationError as e:
-            self.logger.error(f"Configuration error: {e}")
+            tb = traceback.extract_tb(e.__traceback__)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"Configuration error: {e}{line_info}")
             sys.exit(1)
             
         # Initialize mapping storage for each file
@@ -563,7 +568,9 @@ class LuwakAnonymizer:
             return -project_date_shift
             
         except Exception as e:
-            self.logger.error(f"Error in date shift generation: {e}")
+            tb = traceback.extract_tb(e.__traceback__)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"Error in date shift generation: {e}{line_info}")
             return 0  # Return 0 days shift on error
     
     def set_fixed_datetime(self, item, value, field, dicom):
@@ -616,7 +623,9 @@ class LuwakAnonymizer:
                 return str(original_value) if original_value is not None else ""
                 
         except Exception as e:
-            self.logger.error(f"Error in fixed datetime generation: {e}")
+            tb = traceback.extract_tb(e.__traceback__)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"Error in fixed datetime generation: {e}{line_info}")
             return ""
     
     def clean_descriptors_with_llm(self, item, value, field, dicom):
@@ -652,7 +661,9 @@ class LuwakAnonymizer:
             # Log original value at PRIVATE level
             self.logger.private(f"Processing original value for tag {field.element.tag} ({getattr(field.element, 'keyword', '')}): {original_value}")
         except Exception as e:
-            self.logger.error(f"  ERROR extracting original value: {e}")
+            tb = traceback.extract_tb(e.__traceback__)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"  ERROR extracting original value: {e}{line_info}")
             original_value = str(value) if value else "unknown"
         
         # Get LLM config from self.config
@@ -675,13 +686,17 @@ class LuwakAnonymizer:
                 detector = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(detector)
             except Exception as e:
-                self.logger.error(f"Failed to import detector.py: {e}")
+                tb = traceback.extract_tb(e.__traceback__)
+                line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                self.logger.error(f"Failed to import detector.py: {e}{line_info}")
                 return original_value
         
             try:
                 client = OpenAI(base_url=base_url, api_key=api_key)
             except Exception as e:
-                self.logger.error(f"Failed to initialize OpenAI client: {e}")
+                tb = traceback.extract_tb(e.__traceback__)
+                line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                self.logger.error(f"Failed to initialize OpenAI client: {e}{line_info}")
                 return original_value
         
             try:
@@ -698,7 +713,9 @@ class LuwakAnonymizer:
                     except Exception as cache_error:
                         self.logger.warning(f"Failed to cache LLM result: {cache_error}")
             except Exception as e:
-                self.logger.error(f"Error in PHI/PII detection: {e}")
+                tb = traceback.extract_tb(e.__traceback__)
+                line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                self.logger.error(f"Error in PHI/PII detection: {e}{line_info}")
                 return original_value
 
 
@@ -734,7 +751,11 @@ class LuwakAnonymizer:
                 - Maintains the folder structure in output_dir
         """
         if not os.path.exists(input_folder):
-            self.logger.error(f"Input folder does not exist: {input_folder}")
+            import sys
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            tb = traceback.extract_tb(exc_traceback)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"Input folder does not exist: {input_folder}{line_info}")
             return None
         
         # Import required modules
@@ -745,7 +766,9 @@ class LuwakAnonymizer:
             defacer = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(defacer)
         except Exception as e:
-            self.logger.error(f"Failed to import image_anonymization.py: {e}")
+            tb = traceback.extract_tb(e.__traceback__)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"Failed to import image_anonymization.py: {e}{line_info}")
             return None
         
         processed_files = []
@@ -772,7 +795,9 @@ class LuwakAnonymizer:
             try:
                 series_ids = reader.GetGDCMSeriesIDs(series_folder_path)
             except Exception as e:
-                self.logger.error(f"Failed to get DICOM series IDs in {series_folder_path}: {e}")
+                tb = traceback.extract_tb(e.__traceback__)
+                line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                self.logger.error(f"Failed to get DICOM series IDs in {series_folder_path}: {e}{line_info}")
                 # Copy files without defacing if GDCM fails
                 self._copy_files(series_folder_path, output_series_folder, processed_files)
                 continue
@@ -788,7 +813,9 @@ class LuwakAnonymizer:
                 try:
                     dicom_filenames = reader.GetGDCMSeriesFileNames(series_folder_path, series_id)
                 except Exception as e:
-                    self.logger.error(f"Failed to get DICOM filenames for series {series_id} in {series_folder_path}: {e}")
+                    tb = traceback.extract_tb(e.__traceback__)
+                    line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                    self.logger.error(f"Failed to get DICOM filenames for series {series_id} in {series_folder_path}: {e}{line_info}")
                     continue
                 
                 if not dicom_filenames:
@@ -800,7 +827,9 @@ class LuwakAnonymizer:
                     modality = ds.Modality if 'Modality' in ds else None
                     body_part = ds.BodyPartExamined if 'BodyPartExamined' in ds else None
                 except Exception as e:
-                    self.logger.error(f"Failed to read DICOM file {dicom_filenames[0]}: {e}")
+                    tb = traceback.extract_tb(e.__traceback__)
+                    line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                    self.logger.error(f"Failed to read DICOM file {dicom_filenames[0]}: {e}{line_info}")
                     continue
                     
                 if modality.upper() == "CT": #and body_part.upper() in ["HEAD", "BRAIN", "FACE", "NECK"]:
@@ -837,13 +866,17 @@ class LuwakAnonymizer:
                                 processed_files.append(output_path)
                                 
                             except Exception as e:
-                                self.logger.error(f"Failed to save defaced DICOM for {dicom_file}: {e}")
+                                tb = traceback.extract_tb(e.__traceback__)
+                                line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                                self.logger.error(f"Failed to save defaced DICOM for {dicom_file}: {e}{line_info}")
                                 continue
                                 
                         self.logger.info(f"Defaced DICOM series number {series_count} saved in {output_series_folder}")
                         
                     except Exception as e: 
-                        self.logger.error(f"Defacing failed for series {series_id} in {series_folder_name}: {e}")
+                        tb = traceback.extract_tb(e.__traceback__)
+                        line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                        self.logger.error(f"Defacing failed for series {series_id} in {series_folder_name}: {e}{line_info}")
                         # Copy files without defacing as fallback
                         self._copy_files(dicom_filenames, output_series_folder, processed_files)
                         continue
@@ -888,7 +921,9 @@ class LuwakAnonymizer:
                     if os.path.isfile(source_file):
                         files_to_copy.append(source_file)
             except Exception as e:
-                self.logger.error(f"Failed to list files in {source_files}: {e}")
+                tb = traceback.extract_tb(e.__traceback__)
+                line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                self.logger.error(f"Failed to list files in {source_files}: {e}{line_info}")
                 return processed_files_list
         else:
             # Source is a list of files
@@ -902,7 +937,9 @@ class LuwakAnonymizer:
                 processed_files_list.append(dest_file)
                 self.logger.debug(f"Copied file to output: {dest_file}")
             except Exception as e:
-                self.logger.error(f"Failed to copy {src_file} to {dest_folder}: {e}")
+                tb = traceback.extract_tb(e.__traceback__)
+                line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                self.logger.error(f"Failed to copy {src_file} to {dest_folder}: {e}{line_info}")
         
         return processed_files_list
 
@@ -917,7 +954,11 @@ class LuwakAnonymizer:
             list: List of paths or names based on content_type
         """
         if not os.path.exists(directory_path):
-            self.logger.error(f"Directory does not exist: {directory_path}")
+            import sys
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            tb = traceback.extract_tb(exc_traceback)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"Directory does not exist: {directory_path}{line_info}")
             return []
         
         try:
@@ -941,7 +982,9 @@ class LuwakAnonymizer:
             return items
             
         except Exception as e:
-            self.logger.error(f"Error reading directory {directory_path}: {e}")
+            tb = traceback.extract_tb(e.__traceback__)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"Error reading directory {directory_path}: {e}{line_info}")
             return []
 
     def generate_hashuid(self, item, value, field, dicom):
@@ -960,7 +1003,9 @@ class LuwakAnonymizer:
             # Log original UID at PRIVATE level
             self.logger.private(f"Processing original UID for tag {field.element.tag} ({getattr(field.element, 'keyword', '')}): {original_uid}")
         except Exception as e:
-            self.logger.error(f"  ERROR extracting original UID: {e}")
+            tb = traceback.extract_tb(e.__traceback__)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            self.logger.error(f"  ERROR extracting original UID: {e}{line_info}")
             original_uid = str(value) if value else "unknown"
 
         # Extract file path from the dicom dataset filename attribute
@@ -1302,76 +1347,72 @@ class LuwakAnonymizer:
             # Optimize data types for better Parquet performance
             # We'll infer types dynamically since we don't know which columns will exist
             for col in df.columns:
-                # Skip our fixed tracking columns
-                if col in ['AnonymizedFilePath']:
-                    df[col] = df[col].astype('string')
-                    continue
-                
-                # Skip derived boolean fields
-                if col in ['HasPixelData', 'IsMultiFrame', 'IsColor', 'IsEnhanced']:
-                    continue  # Keep as boolean
-                
-                # Skip file size columns (keep as int)
-                if col in ['OriginalFileSizeBytes', 'AnonymizedFileSizeBytes']:
-                    continue
-                
-                # Try to optimize data types based on current values
-                sample_values = df[col].dropna()
-                if len(sample_values) == 0:
-                    continue  # Skip empty columns
-                
-                # Check if it's all integers
-                if all(isinstance(v, (int, float)) and float(v).is_integer() for v in sample_values):
-                    try:
-                        df[col] = df[col].astype('Int64')  # Nullable integer
-                        continue
-                    except:
-                        pass
-                
-                # Check if it's all floats
-                if all(isinstance(v, (int, float)) for v in sample_values):
-                    try:
-                        df[col] = df[col].astype('float64')
-                        continue
-                    except:
-                        pass
-                
-                # Convert dates to proper datetime format if they look like DICOM dates
-                if col.endswith('Date'):
-                    # Check if all non-null values are either single dates or multi-value date strings
-                    is_date_column = True
-                    for v in sample_values:
-                        if isinstance(v, str):
-                            # Handle single date: "20210715"
-                            if len(v) == 8 and v.isdigit():
-                                continue
-                            # Handle multi-value date string: "['20210715', '20210506']"
-                            elif v.startswith('[') and v.endswith(']'):
-                                try:
-                                    # Try to parse as list of dates
-                                    import ast
-                                    date_list = ast.literal_eval(v)
-                                    if isinstance(date_list, list) and all(isinstance(d, str) and len(d) == 8 and d.isdigit() for d in date_list):
-                                        continue
-                                except:
-                                    pass
-                        is_date_column = False
-                        break
-                    
-                    if is_date_column:
-                        try:
-                            # Convert to string format - keep multi-value dates as string for now
-                            # since pandas datetime doesn't handle multi-value fields well
-                            df[col] = df[col].astype('string')
-                            continue
-                        except:
-                            pass
-                
-                # Default to string for everything else
                 try:
-                    df[col] = df[col].astype('string')
-                except:
-                    pass  # Keep original type if conversion fails
+                    # Skip our fixed tracking columns
+                    if col in ['AnonymizedFilePath']:
+                        df[col] = df[col].astype('string')
+                        continue
+                    # Skip derived boolean fields
+                    if col in ['HasPixelData', 'IsMultiFrame', 'IsColor', 'IsEnhanced']:
+                        continue  # Keep as boolean
+                    # Skip file size columns (keep as int)
+                    if col in ['OriginalFileSizeBytes', 'AnonymizedFileSizeBytes']:
+                        continue
+                    # Try to optimize data types based on current values
+                    sample_values = df[col].dropna()
+                    if len(sample_values) == 0:
+                        continue  # Skip empty columns
+                    # Check if it's all integers
+                    if all(isinstance(v, (int, float)) and float(v).is_integer() for v in sample_values):
+                        try:
+                            df[col] = df[col].astype('Int64')  # Nullable integer
+                            continue
+                        except Exception as e:
+                            self.logger.warning(f"Column '{col}': failed Int64 conversion: {e}")
+                    # Check if it's all floats
+                    if all(isinstance(v, (int, float)) for v in sample_values):
+                        try:
+                            df[col] = df[col].astype('float64')
+                            continue
+                        except Exception as e:
+                            self.logger.warning(f"Column '{col}': failed float64 conversion: {e}")
+                    # Convert dates to proper datetime format if they look like DICOM dates
+                    if col.endswith('Date'):
+                        is_date_column = True
+                        for v in sample_values:
+                            if isinstance(v, str):
+                                # Handle single date: "20210715"
+                                if len(v) == 8 and v.isdigit():
+                                    continue
+                                # Handle multi-value date string: "['20210715', '20210506']"
+                                elif v.startswith('[') and v.endswith(']'):
+                                    try:
+                                        import ast
+                                        date_list = ast.literal_eval(v)
+                                        if isinstance(date_list, list) and all(isinstance(d, str) and len(d) == 8 and d.isdigit() for d in date_list):
+                                            continue
+                                    except Exception as e:
+                                        self.logger.warning(f"Column '{col}': failed to parse multi-value date string '{v}': {e}")
+                            is_date_column = False
+                            break
+                        if is_date_column:
+                            try:
+                                # Convert to string format - keep multi-value dates as string for now
+                                # since pandas datetime doesn't handle multi-value fields well
+                                df[col] = df[col].astype('string')
+                                continue
+                            except Exception as e:
+                                self.logger.warning(f"Column '{col}': failed string conversion for date: {e}")
+                    # Default to string for everything else
+                    try:
+                        df[col] = df[col].astype('string')
+                    except Exception as e:
+                        self.logger.warning(f"Column '{col}': failed string conversion: {e}")
+                except Exception as e:
+                    tb = traceback.extract_tb(e.__traceback__)
+                    line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+                    self.logger.error(f"Error processing column '{col}' during type optimization: {e}{line_info}")
+                    continue
             
             # Create Parquet file path - use fixed name as requested
             parquet_file = os.path.join(private_map_folder, "metadata.parquet")
