@@ -17,8 +17,20 @@ class DeidProgressHandler:
         self._thread.start()
 
     def write(self, msg):
+        import traceback
         # Immediate reporting for errors or warnings
-        if "ERROR" in msg or "Error" in msg or "WARNING" in msg or "Warning" in msg:
+        if "ERROR" in msg or "Error" in msg:
+            self.luwak_logger.error(msg.strip())
+            # Log project-relevant stack trace for errors only
+            tb_list = traceback.extract_stack()
+            import os
+            project_path = os.path.abspath(os.path.dirname(__file__))
+            start_idx = next((i for i, frame in enumerate(tb_list)
+                              if project_path in os.path.abspath(frame.filename)), 0)
+            filtered = tb_list[start_idx:]
+            formatted = ''.join(traceback.format_list(filtered))
+            self.luwak_logger.error(f"Project stack trace block (deid):\n{formatted}")
+        elif "WARNING" in msg or "Warning" in msg:
             self.luwak_logger.warning(msg.strip())
         elif "Anonymized file" in msg:
             with self.lock:
