@@ -4,7 +4,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0002,0003,Media Storage SOP Instance UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0002,0003)","@hashuid(@UIDROOT,this)"
 0004,1511,Referenced SOP Instance UID in File,UI,,func:generate_hashuid,keep,,,,,,,,,"(0004,1511)","@hashuid(@UIDROOT,this)"
 0008,0012,Instance Creation Date,DA,,func:hash_increment_date,,,,,keep,func:hash_increment_date,,,,"(0008,0012)","@incrementdate(this,@DATEINC)"
-0008,0013,Instance Creation Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0008,0013)",@keep()
+0008,0013,Instance Creation Time,TM,,remove,,,,,keep,keep,,,,"(0008,0013)",@keep()
 0008,0014,Instance Creator UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0008,0014)","@hashuid(@UIDROOT,this)"
 0008,0015,Instance Coercion DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0008,0015)","@incrementdate(this,@DATEINC)"
 0008,0017,Acquisition UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0008,0017)","@hashuid(@UIDROOT,this)"
@@ -17,12 +17,12 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0008,0024,Overlay Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0008,0024)","@incrementdate(this,@DATEINC)"
 0008,0025,Curve Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0008,0025)","@incrementdate(this,@DATEINC)"
 0008,002a,Acquisition DateTime,DT,,func:hash_increment_date,,,,,keep,func:hash_increment_date,,,,"(0008,002A)","@incrementdate(this,@DATEINC)"
-0008,0030,Study Time,TM,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0008,0030)",@keep()
-0008,0031,Series Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0008,0031)",@keep()
-0008,0032,Acquisition Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0008,0032)",@keep()
-0008,0033,Content Time,TM,,blank,,,,,keep,func:hash_increment_date,,,,"(0008,0033)",@keep()
-0008,0034,Overlay Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0008,0034)",@keep()
-0008,0035,Curve Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0008,0035)",@keep()
+0008,0030,Study Time,TM,,func:set_fixed_datetime,,,,,keep,keep,,,,"(0008,0030)",@keep()
+0008,0031,Series Time,TM,,remove,,,,,keep,keep,,,,"(0008,0031)",@keep()
+0008,0032,Acquisition Time,TM,,remove,,,,,keep,keep,,,,"(0008,0032)",@keep()
+0008,0033,Content Time,TM,,blank,,,,,keep,keep,,,,"(0008,0033)",@keep()
+0008,0034,Overlay Time,TM,,remove,,,,,keep,keep,,,,"(0008,0034)",@keep()
+0008,0035,Curve Time,TM,,remove,,,,,keep,keep,,,,"(0008,0035)",@keep()
 0008,0050,Accession Number,SH,,blank,,,,,,,,,,"(0008,0050)",@empty()
 0008,0054,Retrieve AE Title,AE,,remove,,clean_manually,,,,,,,,"(0008,0054)",@remove()
 0008,0055,Station AE Title,AE,,remove,,clean_manually,,,,,,,,"(0008,0055)",@remove()
@@ -148,7 +148,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0012,0082,Clinical Trial Protocol Ethics Committee Approval Number,LO,,remove,,,,,,,,,,"(0012,0082)",@remove()
 0012,0086,Ethics Committee Approval Effectiveness Start Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0012,0086)","@incrementdate(this,@DATEINC)"
 0012,0087,Ethics Committee Approval Effectiveness End Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0012,0087)","@incrementdate(this,@DATEINC)"
-0014,407c,Calibration Time,TM,,remove,,keep,,,keep,func:hash_increment_date,,,,"(0014,407C)",@keep()
+0014,407c,Calibration Time,TM,,remove,,keep,,,keep,keep,,,,"(0014,407C)",@keep()
 0014,407e,Calibration Date,DA,,remove,,keep,,,keep,func:hash_increment_date,,,,"(0014,407E)","@incrementdate(this,@DATEINC)"
 0016,002b,Maker Note,OB,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0016,002B)",@keep()
 0016,004b,Device Setting Description,OB,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0016,004B)",@keep()
@@ -189,8 +189,8 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0016,008d,GPS Date​ Stamp,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0016,008D)","@incrementdate(this,@DATEINC)"
 0016,008e,GPS Differential,IS,,remove,,,,,,,,,,"(0016,008E)",@remove()
 0018,0010,Contrast/Bolus Agent,LO,,blank,,,,,,,func:clean_descriptors_with_llm,,,"(0018,0010)",@keep()
-0018,0027,Intervention Drug Stop Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,0027)",@keep()
-0018,0035,Intervention Drug Start Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,0035)",@keep()
+0018,0027,Intervention Drug Stop Time,TM,,remove,,,,,keep,keep,,,,"(0018,0027)",@keep()
+0018,0035,Intervention Drug Start Time,TM,,remove,,,,,keep,keep,,,,"(0018,0035)",@keep()
 0018,1000,Device Serial Number,LO,,remove,,keep,,,,,,,,"(0018,1000)",@remove()
 0018,1002,Device UID,UI,,func:generate_hashuid,keep,keep,,,,,,,,"(0018,1002)","@hashuid(@UIDROOT,this)"
 0018,1004,Plate ID,LO,,remove,,keep,,,,,,,,"(0018,1004)",@remove()
@@ -203,17 +203,17 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0018,1010,Secondary Capture Device ID,LO,,remove,,keep,,,,,,,,,
 0018,1011,Hardcopy Creation Device ID,LO,,remove,,keep,,,,,,,,,
 0018,1012,Date of Secondary Capture,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,1012)","@incrementdate(this,@DATEINC)"
-0018,1014,Time of Secondary Capture,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,1014)",@keep()
+0018,1014,Time of Secondary Capture,TM,,remove,,,,,keep,keep,,,,"(0018,1014)",@keep()
 0018,1030,Protocol Name,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0018,1030)",@keep()
-0018,1042,Contrast/Bolus Start Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,1042)",@keep()
-0018,1043,Contrast/Bolus Stop Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,1043)",@keep()
-0018,1072,Radiopharmaceutical Start Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,1072)",@keep()
-0018,1073,Radiopharmaceutical Stop Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,1073)",@keep()
+0018,1042,Contrast/Bolus Start Time,TM,,remove,,,,,keep,keep,,,,"(0018,1042)",@keep()
+0018,1043,Contrast/Bolus Stop Time,TM,,remove,,,,,keep,keep,,,,"(0018,1043)",@keep()
+0018,1072,Radiopharmaceutical Start Time,TM,,remove,,,,,keep,keep,,,,"(0018,1072)",@keep()
+0018,1073,Radiopharmaceutical Stop Time,TM,,remove,,,,,keep,keep,,,,"(0018,1073)",@keep()
 0018,1078,Radiopharmaceutical Start DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,1078)","@incrementdate(this,@DATEINC)"
 0018,1079,Radiopharmaceutical Stop DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0018,1079)","@incrementdate(this,@DATEINC)"
 0018,11bb,Acquisition Field Of View Label,LO,,replace,,,,,,,func:clean_descriptors_with_llm,,,"(0018,11BB)",@keep()
 0018,1200,Date of Last Calibration,DA,,remove,,keep,,,keep,func:hash_increment_date,,,,"(0018,1200)",@remove()
-0018,1201,Time of Last Calibration,TM,,remove,,keep,,,keep,func:hash_increment_date,,,,"(0018,1201)",@remove()
+0018,1201,Time of Last Calibration,TM,,remove,,keep,,,keep,keep,,,,"(0018,1201)",@remove()
 0018,1202,DateTime of Last Calibration,DT,,remove,,keep,,,keep,func:hash_increment_date,,,,"(0018,1202)","@incrementdate(this,@DATEINC)"
 0018,1203,Calibration DateTime,DT,,func:set_fixed_datetime,,keep,,,keep,func:hash_increment_date,,,,"(0018,1203)","@incrementdate(this,@DATEINC)"
 0018,1204,Date of Manufacture,DA,,remove,,keep,,,keep,func:hash_increment_date,,,,"(0018,1204)","@incrementdate(this,@DATEINC)"
@@ -224,7 +224,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0018,5011,Transducer Identification Sequence,SQ,,remove,,keep,,,,,,,,"(0018,5011)",@remove()
 0018,700a,Detector ID,SH,,remove,,keep,,,,,,,,"(0018,700A)",@remove()
 0018,700c,Date of Last Detector Calibration,DA,,func:hash_increment_date,,keep,,,keep,func:hash_increment_date,,,,"(0018,700C)","@incrementdate(this,@DATEINC)"
-0018,700e,Time of Last Detector Calibration,TM,,remove,,keep,,,keep,func:hash_increment_date,,,,"(0018,700E)",@keep()
+0018,700e,Time of Last Detector Calibration,TM,,remove,,keep,,,keep,keep,,,,"(0018,700E)",@keep()
 0018,9074,Frame Acquisition DateTime,DT,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0018,9074)","@incrementdate(this,@DATEINC)"
 0018,9151,Frame Reference DateTime,DT,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0018,9151)","@incrementdate(this,@DATEINC)"
 0018,9185,Respiratory Motion Compensation Technique Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0018,9185)",@keep()
@@ -253,7 +253,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0020,0200,Synchronization Frame of Reference UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0020,0200)","@hashuid(@UIDROOT,this)"
 0020,3401,Modifying Device ID,CS,,remove,,keep,,,,,,,,"(0020,3401)",@remove()
 0020,3403,Modified Image Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0020,3403)","@incrementdate(this,@DATEINC)"
-0020,3405,Modified Image Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0020,3405)",@keep()
+0020,3405,Modified Image Time,TM,,remove,,,,,keep,keep,,,,"(0020,3405)",@keep()
 0020,3406,Modified Image Description,LO,,remove,,,,,,,,,,"(0020,3406)",@remove()
 0020,4000,Image Comments,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0020,4000)",@remove()
 0020,9158,Frame Comments,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0020,9158)",@remove()
@@ -264,22 +264,22 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0028,4000,Image Presentation Comments,LT,,remove,,,,,,,,,,"(0028,4000)",@remove()
 0032,0012,Study ID Issuer,LO,,remove,,,,,,,,,,"(0032,0012)",@remove()
 0032,0032,Study Verified Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,0032)","@incrementdate(this,@DATEINC)"
-0032,0033,Study Verified Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,0033)",@keep()
+0032,0033,Study Verified Time,TM,,remove,,,,,keep,keep,,,,"(0032,0033)",@keep()
 0032,0034,Study Read Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,0034)","@incrementdate(this,@DATEINC)"
-0032,0035,Study Read Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,0035)",@keep()
+0032,0035,Study Read Time,TM,,remove,,,,,keep,keep,,,,"(0032,0035)",@keep()
 0032,1000,Scheduled Study Start Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,1000)","@incrementdate(this,@DATEINC)"
-0032,1001,Scheduled Study Start Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,1001)",@keep()
+0032,1001,Scheduled Study Start Time,TM,,remove,,,,,keep,keep,,,,"(0032,1001)",@keep()
 0032,1010,Scheduled Study Stop Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,1010)","@incrementdate(this,@DATEINC)"
-0032,1011,Scheduled Study Stop Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,1011)",@keep()
+0032,1011,Scheduled Study Stop Time,TM,,remove,,,,,keep,keep,,,,"(0032,1011)",@keep()
 0032,1020,Scheduled Study Location,LO,,remove,,keep,,,,,,,,"(0032,1020)",@remove()
 0032,1021,Scheduled Study Location AE Title,AE,,remove,,clean_manually,,,,,,,,"(0032,1021)",@remove()
 0032,1030,Reason for Study,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0032,1030)",@keep()
 0032,1032,Requesting Physician,PN,,remove,,,,,,,,,,"(0032,1032)",@remove()
-0032,1033,Requesting Service,LO,,remove,,,,,,,,,,"(0032,1033)",@remove()
+0032,1033,Requesting Service,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0032,1033)",@remove()
 0032,1040,Study Arrival Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,1040)","@incrementdate(this,@DATEINC)"
-0032,1041,Study Arrival Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,1041)",@keep()
+0032,1041,Study Arrival Time,TM,,remove,,,,,keep,keep,,,,"(0032,1041)",@keep()
 0032,1050,Study Completion Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,1050)","@incrementdate(this,@DATEINC)"
-0032,1051,Study Completion Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0032,1051)",@keep()
+0032,1051,Study Completion Time,TM,,remove,,,,,keep,keep,,,,"(0032,1051)",@keep()
 0032,1060,Requested Procedure Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0032,1060)",@keep()
 0032,1066,Reason for Visit,UT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0032,1066)",@remove()
 0032,1067,Reason for Visit Code Sequence,SQ,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0032,1067)",@remove()
@@ -294,14 +294,14 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0038,0011,Issuer of Admission ID,LO,,remove,,,,,,,,,,"(0038,0011)",@remove()
 0038,0014,Issuer of Admission ID Sequence,SQ,,remove,,,,,,,,,,"(0038,0014)",@remove()
 0038,001a,Scheduled Admission Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0038,001A)","@incrementdate(this,@DATEINC)"
-0038,001b,Scheduled Admission Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0038,001B)",@keep()
+0038,001b,Scheduled Admission Time,TM,,remove,,,,,keep,keep,,,,"(0038,001B)",@keep()
 0038,001c,Scheduled Discharge Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0038,001C)","@incrementdate(this,@DATEINC)"
-0038,001d,Scheduled Discharge Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0038,001D)",@keep()
+0038,001d,Scheduled Discharge Time,TM,,remove,,,,,keep,keep,,,,"(0038,001D)",@keep()
 0038,001e,Scheduled Patient Institution Residence,LO,,remove,,,,,,,,,,"(0038,001E)",@remove()
 0038,0020,Admitting Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0038,0020)","@incrementdate(this,@DATEINC)"
-0038,0021,Admitting Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0038,0021)",@keep()
+0038,0021,Admitting Time,TM,,remove,,,,,keep,keep,,,,"(0038,0021)",@keep()
 0038,0030,Discharge Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0038,0030)","@incrementdate(this,@DATEINC)"
-0038,0032,Discharge Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0038,0032)",@keep()
+0038,0032,Discharge Time,TM,,remove,,,,,keep,keep,,,,"(0038,0032)",@keep()
 0038,0040,Discharge Diagnosis Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0038,0040)",@keep()
 0038,0050,Special Needs,LO,,remove,,,,C,,,,,,"(0038,0050)",@remove()
 0038,0060,Service Episode ID,LO,,remove,,,,,,,,,,"(0038,0060)",@remove()
@@ -318,9 +318,9 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 003a,032b,Filter Lookup Table Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(003A,032B)",@keep()
 0040,0001,Scheduled Station AE Title,AE,,remove,,clean_manually,,,,,,,,"(0040,0001)",@remove()
 0040,0002,Scheduled Procedure Step Start Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,0002)","@incrementdate(this,@DATEINC)"
-0040,0003,Scheduled Procedure Step Start Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,0003)",@keep()
+0040,0003,Scheduled Procedure Step Start Time,TM,,remove,,,,,keep,keep,,,,"(0040,0003)",@keep()
 0040,0004,Scheduled Procedure Step End Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,0004)","@incrementdate(this,@DATEINC)"
-0040,0005,Scheduled Procedure Step End Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,0005)",@keep()
+0040,0005,Scheduled Procedure Step End Time,TM,,remove,,,,,keep,keep,,,,"(0040,0005)",@keep()
 0040,0006,Scheduled Performing Physician's Name,PN,,remove,,,,,,,,,,"(0040,0006)",@remove()
 0040,0007,Scheduled Procedure Step Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0040,0007)",@keep()
 0040,0009,Scheduled Procedure Step ID,SH,,remove,,,,,,,,,,"(0040,0009)",@remove()
@@ -332,9 +332,9 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,0242,Performed Station Name,SH,,remove,,keep,,,,,,,,"(0040,0242)",@remove()
 0040,0243,Performed Location,SH,,remove,,,,,,,,,,"(0040,0243)",@remove()
 0040,0244,Performed Procedure Step Start Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,0244)","@incrementdate(this,@DATEINC)"
-0040,0245,Performed Procedure Step Start Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,0245)",@keep()
+0040,0245,Performed Procedure Step Start Time,TM,,remove,,,,,keep,keep,,,,"(0040,0245)",@keep()
 0040,0250,Performed Procedure Step End Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,0250)","@incrementdate(this,@DATEINC)"
-0040,0251,Performed Procedure Step End Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,0251)",@keep()
+0040,0251,Performed Procedure Step End Time,TM,,remove,,,,,keep,keep,,,,"(0040,0251)",@keep()
 0040,0253,Performed Procedure Step ID,SH,,remove,,,,,,,,,,"(0040,0253)",@remove()
 0040,0254,Performed Procedure Step Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0040,0254)",@keep()
 0040,0275,Request Attributes Sequence,SQ,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0040,0275)",@remove()
@@ -366,7 +366,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,1400,Requested Procedure Comments,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0040,1400)",@remove()
 0040,2001,Reason for the Imaging Service Request,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0040,2001)",@remove()
 0040,2004,Issue Date of Imaging Service Request,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,2004)","@incrementdate(this,@DATEINC)"
-0040,2005,Issue Time of Imaging Service Request,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,2005)",@keep()
+0040,2005,Issue Time of Imaging Service Request,TM,,remove,,,,,keep,keep,,,,"(0040,2005)",@keep()
 0040,2008,Order Entered By,PN,,remove,,,,,,,,,,"(0040,2008)",@remove()
 0040,2009,Order Enterer's Location,SH,,remove,,,,,,,,,,"(0040,2009)",@remove()
 0040,2010,Order Callback Phone Number,SH,,remove,,,,,,,,,,"(0040,2010)",@remove()
@@ -392,13 +392,13 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,4051,Performed Procedure Step End DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,4051)","@incrementdate(this,@DATEINC)"
 0040,4052,Procedure Step Cancellation DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,4052)","@incrementdate(this,@DATEINC)"
 0040,a023,Findings Group Recording Date (Trial),DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,A023)","@incrementdate(this,@DATEINC)"
-0040,a024,Findings Group Recording Time (Trial),TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,A024)","@incrementdate(this,@DATEINC)"
+0040,a024,Findings Group Recording Time (Trial),TM,,remove,,,,,keep,keep,,,,"(0040,A024)","@incrementdate(this,@DATEINC)"
 0040,a027,Verifying Organization,LO,,replace,,,,,,,,,,"(0040,A027)",removed
 0040,a030,Verification DateTime,DT,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0040,A030)","@incrementdate(this,@DATEINC)"
 0040,a032,Observation DateTime,DT,,func:hash_increment_date,,,,,keep,func:hash_increment_date,,,,"(0040,A032)","@incrementdate(this,@DATEINC)"
 0040,a033,Observation Start DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,A033)","@incrementdate(this,@DATEINC)"
-0040,a034,Effective Start DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,,
-0040,a035,Effective Stop DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,,
+0040,a034,Effective Start DateTime,,,remove,,,,,keep,func:hash_increment_date,,,,,
+0040,a035,Effective Stop DateTime,,,remove,,,,,keep,func:hash_increment_date,,,,,
 0040,a073,Verifying Observer Sequence,SQ,,replace,,,,,,,,,,"(0040,A073)",@process()
 0040,a075,Verifying Observer Name,PN,,replace,,,,,,,,,,"(0040,A075)",removed
 0040,a078,Author Observer Sequence,SQ,,remove,,,,,,,,,,"(0040,A078)",@remove()
@@ -407,17 +407,17 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,a082,Participation DateTime,DT,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0040,A082)","@incrementdate(this,@DATEINC)"
 0040,a088,Verifying Observer Identification Code Sequence,SQ,,blank,,,,,,,,,,"(0040,A088)",@remove()
 0040,a110,Date of Document or Verbal Transaction (Trial),DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,A110)","@incrementdate(this,@DATEINC)"
-0040,a112,Time of Document Creation or Verbal Transaction (Trial),TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,A112)",@keep()
+0040,a112,Time of Document Creation or Verbal Transaction (Trial),TM,,remove,,,,,keep,keep,,,,"(0040,A112)",@keep()
 0040,a120,DateTime,DT,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0040,A120)","@incrementdate(this,@DATEINC)"
 0040,a121,Date,DA,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0040,A121)","@incrementdate(this,@DATEINC)"
-0040,a122,Time,TM,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0040,A122)",@keep()
+0040,a122,Time,TM,,func:set_fixed_datetime,,,,,keep,keep,,,,"(0040,A122)",@keep()
 0040,a123,Person Name,PN,,replace,,,,,,,,,,"(0040,A123)",removed
 0040,a124,UID,UI,,func:generate_hashuid,,,,,,,,,,"(0040,A124)","@hashuid(@UIDROOT,this)"
 0040,a13a,Referenced DateTime,DT,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0040,A13A)","@incrementdate(this,@DATEINC)"
 0040,a171,Observation UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0040,A171)","@hashuid(@UIDROOT,this)"
 0040,a172,Referenced Observation UID (Trial),UI,,func:generate_hashuid,keep,,,,,,,,,"(0040,A172)","@hashuid(@UIDROOT,this)"
 0040,a192,Observation Date (Trial),DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,A192)","@incrementdate(this,@DATEINC)"
-0040,a193,Observation Time (Trial),TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,A193)",@keep()
+0040,a193,Observation Time (Trial),TM,,remove,,,,,keep,keep,,,,"(0040,A193)",@keep()
 0040,a307,Current Observer (Trial),PN,,remove,,,,,,,,,,"(0040,A307)",@remove()
 0040,a352,Verbal Source (Trial),PN,,remove,,,,,,,,,,"(0040,A352)",@remove()
 0040,a353,Address (Trial),ST,,remove,,,,,,,,,,"(0040,A353)",@remove()
@@ -425,10 +425,10 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,a358,Verbal Source Identifier Code Sequence (Trial),SQ,,remove,,,,,,,,,,"(0040,A358)",@remove()
 0040,a402,Observation Subject UID (Trial),UI,,func:generate_hashuid,keep,,,,,,,,,"(0040,A402)","@hashuid(@UIDROOT,this)"
 0040,a730,Content Sequence,SQ,,replace,,,,,,,,clean_manually,,"(0040,A730)",@process()
-0040,b034,Annotation DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,,
-0040,b036,Segment Definition DateTime,DT,,remove,,,,,keep,func:hash_increment_date,,,,,
-0040,b03b,Montage Name,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
-0040,b03f,Montage Channel Label,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0040,b034,Annotation DateTime,,,remove,,,,,keep,func:hash_increment_date,,,,,
+0040,b036,Segment Definition DateTime,,,remove,,,,,keep,func:hash_increment_date,,,,,
+0040,b03b,Montage Name,,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+0040,b03f,Montage Channel Label,,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
 0040,db06,Template Version,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,DB06)",@keep()
 0040,db07,Template Local Version,DT,,remove,,,,,keep,func:hash_increment_date,,,,"(0040,DB07)",@keep()
 0040,db0c,Template Extension Organization UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0040,DB0C)","@hashuid(@UIDROOT,this)"
@@ -452,7 +452,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 006a,0006,Annotation Group Description,UT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(006A,0006)",@keep()
 0070,0001,Graphic Annotation Sequence,SQ,,replace,,,,,,,,,clean_manually,"(0070,0001)",@remove()
 0070,0082,Presentation Creation Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(0070,0082)","@incrementdate(this,@DATEINC)"
-0070,0083,Presentation Creation Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(0070,0083)",@keep()
+0070,0083,Presentation Creation Time,TM,,remove,,,,,keep,keep,,,,"(0070,0083)",@keep()
 0070,0084,Content Creator's Name,PN,,blank,,,,,,,,,,"(0070,0084)",@empty()
 0070,0086,Content Creator's Identification Code Sequence,SQ,,remove,,,,,,,,,,"(0070,0086)",@remove()
 0070,031a,Fiducial UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0070,031A)","@hashuid(@UIDROOT,this)"
@@ -467,7 +467,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0072,0066,Selector LO Value,LO,,replace,,,,,,,func:clean_descriptors_with_llm,,,"(0072,0066)",@keep()
 0072,0068,Selector LT Value,LT,,replace,,,,,,,func:clean_descriptors_with_llm,,,"(0072,0068)",@keep()
 0072,006a,Selector PN Value,PN,,replace,,,,,,,,,,"(0072,006A)",@remove()
-0072,006b,Selector TM Value,TM,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(0072,006B)",@keep()
+0072,006b,Selector TM Value,TM,,func:set_fixed_datetime,,,,,keep,keep,,,,"(0072,006B)",@keep()
 0072,006c,Selector SH Value,SH,,replace,,,,,,,func:clean_descriptors_with_llm,,,"(0072,006C)",@keep()
 0072,006d,Selector UN Value,UN,,replace,,,,,,,,,,"(0072,006D)",@remove()
 0072,006e,Selector ST Value,ST,,replace,,,,,,,func:clean_descriptors_with_llm,,,"(0072,006E)",@keep()
@@ -501,7 +501,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0400,0600,Instance Origin Status,CS,,remove,,,,,,,,,,"(0400,0600)",@remove()
 2030,0020,Text String,LO,,remove,,,,,,,,,,"(2030,0020)",@remove()
 2100,0040,Creation Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(2100,0040)","@incrementdate(this,@DATEINC)"
-2100,0050,Creation Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(2100,0050)",@keep()
+2100,0050,Creation Time,TM,,remove,,,,,keep,keep,,,,"(2100,0050)",@keep()
 2100,0070,Originator,AE,,remove,,clean_manually,,,,,,,,"(2100,0070)",@remove()
 2100,0140,Destination AE,AE,,replace,,clean_manually,,,,,,,,"(2100,0140)",removed
 2200,0002,Label Text,UT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(2200,0002)",@keep()
@@ -512,7 +512,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 3006,0004,Structure Set Name,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(3006,0004)",@keep()
 3006,0006,Structure Set Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(3006,0006)",@keep()
 3006,0008,Structure Set Date,DA,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(3006,0008)","@incrementdate(this,@DATEINC)"
-3006,0009,Structure Set Time,TM,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(3006,0009)",@keep()
+3006,0009,Structure Set Time,TM,,func:set_fixed_datetime,,,,,keep,keep,,,,"(3006,0009)",@keep()
 3006,0024,Referenced Frame of Reference UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(3006,0024)","@hashuid(@UIDROOT,this)"
 3006,0026,ROI Name,LO,,blank,,,,,,,func:clean_descriptors_with_llm,,,"(3006,0026)",@keep()
 3006,0028,ROI Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(3006,0028)",@keep()
@@ -526,21 +526,21 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 3006,00a6,ROI Interpreter,PN,,blank,,,,,,,,,,"(3006,00A6)",@empty()
 3006,00c2,Related Frame of Reference UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(3006,00C2)","@hashuid(@UIDROOT,this)"
 3008,0024,Treatment Control Point Date,DA,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(3008,0024)","@incrementdate(this,@DATEINC)"
-3008,0025,Treatment Control Point Time,TM,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(3008,0025)",@keep()
+3008,0025,Treatment Control Point Time,TM,,func:set_fixed_datetime,,,,,keep,keep,,,,"(3008,0025)",@keep()
 3008,0054,First Treatment Date,DA,,func:hash_increment_date,,,,,keep,func:hash_increment_date,,,,"(3008,0054)","@incrementdate(this,@DATEINC)"
 3008,0056,Most Recent Treatment Date,DA,,func:hash_increment_date,,,,,keep,func:hash_increment_date,,,,"(3008,0056)","@incrementdate(this,@DATEINC)"
 3008,0105,Source Serial Number,LO,,blank,,keep,,,,,,,,"(3008,0105)",@empty()
 3008,0162,Safe Position Exit Date,DA,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(3008,0162)","@incrementdate(this,@DATEINC)"
-3008,0164,Safe Position Exit Time,TM,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(3008,0164)",@keep()
+3008,0164,Safe Position Exit Time,TM,,func:set_fixed_datetime,,,,,keep,keep,,,,"(3008,0164)",@keep()
 3008,0166,Safe Position Return Date,DA,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(3008,0166)","@incrementdate(this,@DATEINC)"
-3008,0168,Safe Position Return Time,TM,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(3008,0168)",@keep()
+3008,0168,Safe Position Return Time,TM,,func:set_fixed_datetime,,,,,keep,keep,,,,"(3008,0168)",@keep()
 3008,0250,Treatment Date,DA,,func:hash_increment_date,,,,,keep,func:hash_increment_date,,,,"(3008,0250)","@incrementdate(this,@DATEINC)"
-3008,0251,Treatment Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(3008,0251)",@keep()
+3008,0251,Treatment Time,TM,,remove,,,,,keep,keep,,,,"(3008,0251)",@keep()
 300a,0002,RT Plan Label,SH,,replace,,,,,,,func:clean_descriptors_with_llm,,,"(300A,0002)",@keep()
 300a,0003,RT Plan Name,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(300A,0003)",@keep()
 300a,0004,RT Plan Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(300A,0004)",@keep()
 300a,0006,RT Plan Date,DA,,func:hash_increment_date,,,,,keep,func:hash_increment_date,,,,"(300A,0006)","@incrementdate(this,@DATEINC)"
-300a,0007,RT Plan Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(300A,0007)",@keep()
+300a,0007,RT Plan Time,TM,,remove,,,,,keep,keep,,,,"(300A,0007)",@keep()
 300a,000b,Treatment Sites,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(300A,000B)",@keep()
 300a,000e,Prescription Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(300A,000E)",@keep()
 300a,0013,Dose Reference UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(300A,0013)","@hashuid(@UIDROOT,this)"
@@ -556,7 +556,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 300a,01b2,Setup Technique Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(300A,01B2)",@keep()
 300a,0216,Source Manufacturer,LO,,remove,,keep,,,,,,,,"(300A,0216)",@remove()
 300a,022c,Source Strength Reference Date,DA,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(300A,022C)","@incrementdate(this,@DATEINC)"
-300a,022e,Source Strength Reference Time,TM,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(300A,022E)",@keep()
+300a,022e,Source Strength Reference Time,TM,,func:set_fixed_datetime,,,,,keep,keep,,,,"(300A,022E)",@keep()
 300a,02eb,Compensator Description,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(300A,02EB)",@keep()
 300a,0608,Treatment Position Group Label,LO,,replace,,,,,,,func:clean_descriptors_with_llm,,,"(300A,0608)",@keep()
 300a,0609,Treatment Position Group UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(300A,0609)","@hashuid(@UIDROOT,this)"
@@ -585,7 +585,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 300c,0113,Reason for Omission Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(300C,0113)",@keep()
 300c,0127,Beam Hold Transition DateTime,DT,,func:set_fixed_datetime,,keep,,,keep,func:hash_increment_date,,,,"(300C,0127)","@incrementdate(this,@DATEINC)"
 300e,0004,Review Date,DA,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(300E,0004)","@incrementdate(this,@DATEINC)"
-300e,0005,Review Time,TM,,func:set_fixed_datetime,,,,,keep,func:hash_increment_date,,,,"(300E,0005)",@keep()
+300e,0005,Review Time,TM,,func:set_fixed_datetime,,,,,keep,keep,,,,"(300E,0005)",@keep()
 300e,0008,Reviewer Name,PN,,manual_review,,,,,,,,,,"(300E,0008)","REV-@hashname(this,4)"
 3010,0006,Conceptual Volume UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(3010,0006)","@hashuid(@UIDROOT,this)"
 3010,000b,Referenced Conceptual Volume UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(3010,000B)","@hashuid(@UIDROOT,this)"
@@ -618,22 +618,22 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 3010,007b,Prescription Notes,UT,,blank,,,,,,,func:clean_descriptors_with_llm,,,"(3010,007B)",@remove()
 3010,007f,Fractionation Notes,UT,,blank,,,,,,,func:clean_descriptors_with_llm,,,"(3010,007F)",@remove()
 3010,0081,Prescription Notes Sequence,SQ,,blank,,,,,,,func:clean_descriptors_with_llm,,,"(3010,0081)",@remove()
-3010,0085,Intended Fraction Start Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(3010,0085)",@keep()
+3010,0085,Intended Fraction Start Time,TM,,remove,,,,,keep,keep,,,,"(3010,0085)",@keep()
 4000,0010,Arbitrary,LT,,remove,,,,,,,,,,"(4000,0010)",@remove()
 4000,4000,Text Comments,LT,,remove,,,,,,,,,,"(4000,4000)",@remove()
 4008,0040,Results ID,SH,,remove,,,,,,,,,,"(4008,0040)",@remove()
 4008,0042,Results ID Issuer,LO,,remove,,,,,,,,,,"(4008,0042)",@remove()
 4008,0100,Interpretation Recorded Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(4008,0100)",@remove()
-4008,0101,Interpretation Recorded Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(4008,0101)",@remove()
+4008,0101,Interpretation Recorded Time,TM,,remove,,,,,keep,keep,,,,"(4008,0101)",@remove()
 4008,0102,Interpretation Recorder,PN,,remove,,,,,,,,,,"(4008,0102)",@remove()
 4008,0108,Interpretation Transcription Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(4008,0108)",@remove()
-4008,0109,Interpretation Transcription Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(4008,0109)",@remove()
+4008,0109,Interpretation Transcription Time,TM,,remove,,,,,keep,keep,,,,"(4008,0109)",@remove()
 4008,010a,Interpretation Transcriber,PN,,remove,,,,,,,,,,"(4008,010A)",@remove()
 4008,010b,Interpretation Text,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(4008,010B)",@keep()
 4008,010c,Interpretation Author,PN,,remove,,,,,,,,,,"(4008,010C)",@remove()
 4008,0111,Interpretation Approver Sequence,SQ,,remove,,,,,,,,,,"(4008,0111)",@remove()
 4008,0112,Interpretation Approval Date,DA,,remove,,,,,keep,func:hash_increment_date,,,,"(4008,0112)",@remove()
-4008,0113,Interpretation Approval Time,TM,,remove,,,,,keep,func:hash_increment_date,,,,"(4008,0113)",@remove()
+4008,0113,Interpretation Approval Time,TM,,remove,,,,,keep,keep,,,,"(4008,0113)",@remove()
 4008,0114,Physician Approving Interpretation,PN,,remove,,,,,,,,,,"(4008,0114)",@remove()
 4008,0115,Interpretation Diagnosis Description,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(4008,0115)",@keep()
 4008,0118,Results Distribution List Sequence,SQ,,remove,,,,,,,,,,"(4008,0118)",@remove()

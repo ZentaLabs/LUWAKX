@@ -769,7 +769,10 @@ def generate_retain_long_modified_dates_profile(final_df):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
         
         if profile == 'C':
-            df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'func:hash_increment_date'
+            if str(row['VR']) == 'TM':
+                df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'keep'
+            else:
+                df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'func:hash_increment_date'
         else:
             # For any other values, keep them as is or set to default
             continue
