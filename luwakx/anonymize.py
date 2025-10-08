@@ -959,50 +959,6 @@ class LuwakAnonymizer:
         
         return processed_files_list
 
-    def _get_directory_contents(self, directory_path, content_type="both"):
-        """Get directory contents with flexible filtering.
-        
-        Args:
-            directory_path (str): Path to directory
-            content_type (str): What to return - "folders", "files", or "both"
-            
-        Returns:
-            list: List of paths or names based on content_type
-        """
-        if not os.path.exists(directory_path):
-            import sys
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            tb = traceback.extract_tb(exc_traceback)
-            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            log_project_stacktrace(self.logger, Exception(f"Directory does not exist: {directory_path}"))
-            return []
-        
-        try:
-            all_items = os.listdir(directory_path)
-            
-            if content_type == "folders":
-                items = [f for f in all_items if os.path.isdir(os.path.join(directory_path, f))]
-                item_type = "folders"
-            elif content_type == "files":
-                items = [os.path.join(directory_path, f) for f in all_items if os.path.isfile(os.path.join(directory_path, f))]
-                item_type = "files"
-            else:  # both
-                items = all_items
-                item_type = "items"
-            
-            if not items:
-                self.logger.warning(f"No {item_type} found in {directory_path}")
-                return []
-            
-            self.logger.debug(f"Found {len(items)} {item_type} in {os.path.basename(directory_path)}: {items}")
-            return items
-            
-        except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
-            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            log_project_stacktrace(self.logger, e)
-            return []
-
     def generate_hashuid(self, item, value, field, dicom):
         """Custom UID generation using combined salt as root for deterministic randomization.
         Ensures remapping: the same original UID always maps to the same anonymized UID for a given file and field.
@@ -1024,8 +980,11 @@ class LuwakAnonymizer:
             log_project_stacktrace(self.logger, e)
             original_uid = str(value) if value else "unknown"
 
-        # Extract file path from the dicom dataset filename attribute
-        file_path = getattr(dicom, 'filename', str(dicom))
+        # Extract file path from the dicom dataset filename attribute and SeriesInstanceUID
+        file_name = getattr(dicom, 'filename', str(dicom))
+        series_uid = getattr(dicom, 'SeriesInstanceUID', 'UNKNOWN_SERIES')
+        # Create composite key: SERIES_UID + "_" + filename
+        file_path = f"{series_uid}_{file_name}"
         if file_path not in self.current_file_mappings:
             self.current_file_mappings[file_path] = {}
 
@@ -1049,11 +1008,11 @@ class LuwakAnonymizer:
         }
         return new_uid
     
-    def save_all_uid_mappings(self):
+    def save_all_uid_mappings(self, file_mappings=None):
         """Save all UID mappings to CSV file with one row per DICOM file, including patient info columns.
         
         Args:
-            None (uses self.current_file_mappings and private_map_folder)
+            file_mappings (dict, optional): File mappings structure to get output paths.
         
         Returns:
             None
@@ -1085,60 +1044,69 @@ class LuwakAnonymizer:
 
         # Add patient info columns
         patient_columns = ['PatientName', 'PatientID', 'PatientBirthDate']
-        fieldnames = ['file_path'] + patient_columns
+        fieldnames = ['original_file_path', 'anonymized_file_path'] + patient_columns
         for field in sorted_fields:
             fieldnames.extend([f'{field}_original', f'{field}_anonymized'])
-
+        
         self.logger.debug(f"Dynamically detected {len(sorted_fields)} modified fields: {sorted_fields}")
 
-        # Open file in append mode
-        with open(mapping_file, 'a', newline='') as csvfile:
+        # Open file in write mode (overwrite existing file)
+        with open(mapping_file, 'w', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-            # Write header if file is new
-            if not file_exists:
-                writer.writeheader()
-
+            # Always write header for fresh file
+            writer.writeheader()
+            input_folder = self.config.get('inputFolder')
+            output_folder = self.config.get('outputDeidentifiedFolder')
             # Write one row per file
             for file_path, mappings in self.current_file_mappings.items():
                 # Calculate the relative path from output folder (including series subfolder)
-                output_folder = self.config.get('outputDeidentifiedFolder')
-                try:
-                    # Get the expected output path for this input file
-                    expected_output_path = self.get_output_path_for_file(file_path)
-                    # Calculate relative path from output folder
-                    rel_path = os.path.relpath(expected_output_path, output_folder)
-                    # Ensure we use forward slashes for consistent path representation
-                    rel_path = rel_path.replace(os.sep, '/')
-                except Exception:
-                    rel_path = os.path.basename(file_path)
                 
-                row = {
-                    'file_path': rel_path
-                }
-
-                # Try to read patient info from the DICOM file
+                # Parse the composite key to extract SeriesInstanceUID and filename
+                if '_' in file_path:
+                    series_uid, filename = file_path.split('_', 1)
+                    filename = os.path.basename(filename)  # Ensure we only get the filename part
+                else:
+                    # Fallback for old format or malformed keys
+                    series_uid = 'UNKNOWN_SERIES'
+                    filename = file_path
+                
+                # Try to read patient info from the original DICOM file
+                # Reconstruct original file path from SeriesInstanceUID and filename
+                original_file_path = None
+                # Initialize row with all fieldnames as empty strings
+                row = {key: '' for key in fieldnames}
                 try:
-                    ds = pydicom.dcmread(file_path, stop_before_pixels=True)
-                    row['PatientName'] = str(getattr(ds, 'PatientName', ''))
-                    row['PatientID'] = str(getattr(ds, 'PatientID', ''))
-                    row['PatientBirthDate'] = str(getattr(ds, 'PatientBirthDate', ''))
+                    if file_mappings:
+                        # Find the original file in the file mappings
+                        original_files = os.path.dirname(file_mappings['original_input'][series_uid][0])
+                        original_file_path = os.path.join(original_files, filename)
+                        output_files = os.path.dirname(file_mappings['output_directory'][series_uid][0])
+                        output_file_path = os.path.join(output_files, filename)
+                        rel_out_path = os.path.relpath(output_file_path, output_folder)
+                        rel_out_path = rel_out_path.replace(os.sep, '/')
+                        rel_original_path = os.path.relpath(original_file_path, input_folder)
+                        rel_original_path = rel_original_path.replace(os.sep, '/')                  
+                    # If we found the original file, read patient info from it
+                    if original_file_path and os.path.exists(original_file_path):
+                        row['original_file_path'] = rel_original_path
+                        row['anonymized_file_path'] = rel_out_path
+                        ds = pydicom.dcmread(original_file_path, stop_before_pixels=True)
+                        row['PatientName'] = str(getattr(ds, 'PatientName'))
+                        row['PatientID'] = str(getattr(ds, 'PatientID'))
+                        row['PatientBirthDate'] = str(getattr(ds, 'PatientBirthDate'))
                 except Exception as e:
-                    self.logger.warning(f"Could not read patient info from {file_path}: {e}")
-                    row['PatientName'] = ''
-                    row['PatientID'] = ''
-                    row['PatientBirthDate'] = ''
+                    self.logger.warning(f"Could not read patient info for {file_path}: {e}")
+                    # Patient info keys are already initialized as empty strings
 
                 # Add mapping data for each modified field
                 for field in sorted_fields:
                     if field in mappings:
                         row[f'{field}_original'] = mappings[field]['original']
                         row[f'{field}_anonymized'] = mappings[field]['anonymized']
-                    else:
-                        # Field not modified in this particular file
-                        row[f'{field}_original'] = ''
-                        row[f'{field}_anonymized'] = ''
+                    # else: already initialized as empty strings
 
+                # Ensure row has exactly the same keys as fieldnames
                 writer.writerow(row)
 
         self.logger.info(f"UID mappings saved for {len(self.current_file_mappings)} files to: {mapping_file}")
@@ -1665,7 +1633,7 @@ class LuwakAnonymizer:
         if not os.path.exists(recipes_folder):
             self.logger.warning(f"Recipes folder does not exist: {recipes_folder}")
             self.logger.warning("  Make sure recipe files are available at this location or adjust the config.")
-    
+
     def get_dicom_files(self, input_folder, create_series_structure=False):
         """Get all DICOM files from the input folder, optionally organizing them by SeriesInstanceUID.
         
@@ -1674,7 +1642,9 @@ class LuwakAnonymizer:
             create_series_structure (bool): If True, creates a folder structure organized by SeriesInstanceUID
             
         Returns:
-            list: List of DICOM file paths, organized by series if create_series_structure=True
+            list or dict: 
+                - If create_series_structure=False: List of DICOM file paths
+                - If create_series_structure=True: File mappings dictionary with all processing stages
         """
         if not os.path.exists(input_folder):
             self.logger.error(f"Input folder does not exist: {input_folder}")
@@ -1693,17 +1663,24 @@ class LuwakAnonymizer:
             return dicom_files
         
         # Group files by SeriesInstanceUID and create organized structure
-        return self._create_series_organized_structure(dicom_files, input_folder)
+        # Returns file mappings dictionary with all processing stages
+        return self._create_series_organized_structure(dicom_files)
     
-    def _create_series_organized_structure(self, dicom_files, input_folder):
-        """Create a folder structure organized by SeriesInstanceUID.
+    def _create_series_organized_structure(self, dicom_files):
+        """Create a folder structure organized by SeriesInstanceUID and return comprehensive file mappings.
         
         Args:
             dicom_files (list): List of DICOM file paths
-            input_folder (str): Original input folder path
             
         Returns:
-            list: List of organized DICOM file paths in series-based structure
+            dict: File mappings dictionary structure for tracking files across all stages:
+                {
+                    'series_mapping': {series_uid: {'folder_name': str, 'files': [original_paths]}},
+                    'original_input': {series_uid: [sorted_original_file_paths]},
+                    'organized_structure': {series_uid: [sorted_organized_file_paths]},
+                    'defaced_structure': {series_uid: [sorted_defaced_file_paths]},  # populated later if needed
+                    'output_directory': {series_uid: [sorted_output_file_paths]}     # populated later
+                }
         """
         
         # Create a temporary organized structure in the output directory
@@ -1714,7 +1691,6 @@ class LuwakAnonymizer:
         if os.path.exists(organized_input_dir):
             shutil.rmtree(organized_input_dir)
         os.makedirs(organized_input_dir, exist_ok=True)
-        
         # Group files by SeriesInstanceUID
         series_groups = {}
         series_folder_names = {}  # Track folder names for each series
@@ -1748,7 +1724,7 @@ class LuwakAnonymizer:
                         clean_desc = "".join(c for c in series_desc if c.isalnum() or c in " -_").strip()
                         clean_desc = "_".join(clean_desc.split())  # Replace spaces with underscores
                         if clean_desc:
-                            folder_parts.append(clean_desc)
+                            folder_parts.append(clean_desc[:30])  # Limit length
                     
                     if folder_parts:
                         folder_name = "_".join(folder_parts)
@@ -1780,6 +1756,28 @@ class LuwakAnonymizer:
                     series_folder_names['unknown'] = 'unknown_series'
                 series_groups['unknown'].append(file_path)
         
+        # Sort files within each series for consistent ordering
+        for series_uid in series_groups:
+            series_groups[series_uid].sort()
+        
+        # Initialize the comprehensive file mappings structure
+        file_mappings = {
+            'series_mapping': {},      # series_uid: {'folder_name': str, 'files': [original_paths]}
+            'original_input': {},      # series_uid: [sorted_original_file_paths]
+            'organized_structure': {}, # series_uid: [sorted_organized_file_paths]
+            'defaced_structure': {},   # series_uid: [sorted_defaced_file_paths] - populated later if needed
+            'output_directory': {}     # series_uid: [sorted_output_file_paths] - populated later
+        }
+        
+        # Populate the file mappings with sorted original input files
+        for series_uid, files in series_groups.items():
+            folder_name = series_folder_names[series_uid]
+            file_mappings['series_mapping'][series_uid] = {
+                'folder_name': folder_name,
+                'files': files.copy()  # Keep a copy of original file list
+            }
+            file_mappings['original_input'][series_uid] = files.copy()
+        
         # Create organized folder structure and copy files
         organized_files = []
         
@@ -1793,25 +1791,100 @@ class LuwakAnonymizer:
                 folder_name = f"{base_folder_name}_{suffix}"
                 series_folder = os.path.join(organized_input_dir, folder_name)
                 suffix += 1
+            
+            # Update folder name in mapping if it was changed
+            if folder_name != base_folder_name:
+                file_mappings['series_mapping'][series_uid]['folder_name'] = folder_name
+            
             os.makedirs(series_folder, exist_ok=True)
 
             self.logger.debug(f"Created series folder: {series_folder} for SeriesInstanceUID: {series_uid}")
 
+            organized_series_files = []
+            output_series_files = []
+            defaced_series_files = []
+            
+            # Pre-calculate defaced directory path once per series
+            defaced_dir = os.path.join(output_directory, "temp_defaced_organized")
+            
             for file_path in files:
+                # Copy file to organized structure
+                filename = os.path.basename(file_path)
+                organized_file_path = os.path.join(series_folder, filename)
                 try:
-                    # Copy file to organized structure
-                    filename = os.path.basename(file_path)
-                    organized_file_path = os.path.join(series_folder, filename)
                     shutil.copy2(file_path, organized_file_path)
-                    organized_files.append(organized_file_path)
                 except Exception as e:
                     self.logger.warning(f"Could not copy file {file_path} to organized structure: {e}")
+                
+                # Append to main organized files list
+                organized_files.append(organized_file_path)
+                organized_series_files.append(organized_file_path)
+                
+                # Calculate expected output path
+                relative_path = os.path.relpath(organized_file_path, organized_input_dir)
+                output_file = os.path.join(output_directory, relative_path)
+                output_series_files.append(output_file)
+                
+                # Calculate expected defaced path
+                defaced_file = os.path.join(defaced_dir, relative_path)
+                defaced_series_files.append(defaced_file)
+            
+            # Store all series files for this series (sorted for consistency)
+            organized_series_files.sort()
+            output_series_files.sort()
+            defaced_series_files.sort()
+            
+            file_mappings['organized_structure'][series_uid] = organized_series_files
+            file_mappings['output_directory'][series_uid] = output_series_files
+            file_mappings['defaced_structure'][series_uid] = defaced_series_files
         
         self.logger.info(f"Organized {len(organized_files)} files into {len(series_groups)} series folders")
         self.logger.info(f"Organized structure created at: {organized_input_dir}")
+
+        return file_mappings
         
-        return organized_files
-    
+    def print_file_mappings_summary(self, file_mappings):
+        """Print a summary of file mappings for debugging/verification purposes.
+        
+        Args:
+            file_mappings (dict): File mappings structure from _create_series_organized_structure
+            
+        Returns:
+            None
+        """
+        if not file_mappings:
+            self.logger.private("No file mappings available")
+            return
+            
+        self.logger.private("=== File Mappings Summary ===")
+        for series_uid in file_mappings.get('series_mapping', {}):
+            folder_name = file_mappings['series_mapping'][series_uid]['folder_name']
+            original_count = len(file_mappings['original_input'].get(series_uid, []))
+            organized_count = len(file_mappings['organized_structure'].get(series_uid, []))
+            defaced_count = len(file_mappings['defaced_structure'].get(series_uid, []))
+            output_count = len(file_mappings['output_directory'].get(series_uid, []))
+            
+            self.logger.private(f"Series: {series_uid} (Folder: {folder_name})")
+            self.logger.private(f"  Original: {original_count} files")
+            self.logger.private(f"  Organized: {organized_count} files")
+            self.logger.private(f"  Defaced: {defaced_count} files")
+            self.logger.private(f"  Output: {output_count} files")
+            
+            # Show first file mapping as example
+            if original_count > 0:
+                original_file = file_mappings['original_input'][series_uid][0]
+                organized_file = file_mappings['organized_structure'][series_uid][0]
+                defaced_file = file_mappings['defaced_structure'][series_uid][0]
+                output_file = file_mappings['output_directory'][series_uid][0]
+                self.logger.private(f"  Example file mapping:")
+                self.logger.private(f"    Original: {original_file}")
+                self.logger.private(f"    Organized: {organized_file}")
+                self.logger.private(f"    Defaced: {defaced_file}")
+                self.logger.private(f"    Output: {output_file}")
+
+        total_series = len(file_mappings.get('series_mapping', {}))
+        self.logger.private(f"=== Total: {total_series} series tracked ===")
+
     def _collect_actions_for_row(self, row, recipes_to_process, recipe_column_map):
         """
         Helper function to collect actions from recipe columns for a given row.
@@ -2123,6 +2196,7 @@ class LuwakAnonymizer:
         
         # Check if input is a single file or directory
         single_file_processing = os.path.isfile(input_folder)
+        file_mappings = None  # Initialize file mappings for tracking
         
         if single_file_processing:
             self.logger.info("Processing single DICOM file...")
@@ -2132,12 +2206,20 @@ class LuwakAnonymizer:
         else:
             # Always organize DICOM files by SeriesInstanceUID for better volume handling
             self.logger.info("Organizing DICOM files by SeriesInstanceUID...")
-            organized_files = self.get_dicom_files(input_folder, create_series_structure=True)
+            file_mappings = self.get_dicom_files(input_folder, create_series_structure=True)
+            # Extract organized files list from file mappings
+            organized_files = []
+            for series_uid in file_mappings.get('organized_structure', {}):
+                organized_files.extend(file_mappings['organized_structure'][series_uid])
             input_folder_for_processing = input_folder
         
         if not organized_files:
             self.logger.warning("No files found to process")
             return
+        
+        # Log file mappings summary for debugging/verification
+        if file_mappings:
+            self.print_file_mappings_summary(file_mappings)
         
         if single_file_processing:
             # For single files, get the organized input directory or use the original file
@@ -2165,6 +2247,7 @@ class LuwakAnonymizer:
                     dicom_files = processed_files
                     # Update input_folder to point to the defaced organized structure
                     input_folder = defaced_dir
+                    self.logger.debug("Using pre-populated defaced structure paths from file mappings")
                 else:
                     self.logger.warning("No files were processed during visual features cleaning. Using original organized files.")
                     dicom_files = organized_files
@@ -2228,50 +2311,59 @@ class LuwakAnonymizer:
                 progress_handler.close()
 
         else:
-            # Process series folders separately to preserve structure
-            self.logger.info("Processing series folders individually to preserve folder structure...")
+            # Process series folders using file mappings for efficient path management
+            self.logger.info("Processing series using file mappings for preserved structure...")
 
-            # Get series folders and process each one
-            series_folders = self._get_directory_contents(input_folder, "folders")
-
-            if not series_folders:
-                self.logger.error(f"No series folders found in {input_folder}")
+            if not file_mappings or not file_mappings.get('series_mapping'):
+                self.logger.error("No file mappings available for series processing")
                 return
 
-            self.logger.info(f"Anonymizing {len(series_folders)} series folders...")
+            series_uids = list(file_mappings['series_mapping'].keys())
+            self.logger.info(f"Anonymizing {len(series_uids)} series using file mappings...")
 
             all_parsed_files = []
             total_processed_files = 0
 
-            for series_folder_name in series_folders:
-                series_folder_path = os.path.join(input_folder, series_folder_name)
-                series_output_path = os.path.join(output_directory, series_folder_name)
-                # Paths where NRRD files are initially saved (if applicable)
-                nrrd_image_src = os.path.join(series_folder_path, "image.nrrd")
-                nrrd_defaced_src = os.path.join(series_folder_path, "image_defaced.nrrd")
-                # Paths where NRRD files should be moved
-                nrrd_image_dst = os.path.join(series_output_path, "image.nrrd")
-                nrrd_defaced_dst = os.path.join(series_output_path, "image_defaced.nrrd")
+            for series_uid in series_uids:
+                series_info = file_mappings['series_mapping'][series_uid]
+                series_folder_name = series_info['folder_name']
+                
+                # Get the appropriate file list based on whether visual features cleaning was used
+                if 'clean_recognizable_visual_features' in recipes_list:
+                    # Use defaced structure if visual features cleaning was applied
+                    series_files = file_mappings['defaced_structure'].get(series_uid, [])
+                    series_input_folder = os.path.dirname(series_files[0]) if series_files else None
+                else:
+                    # Use organized structure if no visual features cleaning
+                    series_files = file_mappings['organized_structure'].get(series_uid, [])
+                    series_input_folder = os.path.dirname(series_files[0]) if series_files else None
+                
+                # Get output paths from file mappings
+                series_output_files = file_mappings['output_directory'].get(series_uid, [])
+                series_output_path = os.path.dirname(series_output_files[0]) if series_output_files else None
 
-                # Create output directory for this series
-                os.makedirs(series_output_path, exist_ok=True)
-                # Move files if source and destination differ
-                if os.path.exists(nrrd_image_src):
-                    shutil.move(nrrd_image_src, nrrd_image_dst)
-                if os.path.exists(nrrd_defaced_src):
-                    shutil.move(nrrd_defaced_src, nrrd_defaced_dst)
-                # Get files in this series folder
-                series_files = self._get_directory_contents(series_folder_path, "files")
-
-                if not series_files:
-                    # Remove the series_output_path directory if needed
-                    shutil.rmtree(series_output_path)
-                    self.logger.warning(f"No files found in series folder: {series_folder_name}")
+                if not series_files or not series_output_path:
+                    self.logger.warning(f"No files or output path found for series: {series_uid}")
                     continue
+
+                # Handle NRRD files if they exist
+                if series_input_folder:
+                    nrrd_image_src = os.path.join(series_input_folder, "image.nrrd")
+                    nrrd_defaced_src = os.path.join(series_input_folder, "image_defaced.nrrd")
+                    nrrd_image_dst = os.path.join(series_output_path, "image.nrrd")
+                    nrrd_defaced_dst = os.path.join(series_output_path, "image_defaced.nrrd")
+
+                    # Create output directory for this series
+                    os.makedirs(series_output_path, exist_ok=True)
+                    # Move NRRD files if they exist
+                    if os.path.exists(nrrd_image_src):
+                        shutil.move(nrrd_image_src, nrrd_image_dst)
+                    if os.path.exists(nrrd_defaced_src):
+                        shutil.move(nrrd_defaced_src, nrrd_defaced_dst)
 
                 try:
                     # Progress handler for this series
-                    progress_handler = DeidProgressHandler(self.logger, len(series_files),series_folder_name=series_folder_name)
+                    progress_handler = DeidProgressHandler(self.logger, len(series_files), series_folder_name=series_folder_name)
                     bot.outputStream = progress_handler
                     bot.errorStream = progress_handler
                 except Exception as e:
@@ -2279,7 +2371,7 @@ class LuwakAnonymizer:
 
                 try:
                     # Process this series
-                    self.logger.info(f"Processing series '{series_folder_name}' with {len(series_files)} files...")
+                    self.logger.info(f"Processing series '{series_folder_name}' ({series_uid}) with {len(series_files)} files...")
 
                     # Get identifiers for this series
                     series_items = get_identifiers(series_files, expand_sequences=True)
@@ -2312,12 +2404,12 @@ class LuwakAnonymizer:
                         self.logger.info(f"Completed anonymizing series '{series_folder_name}': {len(series_parsed_files)} files processed")
 
                 except Exception as e:
-                    self.logger.error(f"Error processing series '{series_folder_name}': {e}")
+                    self.logger.error(f"Error processing series '{series_folder_name}' ({series_uid}): {e}")
                     continue
                 finally:
                     progress_handler.close()
             
-            series_count = len(series_folders)
+            series_count = len(series_uids)
             self.logger.info(f"Processed {total_processed_files} files across {series_count} series")
         
         self.logger.info("Anonymization completed!")
@@ -2337,24 +2429,27 @@ class LuwakAnonymizer:
             else:
                 self.logger.warning(f"Could not find anonymized file for: {original_file}")
         else:
-            # For series folders, extract metadata maintaining structure
-            # Use helper method to get all files from organized structure for metadata extraction
-            series_folders = self._get_directory_contents(input_folder, "folders")
-            for series_folder_name in series_folders:
-                series_folder_path = os.path.join(input_folder, series_folder_name)
-                series_files = self._get_directory_contents(series_folder_path, "files")
-                if series_files:
-                    original_file = series_files[0]  # Only process the first file
-                    relative_path = os.path.join(series_folder_name, os.path.basename(original_file))
-                    anonymized_file = os.path.join(output_directory, relative_path)
-                    if os.path.exists(anonymized_file):
-                        self.extract_dicom_metadata(original_file, anonymized_file)
-                    else:
-                        self.logger.warning(f"Could not find anonymized file for: {original_file}")
+            # For series folders, extract metadata using file mappings for direct correspondence
+            if file_mappings:
+                # Use file mappings for accurate correspondence tracking
+                self.logger.debug("Using file mappings for metadata extraction correspondence")
+                for series_uid in file_mappings.get('original_input', {}):
+                    original_files = file_mappings['original_input'][series_uid]
+                    output_files = file_mappings['output_directory'].get(series_uid, [])
+                    # Only extract metadata for the first file in the series
+                    if original_files and output_files:
+                        original_file = original_files[0]
+                        anonymized_file = output_files[0]
+                        if os.path.exists(anonymized_file):
+                            self.extract_dicom_metadata(original_file, anonymized_file)
+                        else:
+                            self.logger.warning(f"Could not find anonymized file for: {original_file}")
+            else:
+                self.logger.error("No file mappings available for metadata extraction. This should not happen for multi-file processing.")
         
         # Save all UID mappings to CSV after processing is complete
         if self.current_file_mappings:
-            self.save_all_uid_mappings()
+            self.save_all_uid_mappings(file_mappings)
         
         # Export metadata to Parquet
         if self.dicom_metadata:
@@ -2404,7 +2499,7 @@ class LuwakAnonymizer:
                 self.logger.warning(f"Could not remove temporary {dir_type} directory {dir_path}: {e}")
 
         return all_parsed_files
-
+    
     def get_output_path_for_file(self, input_file_path):
         """Get the expected output path for a given input file, accounting for series organization.
         
@@ -2472,7 +2567,6 @@ class LuwakAnonymizer:
                 self.logger.warning(f"Could not determine series folder for {input_file_path}: {e}")
                 # Fallback to direct output path
                 return os.path.join(output_directory, os.path.basename(input_file_path))
-
 
 if __name__ == "__main__":
     # Simple test with default config
