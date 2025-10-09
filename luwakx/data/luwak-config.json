@@ -1,5 +1,5 @@
 {
-  "inputFolder": "./input",
+  "inputFolder": "./inputs",
   "outputDeidentifiedFolder": "./output/deidentified",
   "outputPrivateMappingFolder": "./output/privateMapping",
   "recipesFolder": "./output/recipes",

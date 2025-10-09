@@ -22,7 +22,7 @@ from datetime import datetime
 from pydicom.datadict import add_private_dict_entry
 
 # Import the centralized logger
-from luwak_logger import get_logger, setup_logger, get_log_file_path
+from luwak_logger import get_logger, private, setup_logger, get_log_file_path
 # Import the DeidProgressHandler for progress reporting
 from deid_logger_handler import DeidProgressHandler
 
@@ -959,6 +959,20 @@ class LuwakAnonymizer:
         
         return processed_files_list
 
+        # Helper to recursively search for UID in sequences and build path
+    def find_sequence_path(self, ds, target_uid, target_keyword, path_prefix=""):
+        for elem in ds:
+            if elem.VR == 'SQ':
+                for idx, item in enumerate(elem.value):
+                    # Recursively search in sequence item
+                    result = self.find_sequence_path(item, target_uid, target_keyword, f"{path_prefix}{elem.keyword}[{idx}].")
+                    if result:
+                        return result
+            else:
+                if elem.keyword == target_keyword and str(elem.value) == str(target_uid):
+                    return f"{path_prefix}{elem.keyword}"
+        return None
+
     def generate_hashuid(self, item, value, field, dicom):
         """Custom UID generation using combined salt as root for deterministic randomization.
         Ensures remapping: the same original UID always maps to the same anonymized UID for a given file and field.
@@ -985,6 +999,7 @@ class LuwakAnonymizer:
         if file_path not in self.current_file_mappings:
             self.current_file_mappings[file_path] = {}
 
+
         # Get field keyword from the element
         field_keyword = getattr(field.element, 'keyword', field.element.tag)
 
@@ -992,6 +1007,12 @@ class LuwakAnonymizer:
         mapping = self.current_file_mappings[file_path].get(field_keyword)
         if mapping and mapping.get('original') == original_uid:
             return mapping['anonymized']
+
+        # If mapping exists but with a different UID, check for nested sequence origin
+        if mapping and mapping.get('original') != original_uid:
+            seq_path = self.find_sequence_path(dicom, original_uid, field_keyword)
+            if seq_path:
+                field_keyword = seq_path
 
         # Combine project_hash_root and original UID as entropy for deterministic generation
         new_uid = pydicom.uid.generate_uid(entropy_srcs=[project_hash_root, original_uid])
@@ -1050,7 +1071,6 @@ class LuwakAnonymizer:
         # Open file in write mode (overwrite existing file)
         with open(mapping_file, 'w', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            count=0
             # Always write header for fresh file
             writer.writeheader()
             input_folder = self.config.get('inputFolder')
@@ -1088,6 +1108,9 @@ class LuwakAnonymizer:
                         rel_out_path = os.path.relpath(output_file_path, output_folder)
                         rel_out_path = rel_out_path.replace(os.sep, '/')
                         rel_original_path = rel_original_path.replace(os.sep, '/')
+                except Exception as e:
+                    self.logger.warning(f"Could not reconstruct original/output file paths for {file_path}: {e}")
+                try:
                     # If we found the original file, read patient info from it
                     if original_file_path and os.path.exists(original_file_path):
                         row['original_file_path'] = rel_original_path
@@ -1149,14 +1172,20 @@ class LuwakAnonymizer:
             
             # Compute relative path to output folder for AnonymizedFilePath
             output_folder = self.config.get('outputDeidentifiedFolder')
+            private_map_folder = self.config.get('outputPrivateMappingFolder')
             try:
                 rel_path = os.path.relpath(anonymized_file_path, output_folder)
                 # Ensure we use forward slashes for consistent path representation
                 rel_path = rel_path.replace(os.sep, '/')
+                defaced_nifti_path = os.path.join(os.path.dirname(rel_path), 'image_defaced.nrrd')
+                rel_private_folder = os.path.relpath(private_map_folder, output_folder)
+                original_nifti_path = os.path.join(rel_private_folder, os.path.dirname(defaced_nifti_path), 'image.nrrd')
             except Exception:
                 rel_path = os.path.basename(anonymized_file_path)
             metadata = {
                 'AnonymizedFilePath': rel_path,
+                'OriginalNiftiPath': original_nifti_path,
+                'DefacedNiftiPath': defaced_nifti_path,
             }
             # Initialize private tag counter
             private_tag_counter = 0
@@ -1334,7 +1363,7 @@ class LuwakAnonymizer:
             for col in df.columns:
                 try:
                     # Skip our fixed tracking columns
-                    if col in ['AnonymizedFilePath']:
+                    if col in ['AnonymizedFilePath','OriginalNiftiPath', 'DefacedNiftiPath']:
                         df[col] = df[col].astype('string')
                         continue
                     # Skip derived boolean fields
@@ -2194,6 +2223,8 @@ class LuwakAnonymizer:
         input_folder = self.config.get('inputFolder')
         output_directory = self.config.get('outputDeidentifiedFolder')
         recipes_list = self.config.get('recipes')
+        private_folder = self.config.get('outputPrivateMappingFolder')
+
         
         # Check if input is a single file or directory
         single_file_processing = os.path.isfile(input_folder)
@@ -2350,11 +2381,13 @@ class LuwakAnonymizer:
                 if series_input_folder:
                     nrrd_image_src = os.path.join(series_input_folder, "image.nrrd")
                     nrrd_defaced_src = os.path.join(series_input_folder, "image_defaced.nrrd")
-                    nrrd_image_dst = os.path.join(series_output_path, "image.nrrd")
+                    rel_nrrd_image_dst = os.path.relpath(series_output_path, output_directory)
+                    nrrd_image_dst = os.path.join(private_folder, rel_nrrd_image_dst, "image.nrrd")
                     nrrd_defaced_dst = os.path.join(series_output_path, "image_defaced.nrrd")
 
                     # Create output directory for this series
                     os.makedirs(series_output_path, exist_ok=True)
+                    os.makedirs(os.path.dirname(nrrd_image_dst), exist_ok=True)
                     # Move NRRD files if they exist
                     if os.path.exists(nrrd_image_src):
                         shutil.move(nrrd_image_src, nrrd_image_dst)
@@ -2423,7 +2456,6 @@ class LuwakAnonymizer:
             # For single file, extract metadata directly
             original_file = input_folder_for_processing
             anonymized_file = os.path.join(output_directory, os.path.basename(original_file))
-            print(f"Extracting metadata from original: {original_file} to anonymized: {anonymized_file}")
             
             if os.path.exists(anonymized_file):
                 self.extract_dicom_metadata(original_file, anonymized_file)
