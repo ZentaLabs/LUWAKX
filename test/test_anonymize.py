@@ -591,7 +591,7 @@ class TestAnonymizeScript(unittest.TestCase):
         finally:
             os.unlink(config_path)
             self.logger.info("Modified dates test completed and config cleaned up")
-    '''
+    
     def test_basic_clean_descriptors_should_have_clean_value(self):
         """Test that mixing basic profile and clean descriptors clean the fields."""
         print("Test that mixing basic profile and clean descriptors clean the fields.")
@@ -629,7 +629,7 @@ class TestAnonymizeScript(unittest.TestCase):
             os.unlink(config_path)
             self.logger.info("Basic profile + clean descriptors test completed and config cleaned up")
 
-        '''
+        
 if __name__ == "__main__":
     unittest.main()
 

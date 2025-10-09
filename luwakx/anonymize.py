@@ -980,11 +980,8 @@ class LuwakAnonymizer:
             log_project_stacktrace(self.logger, e)
             original_uid = str(value) if value else "unknown"
 
-        # Extract file path from the dicom dataset filename attribute and SeriesInstanceUID
-        file_name = getattr(dicom, 'filename', str(dicom))
-        series_uid = getattr(dicom, 'SeriesInstanceUID', 'UNKNOWN_SERIES')
-        # Create composite key: SERIES_UID + "_" + filename
-        file_path = f"{series_uid}_{file_name}"
+        # Extract file path from the dicom dataset filename attribute
+        file_path = f"{getattr(dicom, 'filename', str(dicom))}"
         if file_path not in self.current_file_mappings:
             self.current_file_mappings[file_path] = {}
 
@@ -1053,24 +1050,19 @@ class LuwakAnonymizer:
         # Open file in write mode (overwrite existing file)
         with open(mapping_file, 'w', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
+            count=0
             # Always write header for fresh file
             writer.writeheader()
             input_folder = self.config.get('inputFolder')
             output_folder = self.config.get('outputDeidentifiedFolder')
             # Write one row per file
             for file_path, mappings in self.current_file_mappings.items():
-                # Calculate the relative path from output folder (including series subfolder)
-                
-                # Parse the composite key to extract SeriesInstanceUID and filename
-                if '_' in file_path:
-                    series_uid, filename = file_path.split('_', 1)
-                    filename = os.path.basename(filename)  # Ensure we only get the filename part
-                else:
-                    # Fallback for old format or malformed keys
-                    series_uid = 'UNKNOWN_SERIES'
-                    filename = file_path
-                
+                try:
+                    series_uid = self.current_file_mappings[file_path]['SeriesInstanceUID'].get('original')
+                    filename = os.path.basename(file_path)
+                except Exception as e:
+                    self.logger.warning(f"Could not parse file path {file_path}: {e}")
+                    continue
                 # Try to read patient info from the original DICOM file
                 # Reconstruct original file path from SeriesInstanceUID and filename
                 original_file_path = None
@@ -1086,7 +1078,16 @@ class LuwakAnonymizer:
                         rel_out_path = os.path.relpath(output_file_path, output_folder)
                         rel_out_path = rel_out_path.replace(os.sep, '/')
                         rel_original_path = os.path.relpath(original_file_path, input_folder)
-                        rel_original_path = rel_original_path.replace(os.sep, '/')                  
+                        rel_original_path = rel_original_path.replace(os.sep, '/') 
+                    else:
+                        output_folder = os.path.dirname(output_folder)
+                        input_folder = os.path.dirname(input_folder)
+                        original_file_path = os.path.join(input_folder, filename)
+                        rel_original_path = os.path.relpath(original_file_path, input_folder)
+                        output_file_path = os.path.join(output_folder, filename)
+                        rel_out_path = os.path.relpath(output_file_path, output_folder)
+                        rel_out_path = rel_out_path.replace(os.sep, '/')
+                        rel_original_path = rel_original_path.replace(os.sep, '/')
                     # If we found the original file, read patient info from it
                     if original_file_path and os.path.exists(original_file_path):
                         row['original_file_path'] = rel_original_path
@@ -2341,7 +2342,6 @@ class LuwakAnonymizer:
                 # Get output paths from file mappings
                 series_output_files = file_mappings['output_directory'].get(series_uid, [])
                 series_output_path = os.path.dirname(series_output_files[0]) if series_output_files else None
-
                 if not series_files or not series_output_path:
                     self.logger.warning(f"No files or output path found for series: {series_uid}")
                     continue
@@ -2371,7 +2371,7 @@ class LuwakAnonymizer:
 
                 try:
                     # Process this series
-                    self.logger.info(f"Processing series '{series_folder_name}' ({series_uid}) with {len(series_files)} files...")
+                    self.logger.info(f"Processing series '{series_folder_name}' with {len(series_files)} files...")
 
                     # Get identifiers for this series
                     series_items = get_identifiers(series_files, expand_sequences=True)
@@ -2385,7 +2385,7 @@ class LuwakAnonymizer:
                         series_items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
 
                     # Perform anonymization for this series
-                    self.logger.info(f"Anonymizing series '{series_folder_name}' to {series_output_path}")
+                    self.logger.info(f"Anonymizing series '{series_folder_name}' with files {series_files} to {series_output_path}")
                     series_parsed_files = replace_identifiers(
                         dicom_files=series_files, 
                         deid=recipe, 
@@ -2423,6 +2423,7 @@ class LuwakAnonymizer:
             # For single file, extract metadata directly
             original_file = input_folder_for_processing
             anonymized_file = os.path.join(output_directory, os.path.basename(original_file))
+            print(f"Extracting metadata from original: {original_file} to anonymized: {anonymized_file}")
             
             if os.path.exists(anonymized_file):
                 self.extract_dicom_metadata(original_file, anonymized_file)

@@ -194,7 +194,7 @@ class TestExports(unittest.TestCase):
                 
                 # Check that required columns exist
                 required_columns = [
-                    'file_path',
+                    'anonymized_file_path',
                     'StudyInstanceUID_original', 'StudyInstanceUID_anonymized',
                     'SeriesInstanceUID_original', 'SeriesInstanceUID_anonymized', 
                     'SOPInstanceUID_original', 'SOPInstanceUID_anonymized'
@@ -205,9 +205,9 @@ class TestExports(unittest.TestCase):
                 self.logger.info(f"✓ All required columns present: {required_columns}")
                 
                 # Verify file path
-                self.assertEqual(row['file_path'], '00000001.dcm', "File path in mapping is incorrect")
-                self.logger.info(f"✓ File path verified: {row['file_path']}")
-                
+                self.assertEqual(row['anonymized_file_path'], '00000001.dcm', "File path in mapping is incorrect")
+                self.logger.info(f"✓ File path verified: {row['anonymized_file_path']}")
+
                 # Verify original UIDs match what we read from the file
                 for uid_name in ['StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID']:
                     original_uid = original_uids[uid_name]
@@ -447,7 +447,7 @@ class TestExports(unittest.TestCase):
             self.logger.info(f"✓ Both files contain the right amount of lines per series")
             
             # Check that file names are consistent
-            csv_files = set(row['file_path'] for row in csv_rows)
+            csv_files = set(row['anonymized_file_path'] for row in csv_rows)
             parquet_files = set(df['AnonymizedFilePath'].tolist())
 
             self.assertTrue(parquet_files.issubset(csv_files),
