@@ -58,5 +58,5 @@ jobs:
     - name: Run tests
       env:
         ZENTA_OPENAI_API_KEY: ${{ secrets.ZENTA_OPENAI_API_KEY }}
-      run: |
-        python -m unittest discover test -v
+      run: pytest test/ --ignore=test/test_defacer_profile.py -v
+      

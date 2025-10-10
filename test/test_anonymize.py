@@ -3,7 +3,6 @@ import subprocess
 import os
 import shutil
 import pydicom
-import re
 import tarfile
 import urllib.request
 import json
