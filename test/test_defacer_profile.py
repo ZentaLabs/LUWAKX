@@ -1,3 +1,4 @@
+import gzip
 import vedo
 import SimpleITK as sitk
 import unittest
@@ -7,12 +8,29 @@ import pydicom
 import tempfile
 import json
 import sys
-import tarfile
-import urllib.request
+import requests
 # Add luwakx directory to Python path for imports
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
 from anonymize import LuwakAnonymizer
-from luwak_logger import setup_logger, get_logger
+
+def download_github_asset_by_tag(owner, repo, tag, asset_name, dest_path, token):
+    # Get the release by tag
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
+    headers = {"Authorization": f"token {token}"}
+    release = requests.get(api_url, headers=headers).json()
+    for asset in release.get("assets", []):
+        if asset["name"] == asset_name:
+            asset_url = asset["url"]
+            download_headers = {
+                "Authorization": f"token {token}",
+                "Accept": "application/octet-stream"
+            }
+            r = requests.get(asset_url, headers=download_headers)
+            r.raise_for_status()
+            with open(dest_path, "wb") as f:
+                f.write(r.content)
+            return True
+    raise RuntimeError(f"Asset {asset_name} not found in release {tag}")
 
 class TestDefacerProfile(unittest.TestCase):
     
@@ -23,27 +41,34 @@ class TestDefacerProfile(unittest.TestCase):
 
         # Path to the decompressed test data directory
         cls.test_data_dir = "test_data_defacer"
+        cls.test_volume_dir = os.path.join(cls.test_data_dir, "test_volume")
 
-        # Check if the test data directory exists
-        if not os.path.exists(cls.test_data_dir):
+        # Create required directories
+        os.makedirs(cls.test_volume_dir, exist_ok=True)
+        token = os.environ.get("TEST_DATA_TOKEN")
+        # Download and extract CT_Vol_002_STD_dcm.zip into test_data_defacer/test_volume
+        dcm_zip_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_dcm.zip")
+        if not os.path.exists(os.path.join(cls.test_volume_dir, "CT_Vol_002_STD_dcm")):
+            print("Downloading DICOM volume zip...")
+            download_github_asset_by_tag(
+                "ZentaLabs", "luwak", "testing-data", "CT_Vol_002_STD_dcm.zip", dcm_zip_path, token
+            )
+            import zipfile
+            with zipfile.ZipFile(dcm_zip_path, "r") as zip_ref:
+                zip_ref.extractall(cls.test_volume_dir)
+            os.remove(dcm_zip_path)
 
-            # URL of the test data archive
-            test_data_url = "https://github.com/Simlomb/Test-data-anonymization/releases/download/0.0.1-dicom-files-test/test-dicom-files-2.tar.gz"
-
-            # Download the archive
-            archive_path = "test-dicom-files-2.tar.gz"
-            urllib.request.urlretrieve(test_data_url, archive_path)
-
-            # Extract the archive
-            with tarfile.open(archive_path, "r:gz") as tar:
-                # Extract all files directly into the test_data_dir
-                for member in tar.getmembers():
-                    # Remove the top-level folder from the path
-                    member.path = os.path.relpath(member.path, start="test-dicom-files-2")
-                    tar.extract(member, path=cls.test_data_dir, filter='data')
-
-            # Clean up the downloaded archive
-            os.remove(archive_path)
+        # Download CT_Vol_002_STD_face_mask.nii.gz into test_data_defacer/
+        nii_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask.nii")
+        nii_gz_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask.nii.gz")
+        if not os.path.exists(nii_path):
+            print("Downloading face mask NIfTI...")
+            download_github_asset_by_tag(
+                "ZentaLabs", "luwak", "testing-data", "CT_Vol_002_STD_face_mask.nii.gz", nii_path, token
+            )
+            with gzip.open(nii_gz_path, 'rb') as f_in, open(nii_path, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            os.remove(nii_gz_path)
 
     @classmethod
     def tearDownClass(cls):
@@ -78,19 +103,18 @@ class TestDefacerProfile(unittest.TestCase):
         os.makedirs(self.test_output_dir, exist_ok=True)
         print("\n######################START TEST######################")
 
-    def tearDown(self):
-        # Don't clean up immediately - let user see the plot
-        print("\n######################END TEST######################")
-        # Note: cleanup moved to tearDownClass to allow plot viewing
-
     def test_defacer_profile(self):    
         # Test the defacer profile method directly
         print("Testing defacer profile method...")
         config_path = self.create_test_config(self.test_data_dir, self.test_output_dir)
         anonymizer = LuwakAnonymizer(config_path)
-        processed_files = anonymizer.clean_recognizable_visual_features(self.test_data_dir, self.test_output_dir)
+        processed_files = anonymizer.clean_recognizable_visual_features(self.test_volume_dir, self.test_output_dir)
         self.assertTrue(processed_files, "No files processed by defacer!")
-
+        # Simple GPU check
+        from utils import has_gpu
+        HAS_GPU = has_gpu()
+        if not HAS_GPU:
+            return
         # Plot image.nrrd and image_defaced.nrrd side by side and block until closed
         for root, dirs, files in os.walk(self.test_output_dir):
             if "image.nrrd" in files and "image_defaced.nrrd" in files:
@@ -103,15 +127,15 @@ class TestDefacerProfile(unittest.TestCase):
                 defaced_array = sitk.GetArrayFromImage(defaced)  # shape: [slices, height, width]
                 # Restrict x-axis (width) to half:end
                 x_half = array.shape[2] // 2
-                array_cropped = array[x_half:, :, :]
-                defaced_array_cropped = defaced_array[x_half:, :, :]
+                array_cropped = array[:x_half, :, :]
+                defaced_array_cropped = defaced_array[:x_half, :, :]
                 # Normalize data to [0, 1] for better contrast
                 array_norm = (array_cropped - array_cropped.min()) / (array_cropped.max() - array_cropped.min())
                 defaced_array_norm = (defaced_array_cropped - defaced_array_cropped.min()) / (defaced_array_cropped.max() - defaced_array_cropped.min())
                 spacing = image.GetSpacing()  # (x, y, z) or (width, height, slice)
                 # vedo expects spacing in (z, y, x) order for numpy arrays
                 spacing = spacing[::-1]
-                threshold = 0.45
+                threshold = 0.42
                 vol1 = vedo.Volume(array_norm, spacing=spacing)
                 vol2 = vedo.Volume(defaced_array_norm, spacing=spacing)
                 # Create isosurfaces for both volumes
@@ -132,10 +156,11 @@ class TestDefacerProfile(unittest.TestCase):
                 plt.add(vedo.Text2D("Defaced", pos="top-left", c="white", bg="black"), at=1)
 
                 # Camera position: move along negative y, looking back at the center
-                cam_pos = [center[0], -center[1] - 500, center[2]]  
+                cam_pos = [center[0], center[1] + 500, center[2]]  
                 plt.camera.SetPosition(cam_pos)
                 plt.camera.SetFocalPoint(center)
-                plt.camera.SetViewUp([1, 0, 0])
+                plt.camera.SetViewUp([0, -1, -1])
+
                 plt.show(mesh1, at=0)
                 plt.show(mesh2, at=1, interactive=True)
                 plt.close()
@@ -145,7 +170,7 @@ class TestDefacerProfile(unittest.TestCase):
     def test_luwak_defacer_recipe(self):
         # Test the full luwak anonymization with defacer recipe
         print("Testing luwak full anonymization with defacer recipe...")
-        config_path = self.create_test_config(self.test_data_dir, self.test_output_dir)
+        config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir)
         anonymizer = LuwakAnonymizer(config_path)
         result_files = anonymizer.anonymize()
         # Find all output DICOM files

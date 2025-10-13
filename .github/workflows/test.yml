@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      TEST_DATA_TOKEN: ${{ secrets.TEST_DATA_TOKEN }}
 
     steps:
     # Checkout the repository
@@ -34,13 +36,15 @@ jobs:
     - name: Cache test data
       uses: actions/cache@v3
       with:
-        path: test_data
+        path: test_data, test_data_defacer
         key: ${{ runner.os }}-test-data-v1
         restore-keys: |
           ${{ runner.os }}-test-data-
 
     # Download test data from the release if not cached
     - name: Download and extract test data
+      env:
+        TEST_DATA_TOKEN: ${{ secrets.TEST_DATA_TOKEN }}
       run: |
         if [ ! -d "test_data" ] || [ -z "$(ls -A test_data)" ]; then
           echo "Test data not found or empty, downloading..."
@@ -52,6 +56,19 @@ jobs:
           echo "Downloaded and extracted $(ls test_data | wc -l) files"
         else
           echo "Using cached test data ($(ls test_data | wc -l) files)"
+        fi
+        if [ ! -d "test_data_defacer" ] || [ -z "$(ls -A test_data_defacer)" ]; then
+          echo "Test data not found or empty, downloading..."
+          mkdir -p test_data_defacer
+          curl -L -H "Authorization: token $TEST_DATA_TOKEN" "https://github.com/ZentaLabs/luwak/releases/download/testing-data/CT_Vol_002_STD_dcm.zip" \
+          -o CT_Vol_002_STD_dcm.zip
+          unzip CT_Vol_002_STD_dcm.zip -d test_data_defacer/test_volume
+          rm CT_Vol_002_STD_dcm.zip
+          curl -L -H "Authorization: token $TEST_DATA_TOKEN" "https://github.com/ZentaLabs/luwak/releases/download/testing-data/CT_Vol_002_STD_face_mask.nii.gz" \
+          -o test_data_defacer/CT_Vol_002_STD_face_mask.nii.gz
+          echo "Downloaded and extracted test data defacer"
+        else
+          echo "Using cached test data defacer ($(ls test_data_defacer | wc -l) files)"
         fi
 
     # Run tests
