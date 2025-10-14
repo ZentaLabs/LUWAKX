@@ -8,6 +8,11 @@ import pydicom
 import tempfile
 import json
 import sys
+import warnings
+
+# Suppress deprecation warnings from batchgenerators/scipy
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="batchgenerators")
+
 # Add luwakx directory to Python path for imports
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
 from anonymize import LuwakAnonymizer
@@ -40,10 +45,10 @@ class TestDefacerProfile(unittest.TestCase):
             os.remove(dcm_zip_path)
 
         # Download CT_Vol_002_STD_face_mask.nii.gz into test_data_defacer/
-        nii_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask2.nii.gz")
+        nii_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd")
         if not os.path.exists(nii_path):
             download_github_asset_by_tag(
-                "ZentaLabs", "luwak", "testing-data", "CT_Vol_002_STD_face_mask.nii.gz", nii_path, token
+                "ZentaLabs", "luwak", "testing-data", "CT_Vol_002_STD_face_mask.nrrd", nii_path, token
             )
 
     @classmethod
@@ -81,14 +86,14 @@ class TestDefacerProfile(unittest.TestCase):
         os.makedirs(self.test_output_dir, exist_ok=True)
         print("\n######################START TEST######################")
 
-    def test_defacer_profile(self):    
+    def test_defacer_profile_should_apply_defacing(self):    
         # Test the defacer profile method directly
         print("Testing defacer profile method...")
         # Simple GPU check
         HAS_GPU = has_gpu()
 
         if not HAS_GPU:
-            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nii.gz"))
+            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
             config_path = self.create_test_config(self.test_data_dir, self.test_output_dir, [useExistingMaskDefacer])
         else:
             config_path = self.create_test_config(self.test_data_dir, self.test_output_dir)
@@ -96,6 +101,9 @@ class TestDefacerProfile(unittest.TestCase):
         processed_files = anonymizer.clean_recognizable_visual_features(self.test_volume_dir, self.test_output_dir)
         self.assertTrue(processed_files, "No files processed by defacer!")
         # Plot image.nrrd and image_defaced.nrrd side by side and block until closed
+        if not HAS_GPU:
+            return
+        
         for root, dirs, files in os.walk(self.test_output_dir):
             if "image.nrrd" in files and "image_defaced.nrrd" in files:
                 image_path = os.path.join(root, "image.nrrd")
@@ -144,9 +152,7 @@ class TestDefacerProfile(unittest.TestCase):
                 plt.camera.SetPosition(cam_pos)
                 plt.camera.SetFocalPoint(center)
                 plt.camera.SetViewUp([1, 0, 0])
-                if not HAS_GPU:
-                    plt.close()
-                    return
+                
                 plt.show(mesh1, at=0)
                 plt.show(mesh2, at=1, interactive=True)
                 plt.close()
@@ -160,12 +166,11 @@ class TestDefacerProfile(unittest.TestCase):
         HAS_GPU = has_gpu()
 
         if not HAS_GPU:
-            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nii.gz"))
-            config_path = self.create_test_config(self.test_data_dir, self.test_output_dir, useExistingMaskDefacer)
+            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
+            config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir, [useExistingMaskDefacer])
         else:
-            config_path = self.create_test_config(self.test_data_dir, self.test_output_dir)
+            config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir)
 
-        config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir)
         anonymizer = LuwakAnonymizer(config_path)
         result_files = anonymizer.anonymize()
         # Find all output DICOM files
