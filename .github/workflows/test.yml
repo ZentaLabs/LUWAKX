@@ -28,11 +28,13 @@ jobs:
       run: |
         pip install -r luwakx/requirements.txt
           
-    # Cache test data
-    - name: Cache test data
-      uses: actions/cache@v3
+    # Restore test data cache
+    - name: Restore test data cache
+      uses: actions/cache/restore@v3
       with:
-        path: test_data, test_data_defacer
+        path: |
+          test_data
+          test_data_defacer
         key: ${{ runner.os }}-test-data-v1
         restore-keys: |
           ${{ runner.os }}-test-data-
@@ -43,4 +45,14 @@ jobs:
         ZENTA_OPENAI_API_KEY: ${{ secrets.ZENTA_OPENAI_API_KEY }}
       run: |
         python -m unittest discover test -v
+
+    # Save test data cache
+    - name: Save test data cache
+      uses: actions/cache/save@v3
+      if: always()  # Save cache even if tests fail
+      with:
+        path: |
+          test_data
+          test_data_defacer
+        key: ${{ runner.os }}-test-data-v1
       
