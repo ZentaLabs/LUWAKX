@@ -773,7 +773,14 @@ class LuwakAnonymizer:
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
             log_project_stacktrace(self.logger, Exception(f"Input folder does not exist: {input_folder}"))
             return None
-        
+        try:
+            use_existing_masks = self.config.get('testOptions', {}).get('useExistingMaskDefacer', [])
+            use_existing_masks = [os.path.abspath(m) for m in use_existing_masks]
+        except Exception as e:
+            tb = traceback.extract_tb(e.__traceback__)
+            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            log_project_stacktrace(self.logger, e)
+            use_existing_masks = []
         # Import required modules
         import SimpleITK
         try:
@@ -856,7 +863,11 @@ class LuwakAnonymizer:
                         
                         reader.SetFileNames(dicom_filenames)
                         image = reader.Execute()
-                        image_face_segmentation = defacer.prepare_face_mask(image, modality)
+                        if use_existing_masks:
+                            self.logger.info("Using existing mask for face segmentation.")
+                            image_face_segmentation  = defacer.prepare_face_mask(image, modality, use_existing_masks[series_count-1])
+                        else:
+                            image_face_segmentation = defacer.prepare_face_mask(image, modality)
                         image_defaced = defacer.pixelate_face(image, image_face_segmentation)
                         nrrd_image_path = os.path.join(output_series_folder, "image.nrrd")
                         nrrd_defaced_path = os.path.join(output_series_folder, "image_defaced.nrrd")

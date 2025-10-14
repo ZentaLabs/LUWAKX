@@ -93,6 +93,21 @@
       "default": 365,
       "minimum": 1,
       "examples": [7, 30, 90]
+    },
+    "testOptions": {
+      "type": "object",
+      "description": "Options for testing, including mask defacer paths.",
+      "default": {},
+      "properties": {
+        "useExistingMaskDefacer": {
+          "type": "array",
+          "description": "List of file paths for mask defacer.",
+          "items": {"type": "string"},
+          "default": [],
+          "examples": ["/path/to/mask1.nii.gz", "/path/to/mask2.nii.gz"]
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": [

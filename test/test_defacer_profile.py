@@ -1,4 +1,4 @@
-import gzip
+import zipfile
 import vedo
 import SimpleITK as sitk
 import unittest
@@ -8,29 +8,10 @@ import pydicom
 import tempfile
 import json
 import sys
-import requests
 # Add luwakx directory to Python path for imports
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
 from anonymize import LuwakAnonymizer
-
-def download_github_asset_by_tag(owner, repo, tag, asset_name, dest_path, token):
-    # Get the release by tag
-    api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
-    headers = {"Authorization": f"token {token}"}
-    release = requests.get(api_url, headers=headers).json()
-    for asset in release.get("assets", []):
-        if asset["name"] == asset_name:
-            asset_url = asset["url"]
-            download_headers = {
-                "Authorization": f"token {token}",
-                "Accept": "application/octet-stream"
-            }
-            r = requests.get(asset_url, headers=download_headers)
-            r.raise_for_status()
-            with open(dest_path, "wb") as f:
-                f.write(r.content)
-            return True
-    raise RuntimeError(f"Asset {asset_name} not found in release {tag}")
+from utils import has_gpu, download_github_asset_by_tag
 
 class TestDefacerProfile(unittest.TestCase):
     
@@ -49,47 +30,44 @@ class TestDefacerProfile(unittest.TestCase):
         # Download and extract CT_Vol_002_STD_dcm.zip into test_data_defacer/test_volume
         dcm_zip_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_dcm.zip")
         if not os.path.exists(os.path.join(cls.test_volume_dir, "CT_Vol_002_STD_dcm")):
-            print("Downloading DICOM volume zip...")
             download_github_asset_by_tag(
                 "ZentaLabs", "luwak", "testing-data", "CT_Vol_002_STD_dcm.zip", dcm_zip_path, token
             )
-            import zipfile
+            target_dir = os.path.join(cls.test_volume_dir, "CT_Vol_002_STD_dcm")
+            os.makedirs(target_dir, exist_ok=True)
             with zipfile.ZipFile(dcm_zip_path, "r") as zip_ref:
-                zip_ref.extractall(cls.test_volume_dir)
+                zip_ref.extractall(target_dir)
             os.remove(dcm_zip_path)
 
         # Download CT_Vol_002_STD_face_mask.nii.gz into test_data_defacer/
-        nii_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask.nii")
-        nii_gz_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask.nii.gz")
+        nii_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask2.nii.gz")
         if not os.path.exists(nii_path):
-            print("Downloading face mask NIfTI...")
             download_github_asset_by_tag(
                 "ZentaLabs", "luwak", "testing-data", "CT_Vol_002_STD_face_mask.nii.gz", nii_path, token
             )
-            with gzip.open(nii_gz_path, 'rb') as f_in, open(nii_path, 'wb') as f_out:
-                shutil.copyfileobj(f_in, f_out)
-            os.remove(nii_gz_path)
 
     @classmethod
     def tearDownClass(cls):
         # Clean up output directory after all tests
         if os.path.exists(cls.test_output_dir):
-            pass# shutil.rmtree(cls.test_output_dir)
+            shutil.rmtree(cls.test_output_dir)
 
     @classmethod
-    def create_test_config(cls, input_folder, output_folder):
+    def create_test_config(cls, input_folder, output_folder, useExistingMaskDefacer=[]):
         # Helper to create a config file for defacer
         if not os.path.isabs(input_folder):
             input_folder = os.path.abspath(input_folder)
         if not os.path.isabs(output_folder):
             output_folder = os.path.abspath(output_folder)
         output_private_mapping_folder = os.path.join(output_folder, "private")
+
         config = {
             "inputFolder": input_folder,
             "outputDeidentifiedFolder": output_folder,
             "outputPrivateMappingFolder": output_private_mapping_folder,
             "recipesFolder": os.path.join(output_folder, "recipes"),
             "recipes":  ["clean_recognizable_visual_features"],
+            "testOptions": {"useExistingMaskDefacer": useExistingMaskDefacer}
         }
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
         json.dump(config, config_file, indent=2)
@@ -106,15 +84,17 @@ class TestDefacerProfile(unittest.TestCase):
     def test_defacer_profile(self):    
         # Test the defacer profile method directly
         print("Testing defacer profile method...")
-        config_path = self.create_test_config(self.test_data_dir, self.test_output_dir)
+        # Simple GPU check
+        HAS_GPU = has_gpu()
+
+        if not HAS_GPU:
+            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nii.gz"))
+            config_path = self.create_test_config(self.test_data_dir, self.test_output_dir, [useExistingMaskDefacer])
+        else:
+            config_path = self.create_test_config(self.test_data_dir, self.test_output_dir)
         anonymizer = LuwakAnonymizer(config_path)
         processed_files = anonymizer.clean_recognizable_visual_features(self.test_volume_dir, self.test_output_dir)
         self.assertTrue(processed_files, "No files processed by defacer!")
-        # Simple GPU check
-        from utils import has_gpu
-        HAS_GPU = has_gpu()
-        if not HAS_GPU:
-            return
         # Plot image.nrrd and image_defaced.nrrd side by side and block until closed
         for root, dirs, files in os.walk(self.test_output_dir):
             if "image.nrrd" in files and "image_defaced.nrrd" in files:
@@ -152,15 +132,21 @@ class TestDefacerProfile(unittest.TestCase):
                 mesh2.pos(-center2[0] + offset, -center2[1], -center2[2])
                 mesh1.pos(-center[0]+offset, -center[1], -center[2])
                 plt = vedo.Plotter(N=2, axes=1, size=(1200,600))
+                mesh1.rotate(angle=90, axis=[1, 0, 0])
+                mesh1.rotate(angle=180, axis=[0, 0, 1])
+                mesh2.rotate(angle=90, axis=[1, 0, 0])
+                mesh2.rotate(angle=180, axis=[0, 0, 1])
                 plt.add(vedo.Text2D("Original", pos="top-left", c="white", bg="black"), at=0)
                 plt.add(vedo.Text2D("Defaced", pos="top-left", c="white", bg="black"), at=1)
 
                 # Camera position: move along negative y, looking back at the center
-                cam_pos = [center[0], center[1] + 500, center[2]]  
+                cam_pos = [center[0], center[1], center[2]+1000]  
                 plt.camera.SetPosition(cam_pos)
                 plt.camera.SetFocalPoint(center)
-                plt.camera.SetViewUp([0, -1, -1])
-
+                plt.camera.SetViewUp([1, 0, 0])
+                if not HAS_GPU:
+                    plt.close()
+                    return
                 plt.show(mesh1, at=0)
                 plt.show(mesh2, at=1, interactive=True)
                 plt.close()
@@ -170,6 +156,15 @@ class TestDefacerProfile(unittest.TestCase):
     def test_luwak_defacer_recipe(self):
         # Test the full luwak anonymization with defacer recipe
         print("Testing luwak full anonymization with defacer recipe...")
+        # Simple GPU check
+        HAS_GPU = has_gpu()
+
+        if not HAS_GPU:
+            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nii.gz"))
+            config_path = self.create_test_config(self.test_data_dir, self.test_output_dir, useExistingMaskDefacer)
+        else:
+            config_path = self.create_test_config(self.test_data_dir, self.test_output_dir)
+
         config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir)
         anonymizer = LuwakAnonymizer(config_path)
         result_files = anonymizer.anonymize()

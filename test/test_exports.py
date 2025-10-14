@@ -14,6 +14,7 @@ import pandas as pd
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
 from anonymize import LuwakAnonymizer
 from luwak_logger import setup_logger, get_logger
+from utils import download_github_asset_by_tag
 
 class TestExports(unittest.TestCase):
     """Test suite for CSV mapping and Parquet export functionality."""
@@ -21,41 +22,29 @@ class TestExports(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Create a temporary output directory
-        cls.test_output_dir = "test_output_exports"
+        cls.test_output_dir = "test_output"
 
         # Path to the decompressed test data directory
         cls.test_data_dir = "test_data"
-
+        token = os.environ.get("TEST_DATA_TOKEN")
+        #target_dir = os.path.join(cls.test_data_dir, "test-dicom-files-Midi-B-2024")
         # Check if the test data directory exists
         if not os.path.exists(cls.test_data_dir):
-
-            # URL of the test data archive
-            test_data_url = "https://github.com/Simlomb/Test-data-anonymization/releases/download/0.0.1-dicom-files-test/test-dicom-files-2.tar.gz"
-
-            # Download the archive
-            archive_path = "test-dicom-files-2.tar.gz"
-            urllib.request.urlretrieve(test_data_url, archive_path)
-
-            # Extract the archive with data filter for security
+            os.makedirs(cls.test_data_dir, exist_ok=True)
+            archive_path = os.path.join(cls.test_data_dir, "test-dicom-files-Midi-B-2024.tar.gz")
+            download_github_asset_by_tag(
+                "ZentaLabs", "luwak", "testing-data", "test-dicom-files-Midi-B-2024.tar.gz", archive_path, token
+            )
+            # Extract the archive
             with tarfile.open(archive_path, "r:gz") as tar:
                 # Extract all files directly into the test_data_dir
                 for member in tar.getmembers():
                     # Remove the top-level folder from the path
                     member.path = os.path.relpath(member.path, start="test-dicom-files-2")
-                    tar.extract(member, path=cls.test_data_dir, filter='tar')
-
+                    tar.extract(member, path=cls.test_data_dir, filter='data')
             # Clean up the downloaded archive
             os.remove(archive_path)
-
-    @classmethod
-    def tearDownClass(cls):
-        try:
-            # Perform cleanup of the test_data_dir
-            if os.path.exists(cls.test_data_dir):
-                shutil.rmtree(cls.test_data_dir)
-        finally:
-            pass
-
+            
     def setUp(self):
         # Ensure the output directory is clean before each test
         if os.path.exists(self.test_output_dir):

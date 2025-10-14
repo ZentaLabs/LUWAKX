@@ -27,10 +27,6 @@ jobs:
     - name: Install dependencies
       run: |
         pip install -r luwakx/requirements.txt
-
-    # Create test_data directory
-    - name: Create test_data directory
-      run: mkdir -p test_data
           
     # Cache test data
     - name: Cache test data
@@ -41,39 +37,10 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-test-data-
 
-    # Download test data from the release if not cached
-    - name: Download and extract test data
-      env:
-        TEST_DATA_TOKEN: ${{ secrets.TEST_DATA_TOKEN }}
-      run: |
-        if [ ! -d "test_data" ] || [ -z "$(ls -A test_data)" ]; then
-          echo "Test data not found or empty, downloading..."
-          mkdir -p test_data
-          curl -L "https://github.com/Simlomb/Test-data-anonymization/releases/download/0.0.1-dicom-files-test/test-dicom-files-2.tar.gz" \
-          -o test-dicom-files-2.tar.gz
-          tar --strip-components=1 -xzf test-dicom-files-2.tar.gz -C test_data
-          rm test-dicom-files-2.tar.gz
-          echo "Downloaded and extracted $(ls test_data | wc -l) files"
-        else
-          echo "Using cached test data ($(ls test_data | wc -l) files)"
-        fi
-        if [ ! -d "test_data_defacer" ] || [ -z "$(ls -A test_data_defacer)" ]; then
-          echo "Test data not found or empty, downloading..."
-          mkdir -p test_data_defacer
-          curl -L -H "Authorization: token $TEST_DATA_TOKEN" "https://github.com/ZentaLabs/luwak/releases/download/testing-data/CT_Vol_002_STD_dcm.zip" \
-          -o CT_Vol_002_STD_dcm.zip
-          unzip CT_Vol_002_STD_dcm.zip -d test_data_defacer/test_volume
-          rm CT_Vol_002_STD_dcm.zip
-          curl -L -H "Authorization: token $TEST_DATA_TOKEN" "https://github.com/ZentaLabs/luwak/releases/download/testing-data/CT_Vol_002_STD_face_mask.nii.gz" \
-          -o test_data_defacer/CT_Vol_002_STD_face_mask.nii.gz
-          echo "Downloaded and extracted test data defacer"
-        else
-          echo "Using cached test data defacer ($(ls test_data_defacer | wc -l) files)"
-        fi
-
     # Run tests
     - name: Run tests
       env:
         ZENTA_OPENAI_API_KEY: ${{ secrets.ZENTA_OPENAI_API_KEY }}
-      run: pytest test/ --ignore=test/test_defacer_profile.py -v
+      run: |
+        python -m unittest discover test -v
       
