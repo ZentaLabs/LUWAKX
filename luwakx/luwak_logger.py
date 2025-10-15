@@ -20,6 +20,7 @@ Usage:
 import logging
 import os
 import sys
+import traceback
 from typing import Optional
 
 # Global logger registry
@@ -199,3 +200,28 @@ def _setup_fallback_logger() -> None:
 
 def get_log_file_path():
     return _default_config['log_file']
+
+
+def log_project_stacktrace(logger, exc):
+    """
+    Helper to log only project stack trace frames.
+    
+    Filters the stack trace to show only frames from the current project,
+    providing cleaner error reporting by excluding external library frames.
+    
+    Args:
+        logger: Logger instance to use for error reporting
+        exc: Exception object containing the traceback to process
+    """
+    tb_list = traceback.extract_tb(exc.__traceback__)
+    project_path = os.path.abspath(os.path.dirname(__file__))
+    # Find the first frame from your project
+    start_idx = next(
+        (i for i, frame in enumerate(tb_list)
+         if project_path in os.path.abspath(frame.filename)),
+        0
+    )
+    # Print all frames from start_idx onward
+    filtered = tb_list[start_idx:]
+    formatted = ''.join(traceback.format_list(filtered))
+    logger.error(f"Error: {exc}\nProject stack trace block:\n{formatted}")
