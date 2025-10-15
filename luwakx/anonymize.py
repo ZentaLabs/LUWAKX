@@ -4,7 +4,6 @@ import shutil
 import subprocess
 import sys
 import os
-import re
 import json
 import jsonschema
 import hashlib
@@ -13,8 +12,6 @@ import csv
 import pydicom
 import pandas as pd
 import logging
-import sqlite3
-import threading
 import traceback
 from pydicom.datadict import add_private_dict_entry
 
@@ -28,6 +25,8 @@ from exceptions import ConfigurationError
 from dicom_private_tag_registry import register_private_tags_from_csv
 # Import LLM cache
 from llm_cache import LLMResultCache
+# Import recipe builder functions
+from anonymization_recipe_builder import make_recipe_file
 
 
 def setup_deid_repo():
@@ -1579,193 +1578,6 @@ class LuwakAnonymizer:
         total_series = len(file_mappings.get('series_mapping', {}))
         self.logger.private(f"=== Total: {total_series} series tracked ===")
 
-    def _collect_actions_for_row(self, row, recipes_to_process, recipe_column_map):
-        """
-        Helper function to collect actions from recipe columns for a given row.
-        
-        Args:
-            row: CSV row dictionary
-            recipes_to_process: List of recipe names to process
-            recipe_column_map: Dictionary mapping recipe names to CSV column names
-        
-        Returns:
-            list: List of non-empty actions from the requested recipe columns
-        """
-        actions = []
-        for recipe in recipes_to_process:
-            if recipe not in recipe_column_map:
-                continue
-                
-            column_name = recipe_column_map[recipe]
-            action = row[column_name].strip() if row[column_name] else ""
-            
-            if action:  # Only add non-empty actions
-                actions.append(action)
-        
-        return actions
-
-    def make_recipe_file(self, recipes_to_process, recipe_folder):
-        """
-        Generate a deid recipe file from standard_tags_template.csv and private_tags_template.csv based on selected recipes.
-
-        Args:
-            recipes_to_process: List of recipe names to process (e.g., ['basic_profile', 'retain_uid'])
-            recipe_folder: Path to the folder where the recipe file will be saved
-        
-        Returns:
-            str: Path to the generated recipe file
-        """        
-        self.logger.info(f"Generating recipe file for profiles: {recipes_to_process}")
-        self.logger.debug(f"Recipe output folder: {recipe_folder}")
-        
-        input_standard_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "standard_tags_template.csv")
-        input_private_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "private_tags_template.csv")
-
-        # Map recipe names to column names in the CSV
-        recipe_column_map = {
-            'basic_profile': 'Basic Prof.',
-            'retain_uid': 'Rtn. UIDs Opt.',
-            'retain_device_id': 'Rtn. Dev. Id. Opt.',
-            'retain_institution_id': 'Rtn. Inst. Id. Opt.',
-            'retain_patient_chars': 'Rtn. Pat. Chars. Opt.',
-            'retain_long_full_dates': 'Rtn. Long. Full Dates Opt.',
-            'retain_long_modified_dates': 'Rtn. Long. Modif. Dates Opt.',
-            'clean_descriptors': 'Clean Desc. Opt.',
-            'clean_structured_content': 'Clean Struct. Cont. Opt.',
-            'clean_graphics': 'Clean Graph. Opt.'
-        }
-
-        if not os.path.exists(input_standard_template):
-            self.logger.error(f"Input file {input_standard_template} not found")
-            return None
-
-        if not os.path.exists(input_private_template):
-            self.logger.error(f"Input file {input_private_template} not found")
-            return None
-
-        # Create recipe folder if it doesn't exist
-        os.makedirs(recipe_folder, exist_ok=True)
-        
-        # Output recipe file path
-        output_file = os.path.join(recipe_folder, "deid.dicom.recipe")
-
-        with open(output_file, 'w') as outfile:
-            outfile.write("FORMAT dicom\n\n%header\n\n")
-            with open(input_standard_template, 'r') as csvfile:
-                reader = csv.DictReader(csvfile)
-                
-                for row in reader:
-                    tag = (f"({row['Group']},{row['Element']})").upper()
-                    
-                    name = row['Name']
-                    comment = f" # {name}" if name else ""
-                    vr = row['VR']
-                    # Collect actions from only the requested recipe columns
-                    actions = self._collect_actions_for_row(row, recipes_to_process, recipe_column_map)
-                    
-                    # Skip if no actions found
-                    if not actions:
-                        continue
-                    
-                    # Determine final action based on priority rules
-                    final_action = None
-                    
-                    # If any action is 'keep', final action is 'keep'
-                    if 'keep' in actions:
-                        final_action = 'keep'
-                    elif 'func:hash_increment_date' in actions:
-                        final_action = 'func:hash_increment_date'
-                    elif 'func:generate_hashuid' in actions:
-                        final_action = 'func:generate_hashuid'
-                    elif 'func:clean_descriptors_with_llm' in actions:
-                        if vr == 'SQ':
-                            # For sequences, we need manual review
-                            final_action = 'manual_review'
-                        else:
-                            final_action = 'func:clean_descriptors_with_llm'
-                    elif 'replace' in actions:
-                        final_action = 'replace'
-                    elif 'func:set_fixed_datetime' in actions:
-                        final_action = 'func:set_fixed_datetime'
-                    elif 'blank' in actions:
-                        final_action = 'blank'
-                    elif 'remove' in actions:
-                        final_action = 'remove'
-                    # Otherwise, take the first non-empty action from the priority order
-                    else:
-                        final_action = actions[0]
-                    
-                    # Write action based on the final determined action
-                    line = f"{comment}\n"
-                    outfile.write(line)
-                    if final_action == 'keep':
-                        line = f"KEEP {tag}\n"
-                    elif final_action == 'remove':
-                        line = f"REMOVE {tag}\n"
-                    elif final_action == 'blank':
-                        line = f"BLANK {tag}\n"
-                    elif final_action == 'replace':
-                        if  vr in ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR"]:
-                            line = f"REPLACE {tag} ANONYMIZED\n"
-                        elif vr == "UN":
-                            line = f"REPLACE {tag} b'Anonymized'\n"
-                        elif vr in ["DS", "IS", "FD", "FL", "SS", "US", "SL", "UL"]:
-                            line = f"REPLACE {tag} 0 # NEED to BE REVIEWED\n"
-                        elif vr == 'AS':
-                            line = f"REPLACE {tag} 000D # NEED to BE REVIEWED\n"
-                        elif vr in ['SQ', 'OB']:
-                            line = f"#REPLACE {tag} NEED to BE REVIEWED\n"
-                    elif final_action == 'func:generate_hashuid':
-                        line = f"REPLACE {tag} func:generate_hashuid\n"
-                    elif final_action == 'func:set_fixed_datetime':
-                        line = f"REPLACE {tag} func:set_fixed_datetime\n"
-                    elif final_action == 'func:hash_increment_date':
-                        line = f"JITTER {tag} func:hash_increment_date\n"
-                    elif final_action == 'func:clean_descriptors_with_llm':
-                        line = f"REPLACE {tag} func:clean_descriptors_with_llm\n"
-                    elif final_action == 'clean_manually':
-                        line = f"# REPLACE {tag} CLEANED NEEDS MANUAL REVIEW\n"
-                    elif final_action == 'manual_review':
-                        line = f"# REPLACE {tag} MANUAL REVIEW NEEDED\n"
-                    outfile.write(line)
-            
-            # Add PatientIdentityRemoved if basic_profile is in the recipe list
-            if 'basic_profile' in recipes_to_process:
-                outfile.write("ADD PatientIdentityRemoved YES\n")
-                # Set DeidentificationMethod based on examples from RSNA anonymizer:
-                # ds.DeidentificationMethod = "RSNA DICOM ANONYMIZER"  # (0012,0063)
-                outfile.write("ADD DeidentificationMethod LUWAK_ANONYMIZER\n")
-                if 'retain_long_full_dates' not in recipes_to_process and 'retain_long_modified_dates' not in recipes_to_process:
-                    outfile.write("ADD LongitudinalTemporalInformationModified REMOVED\n")
-            if 'retain_long_full_dates' in recipes_to_process:
-                outfile.write("ADD LongitudinalTemporalInformationModified UNMODIFIED\n")
-            elif 'retain_long_modified_dates' in recipes_to_process:
-                outfile.write("ADD LongitudinalTemporalInformationModified MODIFIED\n")
-            if 'clean_recognizable_visual_features' in recipes_to_process:
-                outfile.write("ADD RecognizableVisualFeatures NO\n")
-            
-            if 'retain_safe_private_tags' in recipes_to_process:
-                with open(input_private_template, 'r') as privfile:
-                    privreader = csv.DictReader(privfile)
-                    for row in privreader:
-                        private_creator = row['Private Creator']
-                        group = row['Group'].upper()
-                        element = row['Element'][-2:].upper()  # Last two hex digits
-                        name = row['Meaning']
-                        comment = f" # {name}" if name else ""
-                        line = f"{comment}\n"
-                        outfile.write(line)
-                        # For safe private tags, we keep them
-                        line = f"KEEP ({group},\"{private_creator}\",{element})\n"
-                        outfile.write(line)
-
-            # Add the final line to remove all other private tags
-            line = f"REMOVE ALL func:is_tag_private\n"
-            outfile.write(line)
-
-        self.logger.info(f"Recipe generated: {output_file}")
-        return output_file
-
     def create_deid_recipe(self):
         """Create the deid recipe based on the recipes list.
         
@@ -1815,7 +1627,7 @@ class LuwakAnonymizer:
         else:
             recipes_to_process = recipes_list
         # Generate the recipe file in the recipes folder
-        generated_recipe_file = self.make_recipe_file(recipes_to_process, recipes_folder)
+        generated_recipe_file = make_recipe_file(recipes_to_process, recipes_folder)
         if generated_recipe_file and os.path.exists(generated_recipe_file):
             recipe_paths.append(generated_recipe_file)
             self.logger.info(f"Using generated recipe file: {generated_recipe_file}")
