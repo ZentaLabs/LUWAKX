@@ -16,6 +16,10 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="batchgene
 # Add luwakx directory to Python path for imports
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
 from anonymize import LuwakAnonymizer
+from deface_service import DefaceService
+from dicom_series import DicomSeries
+from dicom_file import DicomFile
+from luwak_logger import get_logger
 from utils import has_gpu, download_github_asset_by_tag
 
 class TestDefacerProfile(unittest.TestCase):
@@ -44,7 +48,7 @@ class TestDefacerProfile(unittest.TestCase):
                 zip_ref.extractall(target_dir)
             os.remove(dcm_zip_path)
 
-        # Download CT_Vol_002_STD_face_mask.nii.gz into test_data_defacer/
+        # Download CT_Vol_002_STD_face_mask.nrrd into test_data_defacer/
         nii_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd")
         if not os.path.exists(nii_path):
             download_github_asset_by_tag(
@@ -86,78 +90,128 @@ class TestDefacerProfile(unittest.TestCase):
         os.makedirs(self.test_output_dir, exist_ok=True)
         print("\n######################START TEST######################")
 
-    def test_defacer_profile_should_apply_defacing(self):    
-        # Test the defacer profile method directly
-        print("Testing defacer profile method...")
+    def test_defacer_service_makes_defacing(self):    
+        # Test the defacer service directly without full anonymization
+        print("Testing defacer service directly...")
         # Simple GPU check
         HAS_GPU = has_gpu()
 
         if not HAS_GPU:
             useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
-            config_path = self.create_test_config(self.test_data_dir, self.test_output_dir, [useExistingMaskDefacer])
+            config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir, [useExistingMaskDefacer])
         else:
-            config_path = self.create_test_config(self.test_data_dir, self.test_output_dir)
-        anonymizer = LuwakAnonymizer(config_path)
-        processed_files = anonymizer.clean_recognizable_visual_features(self.test_volume_dir, self.test_output_dir)
-        self.assertTrue(processed_files, "No files processed by defacer!")
-        # Plot image.nrrd and image_defaced.nrrd side by side and block until closed
-        if not HAS_GPU:
-            return
+            config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir)
         
-        for root, dirs, files in os.walk(self.test_output_dir):
-            if "image.nrrd" in files and "image_defaced.nrrd" in files:
-                image_path = os.path.join(root, "image.nrrd")
-                defaced_path = os.path.join(root, "image_defaced.nrrd")
-                # Read the NRRD files
-                image = sitk.ReadImage(image_path)
-                defaced = sitk.ReadImage(defaced_path)
-                array = sitk.GetArrayFromImage(image)  # shape: [slices, height, width]
-                defaced_array = sitk.GetArrayFromImage(defaced)  # shape: [slices, height, width]
-                # Restrict x-axis (width) to half:end
-                x_half = array.shape[2] // 2
-                array_cropped = array[:x_half, :, :]
-                defaced_array_cropped = defaced_array[:x_half, :, :]
-                # Normalize data to [0, 1] for better contrast
-                array_norm = (array_cropped - array_cropped.min()) / (array_cropped.max() - array_cropped.min())
-                defaced_array_norm = (defaced_array_cropped - defaced_array_cropped.min()) / (defaced_array_cropped.max() - defaced_array_cropped.min())
-                spacing = image.GetSpacing()  # (x, y, z) or (width, height, slice)
-                # vedo expects spacing in (z, y, x) order for numpy arrays
-                spacing = spacing[::-1]
-                threshold = 0.42
-                vol1 = vedo.Volume(array_norm, spacing=spacing)
-                vol2 = vedo.Volume(defaced_array_norm, spacing=spacing)
-                # Create isosurfaces for both volumes
-                mesh1 = vol1.isosurface(threshold)
-                mesh2 = vol2.isosurface(threshold)
-
-                # Position meshes side by side
-                # Center of the mesh
-                center = mesh1.center_of_mass()
-                mesh1.pos(-center[0], -center[1], -center[2])
-                center2 = mesh2.center_of_mass()
-                bounds1 = mesh1.bounds()
-                offset = bounds1[1] - bounds1[0] + 10  # Use mesh1's width for spacing
-                mesh2.pos(-center2[0] + offset, -center2[1], -center2[2])
-                mesh1.pos(-center[0]+offset, -center[1], -center[2])
-                plt = vedo.Plotter(N=2, axes=1, size=(1200,600))
-                mesh1.rotate(angle=90, axis=[1, 0, 0])
-                mesh1.rotate(angle=180, axis=[0, 0, 1])
-                mesh2.rotate(angle=90, axis=[1, 0, 0])
-                mesh2.rotate(angle=180, axis=[0, 0, 1])
-                plt.add(vedo.Text2D("Original", pos="top-left", c="white", bg="black"), at=0)
-                plt.add(vedo.Text2D("Defaced", pos="top-left", c="white", bg="black"), at=1)
-
-                # Camera position: move along negative y, looking back at the center
-                cam_pos = [center[0], center[1], center[2]+1000]  
-                plt.camera.SetPosition(cam_pos)
-                plt.camera.SetFocalPoint(center)
-                plt.camera.SetViewUp([1, 0, 0])
+        # Load config and setup
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        # Setup logger with console output to see what's happening
+        from luwak_logger import setup_logger
+        setup_logger(log_level='INFO', console_output=False)
+        logger = get_logger('test_defacer')
+        
+        # Create DefaceService
+        deface_service = DefaceService(config, logger)
+        
+        # Get DICOM files (assuming they're all one series)
+        from deid.dicom import get_files
+        dicom_files = list(get_files(self.test_volume_dir))
+        
+        # Read first file to get series info
+        first_ds = pydicom.dcmread(dicom_files[0], stop_before_pixels=True)
+        series_uid = first_ds.SeriesInstanceUID
+        modality = getattr(first_ds, 'Modality', None)
+        
+        # Create DicomSeries object
+        series = DicomSeries(series_uid, series_uid)  # Use series_uid as folder_name for simplicity
+        series.modality = modality
+        
+        # Set up separate directories for each stage (like ProcessingPipeline does)
+        organized_temp_dir = os.path.join(self.test_output_dir, "organized")
+        defaced_temp_dir = os.path.join(self.test_output_dir, "defaced")
+        
+        series.organized_base_path = organized_temp_dir
+        series.defaced_base_path = defaced_temp_dir
+        series.output_base_path = self.test_output_dir
+        
+        # Add DicomFile objects to series
+        for filepath in dicom_files:
+            dicom_file = DicomFile(filepath, series_uid)
+            # Set organized path (simulate organization stage)
+            organized_path = os.path.join(organized_temp_dir, series_uid, os.path.basename(filepath))
+            os.makedirs(os.path.dirname(organized_path), exist_ok=True)
+            shutil.copy2(filepath, organized_path)
+            dicom_file.set_organized_path(organized_path)
+            series.add_file(dicom_file)
+        
+        # Run defacing
+        result = deface_service.process_series(series)
+        processed_files = result.get('defaced_dicom_files', [])
                 
-                plt.show(mesh1, at=0)
-                plt.show(mesh2, at=1, interactive=True)
+        self.assertTrue(processed_files, "No files processed by defacer!")
+        
+        # Check what NRRD paths were returned
+        nrrd_image = result.get('nrrd_image_path')
+        nrrd_defaced = result.get('nrrd_defaced_path')
+        
+        # Verify NRRD files exist
+        if nrrd_image and nrrd_defaced:
+            self.assertTrue(os.path.exists(nrrd_image), f"NRRD image not found at {nrrd_image}")
+            self.assertTrue(os.path.exists(nrrd_defaced), f"NRRD defaced not found at {nrrd_defaced}")
+            
+            # Plot image.nrrd and image_defaced.nrrd side by side
+            image = sitk.ReadImage(nrrd_image)
+            defaced = sitk.ReadImage(nrrd_defaced)
+            array = sitk.GetArrayFromImage(image)  # shape: [slices, height, width]
+            defaced_array = sitk.GetArrayFromImage(defaced)  # shape: [slices, height, width]
+            # Restrict x-axis (width) to half:end
+            x_half = array.shape[2] // 2
+            array_cropped = array[:x_half, :, :]
+            defaced_array_cropped = defaced_array[:x_half, :, :]
+            # Normalize data to [0, 1] for better contrast
+            array_norm = (array_cropped - array_cropped.min()) / (array_cropped.max() - array_cropped.min())
+            defaced_array_norm = (defaced_array_cropped - defaced_array_cropped.min()) / (defaced_array_cropped.max() - defaced_array_cropped.min())
+            spacing = image.GetSpacing()  # (x, y, z) or (width, height, slice)
+            # vedo expects spacing in (z, y, x) order for numpy arrays
+            spacing = spacing[::-1]
+            threshold = 0.42
+            vol1 = vedo.Volume(array_norm, spacing=spacing)
+            vol2 = vedo.Volume(defaced_array_norm, spacing=spacing)
+            # Create isosurfaces for both volumes
+            mesh1 = vol1.isosurface(threshold)
+            mesh2 = vol2.isosurface(threshold)
+
+            # Position meshes side by side
+            # Center of the mesh
+            center = mesh1.center_of_mass()
+            mesh1.pos(-center[0], -center[1], -center[2])
+            center2 = mesh2.center_of_mass()
+            bounds1 = mesh1.bounds()
+            offset = bounds1[1] - bounds1[0] + 10  # Use mesh1's width for spacing
+            mesh2.pos(-center2[0] + offset, -center2[1], -center2[2])
+            mesh1.pos(-center[0]+offset, -center[1], -center[2])
+            plt = vedo.Plotter(N=2, axes=1, size=(1200,600))
+            mesh1.rotate(angle=90, axis=[1, 0, 0])
+            mesh1.rotate(angle=180, axis=[0, 0, 1])
+            mesh2.rotate(angle=90, axis=[1, 0, 0])
+            mesh2.rotate(angle=180, axis=[0, 0, 1])
+            plt.add(vedo.Text2D("Original", pos="top-left", c="white", bg="black"), at=0)
+            plt.add(vedo.Text2D("Defaced", pos="top-left", c="white", bg="black"), at=1)
+
+            # Camera position: move along negative y, looking back at the center
+            cam_pos = [center[0], center[1], center[2]+1000]  
+            plt.camera.SetPosition(cam_pos)
+            plt.camera.SetFocalPoint(center)
+            plt.camera.SetViewUp([1, 0, 0])
+            if not HAS_GPU:
                 plt.close()
                 return
-        self.fail("No image.nrrd and image_defaced.nrrd found in output folders.")
+            plt.show(mesh1, at=0)
+            plt.show(mesh2, at=1, interactive=True)
+            plt.close()
+        else:
+            self.fail("No NRRD files returned by defacer")
 
     def test_luwak_defacer_recipe(self):
         # Test the full luwak anonymization with defacer recipe
@@ -172,7 +226,7 @@ class TestDefacerProfile(unittest.TestCase):
             config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir)
 
         anonymizer = LuwakAnonymizer(config_path)
-        result_files = anonymizer.anonymize()
+        coordinator = anonymizer.anonymize()
         # Find all output DICOM files
         output_files = []
         for root, dirs, files in os.walk(self.test_output_dir):

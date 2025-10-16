@@ -6,7 +6,6 @@ import json
 import tempfile
 import sys
 import tarfile
-import urllib.request
 import csv
 import pandas as pd
 
@@ -154,7 +153,7 @@ class TestExports(unittest.TestCase):
             
             # Run the anonymize script
             anonymizer = LuwakAnonymizer(config_path)
-            result = anonymizer.anonymize()
+            coordinator = anonymizer.anonymize()
             
             # Check that the mapping file was created - use absolute path to match what anonymizer uses
             mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "uid_mappings.csv")
@@ -193,9 +192,12 @@ class TestExports(unittest.TestCase):
                     self.assertIn(column, row, f"Required column '{column}' missing from mapping file")
                 self.logger.info(f"✓ All required columns present: {required_columns}")
                 
-                # Verify file path
-                self.assertEqual(row['anonymized_file_path'], '00000001.dcm', "File path in mapping is incorrect")
-                self.logger.info(f"✓ File path verified: {row['anonymized_file_path']}")
+                # Verify file path (now includes series folder as relative path)
+                # The path should be like: 'series_folder/00000001.dcm'
+                anonymized_path = row['anonymized_file_path']
+                self.assertTrue(anonymized_path.endswith('00000001.dcm'), 
+                              f"File path should end with '00000001.dcm', got: {anonymized_path}")
+                self.logger.info(f"✓ File path verified (relative): {anonymized_path}")
 
                 # Verify original UIDs match what we read from the file
                 for uid_name in ['StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID']:
@@ -242,7 +244,7 @@ class TestExports(unittest.TestCase):
             
             # Run the anonymize script
             anonymizer = LuwakAnonymizer(config_path)
-            result = anonymizer.anonymize()
+            coordinator = anonymizer.anonymize()
 
             # Check that the Parquet file was created
             parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "metadata.parquet")
@@ -263,18 +265,18 @@ class TestExports(unittest.TestCase):
                     self.assertIn(column, df.columns, f"Required column '{column}' missing from Parquet file")
                 self.logger.info(f"✓ Required columns present: {required_columns}")
                 
-                # Verify file paths
+                # Verify file paths (now includes series folder as relative path)
                 row = df.iloc[0]
-                self.assertEqual(row['AnonymizedFilePath'], '00000001.dcm', "Anonymized file path in Parquet is incorrect")
-                self.logger.info(f"✓ File path verified: {row['AnonymizedFilePath']}")
+                anonymized_path = row['AnonymizedFilePath']
+                self.assertTrue(anonymized_path.endswith('00000001.dcm'), 
+                              f"Anonymized file path should end with '00000001.dcm', got: {anonymized_path}")
+                self.logger.info(f"✓ File path verified (relative): {anonymized_path}")
                 
                 # Check that some DICOM metadata columns exist (after anonymization)
                 # Note: Some fields may be removed/anonymized, so we check for commonly retained ones
                 
                 # Check for some basic DICOM fields that should survive anonymization
-                basic_dicom_columns = ['SpecificCharacterSet', 'ImageType', 'SOPClassUID']
-                found_columns = [col for col in basic_dicom_columns if col in df.columns]
-                
+                basic_dicom_columns = ['SpecificCharacterSet', 'ImageType', 'SOPClassUID']                
                 # We should have at least some DICOM metadata columns beyond just AnonymizedFilePath
                 self.assertGreater(len(df.columns), 1, 
                                  "Parquet should contain DICOM metadata beyond just file paths")
@@ -319,7 +321,7 @@ class TestExports(unittest.TestCase):
             
             # Run the anonymize script
             anonymizer = LuwakAnonymizer(config_path)
-            result = anonymizer.anonymize()
+            coordinator = anonymizer.anonymize()
 
             # Check that the Parquet file was created
             parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "metadata.parquet")
@@ -410,7 +412,7 @@ class TestExports(unittest.TestCase):
             
             # Run the anonymize script
             anonymizer = LuwakAnonymizer(config_path)
-            result = anonymizer.anonymize()
+            coordinator = anonymizer.anonymize()
 
             # Check that both files were created
             mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "uid_mappings.csv")
