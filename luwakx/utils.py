@@ -2,6 +2,31 @@ import platform
 import subprocess
 import requests
 
+
+def cleanup_gpu_memory():
+    """
+    Release GPU memory allocated by PyTorch/CUDA.
+    
+    Clears the GPU cache and forces garbage collection to free up
+    memory for other processes. Safe to call even if PyTorch is not
+    installed or GPU is not available.
+    
+    This is useful after GPU-intensive operations (like ML face detection)
+    to ensure memory is available for other applications.
+    """
+    try:
+        import torch
+        import gc
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        gc.collect()
+    except ImportError:
+        pass  # PyTorch not installed, skip GPU cleanup
+    except Exception:
+        pass  # Silently ignore errors during cleanup
+
+
 def has_gpu():
     """
     Detect if a compatible GPU is available on the system.

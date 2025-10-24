@@ -93,7 +93,7 @@ def main():
         logger.info("DRY RUN MODE - Configuration will be loaded but no files will be processed")
         # Import here to avoid circular imports
         anonymizer = LuwakAnonymizer(args.config_path)
-        logger.info("Dry run completed. Configuration is valid.")
+        #logger.info("Dry run completed. Configuration is valid.")
     else:
         anonymizer = LuwakAnonymizer(args.config_path)
         anonymizer.anonymize()

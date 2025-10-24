@@ -8,7 +8,7 @@ import jsonschema
 import logging
 import traceback
 # Import the centralized logger
-from luwak_logger import get_logger, setup_logger, log_project_stacktrace
+from luwak_logger import get_logger, setup_logger, log_project_stacktrace, shutdown_logging
 # Import custom exceptions
 from exceptions import ConfigurationError
 # Import DICOM tag registry functions
@@ -17,6 +17,8 @@ from dicom_private_tag_registry import register_private_tags_from_csv
 from llm_cache import LLMResultCache
 # Import recipe builder functions
 from anonymization_recipe_builder import make_recipe_file
+# Import utilities
+from utils import cleanup_gpu_memory
 
 
 def setup_deid_repo():
@@ -505,6 +507,12 @@ class LuwakAnonymizer:
                 self.logger.debug("Closed LLM cache connection.")
             except Exception as e:
                 self.logger.warning(f"Error closing LLM cache: {e}")
+        
+        # Cleanup GPU memory to free resources for other applications
+        cleanup_gpu_memory()
+        
+        # Shutdown logging to ensure clean exit
+        shutdown_logging()
         
         # Return list of processed series for backwards compatibility
         return coordinator

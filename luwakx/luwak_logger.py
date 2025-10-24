@@ -202,6 +202,17 @@ def get_log_file_path():
     return _default_config['log_file']
 
 
+def shutdown_logging():
+    """
+    Shutdown the logging system and close all handlers.
+    
+    Properly closes all logging handlers, flushes buffers, and releases
+    file handles. Should be called at the end of the application to ensure
+    clean exit and prevent the process from hanging.
+    """
+    logging.shutdown()
+
+
 def log_project_stacktrace(logger, exc):
     """
     Helper to log only project stack trace frames.

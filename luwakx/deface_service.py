@@ -13,6 +13,7 @@ import importlib.util
 from typing import Any, Dict
 
 from dicom_series import DicomSeries
+from utils import cleanup_gpu_memory
 from luwak_logger import log_project_stacktrace
 
 
@@ -142,6 +143,11 @@ class DefaceService:
                 # Strategy 2: Run ML face detection
                 self.logger.info("Running ML face detection model")
                 image_face_segmentation = defacer.prepare_face_mask(image, modality)
+                
+                # Clean up GPU memory immediately after ML inference
+                cleanup_gpu_memory()
+                self.logger.debug("GPU memory cleaned up after face detection")
+                
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
