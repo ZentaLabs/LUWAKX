@@ -277,7 +277,7 @@ from anonymize import LuwakAnonymizer
 # Logger is automatically set up during initialization
 anonymizer = LuwakAnonymizer("/path/to/config.json")
 
-# Log file will be created at {outputFolder}/recipes/luwak.log
+# Log file will be created at {outputFolder}/deidentified/luwak.log
 result = anonymizer.anonymize()
 ```
 

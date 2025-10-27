@@ -1,6 +1,109 @@
 import platform
 import subprocess
 import requests
+import psutil
+
+
+def cleanup_lm_studio_workers():
+    """
+    Kill LM Studio worker processes while keeping the main server running.
+    
+    This function identifies and terminates worker processes spawned by
+    LM Studio server after handling inference requests. These workers are
+    identical to the main server process (same executable path) but have
+    higher PIDs since they're created later.
+    
+    Workers are only killed if their GPU memory usage is between 1000 MiB
+    and 5000 MiB, which indicates they're holding inference artifacts.
+    
+    The main LM Studio server (lowest PID) is preserved so the model stays
+    loaded and the server remains available for subsequent requests.
+    
+    Safe to call even if LM Studio is not running or psutil is not available.
+    """
+    try:
+        # Find all LM Studio internal Node.js processes
+        lm_processes = []
+        
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'exe']):
+            try:
+                cmdline = ' '.join(proc.info['cmdline']) if proc.info['cmdline'] else ''
+                exe_path = proc.info.get('exe', '')
+                
+                # Skip if not a Node.js process
+                if 'node' not in proc.info['name'].lower():
+                    continue
+                
+                # Check if this is an LM Studio internal process
+                is_lm_internal = (
+                    '.lmstudio' in exe_path.lower() and '.internal' in exe_path.lower()
+                ) or (
+                    '.lmstudio' in cmdline.lower() and '.internal' in cmdline.lower()
+                )
+                
+                if is_lm_internal:
+                    lm_processes.append(proc)
+                        
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        
+        # If we found multiple LM Studio processes, check GPU memory and kill workers
+        killed_count = 0
+        if len(lm_processes) > 1:
+            # Sort by PID (ascending)
+            lm_processes.sort(key=lambda p: p.info['pid'])
+            
+            # Get GPU memory usage for each process (platform-specific)
+            pid_to_gpu_mem = {}
+            system = platform.system()
+            
+            if system in ("Linux", "Windows"):
+                # Use nvidia-smi for NVIDIA GPUs
+                try:
+                    result = subprocess.run(
+                        ['nvidia-smi', '--query-compute-apps=pid,used_memory', '--format=csv,noheader,nounits'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    
+                    if result.returncode == 0:
+                        for line in result.stdout.strip().split('\n'):
+                            if line.strip():
+                                parts = line.split(',')
+                                if len(parts) == 2:
+                                    pid = int(parts[0].strip())
+                                    gpu_mem_mib = float(parts[1].strip())
+                                    pid_to_gpu_mem[pid] = gpu_mem_mib
+                except Exception:
+                    pass  # nvidia-smi not available or failed
+            
+            # Kill workers (all except first) if GPU memory is in range
+            # On macOS or if GPU check failed, kill all workers without memory check
+            for proc in lm_processes[1:]:
+                try:
+                    pid = proc.info['pid']
+                    gpu_mem = pid_to_gpu_mem.get(pid, 0)
+                    
+                    # If we have GPU memory info, only kill if in range
+                    # Otherwise (macOS or GPU check failed), kill all workers
+                    if pid_to_gpu_mem:
+                        if 1000 <= gpu_mem <= 5000:
+                            proc.kill()
+                            killed_count += 1
+                    else:
+                        pass
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+                
+        return killed_count
+        
+    except ImportError:
+        pass  # psutil not installed, skip cleanup
+    except Exception:
+        pass  # Silently ignore errors during cleanup
+    
+    return 0
 
 
 def cleanup_gpu_memory():

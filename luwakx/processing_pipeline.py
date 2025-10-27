@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from dicom_series import DicomSeries
 from processing_stage import ProcessingStage
 from processing_status import ProcessingStatus
+from utils import cleanup_lm_studio_workers
 
 
 class ProcessingPipeline:
@@ -235,6 +236,14 @@ class ProcessingPipeline:
         # This writes results to worker-specific temp files immediately,
         # keeping memory usage constant regardless of dataset size
         self._export_series_results_incremental(series)
+        
+        # Clean up LM Studio worker processes after series is complete
+        # The LLM inference (recipe generation) creates worker processes that
+        # accumulate GPU memory. Clean them up after each series to prevent OOM.
+        killed_count = cleanup_lm_studio_workers()
+        if killed_count > 0 and self.logger:
+            self.logger.debug(f"Cleaned up {killed_count} LM Studio worker process(es)")
+
     
     def _organize_series(self, series: DicomSeries) -> None:
         """Organize files for a single series.
@@ -514,6 +523,19 @@ class ProcessingPipeline:
             except Exception as e:
                 if self.logger:
                     self.logger.warning(f"Could not remove {self.defaced_temp_dir}: {e}")
+        
+        # Remove parent worker directory if empty
+        worker_dir = os.path.join(self.output_directory, f"worker_{self.worker_id}")
+        if os.path.exists(worker_dir):
+            try:
+                # Only remove if directory is empty
+                if not os.listdir(worker_dir):
+                    os.rmdir(worker_dir)
+                    if self.logger:
+                        self.logger.debug(f"Removed empty worker directory: {worker_dir}")
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Could not remove worker directory {worker_dir}: {e}")
         
         self.current_stage = ProcessingStage.CLEANUP
     

@@ -50,14 +50,14 @@ class TestExports(unittest.TestCase):
             shutil.rmtree(self.test_output_dir)
         os.makedirs(self.test_output_dir, exist_ok=True)
 
-        # Create a limited input directory with first 10 files for faster testing
+        # Create a limited input directory with first 20 files for faster testing
         self.limited_input_dir = "test_input_exports"
         self.create_limited_input_dataset()
         
         print("\n######################START EXPORT TEST######################")
     
     def create_limited_input_dataset(self):
-        """Create a dataset with only the first 10 DICOM files for testing."""
+        """Create a dataset with only the first 20 DICOM files for testing."""
         if os.path.exists(self.limited_input_dir):
             shutil.rmtree(self.limited_input_dir)
         os.makedirs(self.limited_input_dir, exist_ok=True)
@@ -76,6 +76,9 @@ class TestExports(unittest.TestCase):
             shutil.copy2(src, dst)
 
     def tearDown(self):
+        # Log before cleanup
+        self.logger.info("Export test case completed and cleaned up")
+        
         # Clean up output directory after each test
         if os.path.exists(self.test_output_dir):
             shutil.rmtree(self.test_output_dir)
@@ -83,7 +86,6 @@ class TestExports(unittest.TestCase):
         if os.path.exists(self.limited_input_dir):
             shutil.rmtree(self.limited_input_dir)
         
-        self.logger.info("Export test case completed and cleaned up")
         print("\n######################END EXPORT TEST######################")
 
     def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None):

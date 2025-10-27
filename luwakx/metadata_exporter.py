@@ -195,22 +195,24 @@ class MetadataExporter:
         if not metadata:
             return
         
-        # Convert to DataFrame
-        df = pd.DataFrame(metadata)
+        # Convert to DataFrame and ensure all columns are strings to avoid dtype conflicts
+        # This prevents issues with mixed types (e.g., single float vs multi-value string)
+        df_new = pd.DataFrame(metadata).astype(str)
         
         # Append to Parquet file (or create if first write)
         if os.path.exists(metadata_file):
-            # Append mode
-            df.to_parquet(
+            # Read existing data and concatenate
+            df_existing = pd.read_parquet(metadata_file, engine='pyarrow')
+            df_combined = pd.concat([df_existing, df_new], ignore_index=True)
+            df_combined.to_parquet(
                 metadata_file,
                 engine='pyarrow',
                 compression='snappy',
-                index=False,
-                append=True
+                index=False
             )
         else:
             # Create new file
-            df.to_parquet(
+            df_new.to_parquet(
                 metadata_file,
                 engine='pyarrow',
                 compression='snappy',
@@ -402,37 +404,45 @@ class MetadataExporter:
         
         # Integer String
         elif elem.VR == 'IS':
-            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
-                return str(list(elem.value)) if elem.value else ''
             try:
-                return int(elem.value) if elem.value else 0
+                if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                    # Multi-value integer field - convert to string list
+                    return str(list(elem.value)) if elem.value else ''
+                else:
+                    return int(elem.value) if elem.value else 0
             except (ValueError, TypeError):
                 return str(elem.value) if elem.value else ''
         
         # Decimal String
         elif elem.VR == 'DS':
-            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
-                return str(list(elem.value)) if elem.value else ''
             try:
-                return float(elem.value) if elem.value else 0.0
+                if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                    # Multi-value decimal field - convert to string list
+                    return str(list(elem.value)) if elem.value else ''
+                else:
+                    return float(elem.value) if elem.value else 0.0
             except (ValueError, TypeError):
                 return str(elem.value) if elem.value else ''
         
         # Numeric types
         elif elem.VR in ['US', 'SS', 'UL', 'SL']:
-            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
-                return str(list(elem.value)) if elem.value else ''
             try:
-                return int(elem.value) if elem.value is not None else 0
+                if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                    # Multi-value field - convert to string list
+                    return str(list(elem.value)) if elem.value else ''
+                else:
+                    return int(elem.value) if elem.value is not None else 0
             except (ValueError, TypeError):
                 return str(elem.value) if elem.value else ''
         
         # Float types
         elif elem.VR in ['FL', 'FD']:
-            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
-                return str(list(elem.value)) if elem.value else ''
             try:
-                return float(elem.value) if elem.value is not None else 0.0
+                if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
+                    # Multi-value field - convert to string list
+                    return str(list(elem.value)) if elem.value else ''
+                else:
+                    return float(elem.value) if elem.value is not None else 0.0
             except (ValueError, TypeError):
                 return str(elem.value) if elem.value else ''
         
