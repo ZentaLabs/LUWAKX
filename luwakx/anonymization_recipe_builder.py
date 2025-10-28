@@ -144,8 +144,15 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str) -> Optio
                     comment = f" # {name}" if name else ""
                     line = f"{comment}\n"
                     outfile.write(line)
-                    # For safe private tags, we keep them
-                    line = f"KEEP ({group},\"{private_creator}\",{element})\n"
+                    action = row['Rtn. Safe Priv. Opt.']
+                    if action.lower() == 'keep': 
+                        # For safe private tags, we keep them
+                        line = f"KEEP ({group},\"{private_creator}\",{element})\n"
+                    elif action.lower() == 'func:generate_hashuid':
+                        line = f"REPLACE ({group},\"{private_creator}\",{element}) func:generate_hashuid\n"
+                    elif action.lower() == 'func:hash_increment_date':
+                        # TODO: Check if it is better to remove these in case the retain long modified dates is not selected
+                        line = f"JITTER ({group},\"{private_creator}\",{element}) func:hash_increment_date\n"
                     outfile.write(line)
 
         # Add the final line to remove all other private tags

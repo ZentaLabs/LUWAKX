@@ -4,21 +4,32 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from pydicom.datadict import get_entry
+import sys
+# Add the parent directory of luwakx to the path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from luwakx.utils import download_github_asset_by_tag
+
 
 def read_tcia_csv(tcia_csv_path, tcia_url=None):
     foldername = os.path.dirname(tcia_csv_path) or '.'
     filename = os.path.basename(tcia_csv_path)
+    token = os.environ.get("TEST_DATA_TOKEN")
     if os.path.exists(tcia_csv_path):
         print(f"File {filename} already in {foldername}.")
     else:
         if tcia_url is None:
             raise ValueError("No URL provided to download the CSV file.")
         print(f"Downloading {tcia_csv_path}")
-        response = requests.get(tcia_url)
-        response.raise_for_status()
-        with open(tcia_csv_path, "wb") as f:
-            f.write(response.content)
-        print(f"Downloaded {tcia_csv_path}.")
+        #these new lines are necessary as the url is no longer available for download and the file is hosted on GitHub
+        archive_path = os.path.join(foldername,filename)
+        download_github_asset_by_tag(
+            "ZentaLabs", "luwak", "standard-private-tags", filename, archive_path, token
+        )
+        #response = requests.get(tcia_url)
+        #response.raise_for_status()
+        #with open(tcia_csv_path, "wb") as f:
+        #    f.write(response.content)
+        #print(f"Downloaded {tcia_csv_path}.")
     tcia_df = pd.read_csv(tcia_csv_path)
     tcia_df.insert(1, "Private_Creator", "")
     # Remove the CSV file after reading
@@ -93,8 +104,8 @@ def reorder_and_save(tcia_df, output_path, save_reformatted=False):
     """
     # Transform rows
     tcia_df[['element_sig_pattern', 'Private_Creator','tag_name', 'vr','private_disposition']] = tcia_df.apply(transform_row, axis=1, result_type='expand')
-    # Keep only rows where private_disposition == 'k'
-    tcia_df = tcia_df[tcia_df['private_disposition'] == 'k'].copy()
+    # Keep only rows where private_disposition is 'k', 'h', or 'o'
+    tcia_df = tcia_df[tcia_df['private_disposition'].isin(['k', 'h', 'o'])].copy()
     # Exclude rows with Private_Creator == 'Unnamed Private Block - 10'
     tcia_df = tcia_df[tcia_df['Private_Creator'] != 'Unnamed Private Block - 10'].copy()
     # Remove rows with all-caps Private_Creator if a non-all-caps duplicate exists
@@ -189,16 +200,28 @@ def extract_last_paren(s, private_creator=False):
 
 def rtn_safe_priv_opt(row):
     """
-    Determine the safe private attribute disposition for a DICOM row.
-    Checks if the 'IsInDICOMRetainSafePrivateTags' is set and if the 'private_disposition' is 'd' (case-insensitive, with whitespace stripped). If both conditions are met, returns 'k' to indicate a safe disposition. Otherwise, returns the original 'private_disposition' value.
+    Determine the safe private attribute disposition for a DICOM row based on private_disposition value.
+    Maps disposition codes to retention options:
+    - 'k' -> 'keep'
+    - 'o' -> 'func:hash_increment_date'
+    - 'h' -> 'func:generate_hashuid'
+    - 'd' and IsInDICOMRetainSafePrivateTags -> 'keep'
+    
     Args:
         row (dict): A dictionary representing a DICOM row, expected to contain 'IsInDICOMRetainSafePrivateTags' and 'private_disposition' keys.
     Returns:
-        str: The safe private disposition value ('k' or the original disposition).
+        str: The safe private retention option.
     """
-    if row['IsInDICOMRetainSafePrivateTags'] and str(row['private_disposition']).strip().lower() == 'd':
+    disposition = str(row['private_disposition']).strip().lower()
+    
+    if disposition == 'k':
         return 'keep'
-    return 'keep'
+    elif disposition == 'o':
+        return 'func:hash_increment_date'
+    elif disposition == 'h':
+        return 'func:generate_hashuid'
+    elif row['IsInDICOMRetainSafePrivateTags'] and disposition == 'd':
+        return 'keep'
 
 def split_group_element(val):
     """Split element_sig_pattern_cmp into Group and Element"""
