@@ -598,22 +598,22 @@ def generate_basic_profile(final_df):
                 
         elif basic_profile == 'D':
             # Check if VR is date/time related for date replacement
+            replace_tag = ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR", "DS", "IS", 
+                           "FD", "FL", "SS", "US", "SL", "UL", 'AS', 'SQ']
             if vr in ['DA', 'DT', 'TM']:
                 df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
             elif vr in ['UI']:
                 df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
-            elif vr in ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR"]:
-                df.at[idx, 'Basic Prof.'] = 'replace'
-            elif vr == "UN":
-                df.at[idx, 'Basic Prof.'] = 'replace'
-            elif vr in ["DS", "IS", "FD", "FL", "SS", "US", "SL", "UL"]:
+            elif vr in replace_tag:
                 df.at[idx, 'Basic Prof.'] = 'replace'
             elif vr in ['OD', 'OF', 'OL', 'OV', 'SV', 'UV']:
                 df.at[idx, 'Basic Prof.'] = 'blank'
             elif vr == 'AS':
                 df.at[idx, 'Basic Prof.'] = 'replace'
-            elif vr in ['SQ', 'OB']:
+            elif vr == 'SQ':
                 df.at[idx, 'Basic Prof.'] = 'replace'
+            elif vr in ['OB', 'OW', 'OF', 'UN']:
+                df.at[idx, 'Basic Prof.'] = 'remove'
             else:
                 print(f"Tag {tag} with Basic Profile 'D' has unhandled VR '{vr}'. Keeping original value.")
                 
