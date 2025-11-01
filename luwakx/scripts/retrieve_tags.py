@@ -499,7 +499,7 @@ def fill_missing_vr(df):
     # Normalize tag format for matching
     def normalize_tag(row):
         group = str(row['Group']).lower().zfill(4)
-        element = str(row['Element']).upper().zfill(4)
+        element = str(row['Element']).lower().zfill(4)
         return f"{group},{element}"
 
     for idx, row in df.iterrows():

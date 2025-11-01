@@ -90,6 +90,7 @@ class DicomProcessor:
             items[item]["set_fixed_datetime"] = self.set_fixed_datetime
             items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
             items[item]["is_tag_private"] = self.is_tag_private
+            items[item]["is_curve_or_overlay_tag"] = self.is_curve_or_overlay_tag
         
         # 4. Setup progress handler to redirect deid.bot output to logger
         progress_handler = None
@@ -508,6 +509,44 @@ class DicomProcessor:
             if hasattr(field.element, 'value'):
                 self.logger.private(f"Removed private tag {field.element.tag} with value: {field.element.value}")
             return True
+        return False
+    
+    def is_curve_or_overlay_tag(self, dicom, value, field, item):
+        """Check if a DICOM tag is Curve Data, Overlay Data, or Overlay Comments.
+        
+        These tags are defined in specific group ranges per DICOM standard:
+        - Curve Data: (50xx,xxxx) where xx is 00-FF (even numbers only)
+        - Overlay Data: (60xx,3000) where xx is 00-FF (even numbers only)  
+        - Overlay Comments: (60xx,4000) where xx is 00-FF (even numbers only)
+        
+        Args:
+            dicom: PyDicom dataset object containing DICOM data
+            value: Recipe string or value from recipe processing
+            field: DICOM field element containing tag information
+            item: Item identifier from deid processing
+            
+        Returns:
+            bool: True if the tag matches curve/overlay patterns, False otherwise
+        """
+        tag = field.element.tag
+        group = tag.group
+        element = tag.element
+        
+        # Check for Curve Data (50xx,xxxx) - any element in group 50xx (even)
+        if 0x5000 <= group <= 0x50FF and group % 2 == 0:
+            self.logger.debug(f"Found Curve Data tag: {tag}")
+            return True
+        
+        # Check for Overlay Data (60xx,3000)
+        if 0x6000 <= group <= 0x60FF and group % 2 == 0 and element == 0x3000:
+            self.logger.debug(f"Found Overlay Data tag: {tag}")
+            return True
+        
+        # Check for Overlay Comments (60xx,4000)
+        if 0x6000 <= group <= 0x60FF and group % 2 == 0 and element == 0x4000:
+            self.logger.debug(f"Found Overlay Comments tag: {tag}")
+            return True
+        
         return False
     
     # ============================================================================

@@ -203,7 +203,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 "00251007": "gems_sers_01"
             }
             unexpected_private_tags = {
-                "0019109d": "gems_acqu_01",  # This tag should be removed
+                "000910e9": "gems_iden_01",  # This tag should be removed
             }
 
             for file in os.listdir(self.limited_input_dir):
@@ -378,7 +378,7 @@ class TestAnonymizeScript(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
-            recipes=["basic_profile"],
+            recipes=["retain_long_modified_dates"],
         )
         try:
             self.logger.info("Starting date shift test")

@@ -126,6 +126,10 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str) -> Optio
         # Add PatientIdentityRemoved if basic_profile is in the recipe list (original logic)
         if 'basic_profile' in recipes_to_process:
             outfile.write("ADD PatientIdentityRemoved YES\n")
+            # Remove all curve data/overlay data/overlay comments tags
+            # TOCHECK : are these tags supposed to be removed always and
+            # not only if the basic profile is requested? if yes move the line below outside if block
+            outfile.write(f"REMOVE ALL func:is_curve_or_overlay_tag\n")
             # Set DeidentificationMethod based on examples from RSNA anonymizer:
             # ds.DeidentificationMethod = "RSNA DICOM ANONYMIZER"  # (0012,0063)
             outfile.write("ADD DeidentificationMethod LUWAK_ANONYMIZER\n")
