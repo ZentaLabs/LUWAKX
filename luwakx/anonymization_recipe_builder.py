@@ -11,6 +11,7 @@ Key Components:
 
 import os
 import csv
+import struct
 from typing import List, Optional
 
 from luwak_logger import get_logger
@@ -91,17 +92,22 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str) -> Optio
                 elif final_action == 'remove':
                     line = f"REMOVE {tag}\n"
                 elif final_action == 'blank':
-                    line = f"BLANK {tag}\n"
+                    if vr in ['OD', 'OL', 'OV', 'SV', 'UV', 'DS', 'IS', 'FD', 
+                                'FL', 'SS', 'US', 'SL', 'UL']:
+                        line = f"REPLACE {tag} {set_empty_value(vr)}\n"
+                    else:
+                        line = f"BLANK {tag}\n"
                 elif final_action == 'replace':
-                    if  vr in ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR"]:
+                    if  vr in ["AE", "LO", "LT", "SH", "CS", "ST", "UT", "UC", "UR"]:
                         line = f"REPLACE {tag} ANONYMIZED\n"
-                    elif vr == "UN":
-                        line = f"REPLACE {tag} b'Anonymized'\n"
-                    elif vr in ["DS", "IS", "FD", "FL", "SS", "US", "SL", "UL"]:
-                        line = f"REPLACE {tag} 0 # NEED to BE REVIEWED\n"
+                    elif vr == "PN":
+                        line = f"REPLACE {tag} Anonymized^Anonymized\n"
+                    elif vr in ['OD', 'OL', 'OV', 'SV', 'UV', 'DS', 'IS', 'FD', 
+                                'FL', 'SS', 'US', 'SL', 'UL']:
+                        line = f"REPLACE {tag} {set_values_to_zero(vr)}\n"
                     elif vr == 'AS':
-                        line = f"REPLACE {tag} 000D # NEED to BE REVIEWED\n"
-                    elif vr in ['SQ', 'OB']:
+                        line = f"REPLACE {tag} 000D\n"
+                    elif vr in ['SQ']:
                         line = f"#REPLACE {tag} NEED to BE REVIEWED\n"
                 elif final_action == 'func:generate_hashuid':
                     line = f"REPLACE {tag} func:generate_hashuid\n"
@@ -184,6 +190,8 @@ def _determine_final_action(actions, vr):
         if vr == 'SQ':
             # For sequences, we need manual review
             return 'manual_review'
+        elif vr in ['OB', 'OW', 'OF', 'UN']:
+            return 'remove'
         else:
             return 'func:clean_descriptors_with_llm'
     elif 'replace' in actions:
@@ -222,3 +230,39 @@ def _collect_actions_for_row(row, recipes_to_process, recipe_column_map):
             actions.append(action)
     
     return actions
+
+def set_values_to_zero(vr):
+    """
+    Return the correct zero value for the given DICOM VR type.
+    Based on DICOM PS3.5 Section 6.2, Table 6.2-1.
+    """
+    # Text VRs - return string zeros
+    if vr in ['DS', 'IS']:  # Decimal String
+        return "0"
+    # Binary VRs - return binary zeros
+    elif vr in ['OD', 'FD']:  # 64-bit IEEE 754 double
+        return struct.pack('<d', 0.0)
+    elif vr == 'FL':  # 32-bit IEEE 754 float
+        return struct.pack('<f', 0.0)
+    elif vr in ['OL', 'UL']:  # 32-bit unsigned int
+        return struct.pack('<L', 0)
+    elif vr in ['OV', 'UV']:  # 64-bit unsigned int
+        return struct.pack('<Q', 0)
+    elif vr == 'SV':  # 64-bit signed int
+        return struct.pack('<q', 0)
+    elif vr == 'SL':  # 32-bit signed int
+        return struct.pack('<l', 0)
+    elif vr == 'SS':  # 16-bit signed int
+        return struct.pack('<h', 0)
+    elif vr == 'US':  # 16-bit unsigned int
+        return struct.pack('<H', 0)
+    else:
+        return b''  # fallback: empty bytes
+    
+def set_empty_value(vr):
+    # Text VRs
+    if vr in ['DS', 'IS']:
+        return ""
+    # Binary VRs
+    elif vr in ['OD', 'OL', 'OV', 'SV', 'UV', 'FD', 'FL', 'SS', 'US', 'SL', 'UL']:
+        return b''

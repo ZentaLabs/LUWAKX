@@ -597,20 +597,14 @@ def generate_basic_profile(final_df):
                 df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
                 
         elif basic_profile == 'D':
-            # Check if VR is date/time related for date replacement
             replace_tag = ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR", "DS", "IS", 
-                           "FD", "FL", "SS", "US", "SL", "UL", 'AS', 'SQ']
+                           "FD", "FL", "SS", "US", "SL", "UL", 'AS', 'SQ', 'OD', 'OL', 'OV', 'SV', 'UV']
+            # Check if VR is date/time related for date replacement   
             if vr in ['DA', 'DT', 'TM']:
                 df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
             elif vr in ['UI']:
                 df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
             elif vr in replace_tag:
-                df.at[idx, 'Basic Prof.'] = 'replace'
-            elif vr in ['OD', 'OF', 'OL', 'OV', 'SV', 'UV']:
-                df.at[idx, 'Basic Prof.'] = 'blank'
-            elif vr == 'AS':
-                df.at[idx, 'Basic Prof.'] = 'replace'
-            elif vr == 'SQ':
                 df.at[idx, 'Basic Prof.'] = 'replace'
             elif vr in ['OB', 'OW', 'OF', 'UN']:
                 df.at[idx, 'Basic Prof.'] = 'remove'
@@ -625,29 +619,19 @@ def generate_basic_profile(final_df):
                 df.at[idx, 'Basic Prof.'] = 'blank'
                 
         elif basic_profile in ['Z/D','X/Z','X/D','X/Z/D','X/Z/U*']:
-            if 'Final CTP Script' in row and pd.notna(row['Final CTP Script']):
-                final_ctp = str(row['Final CTP Script']).strip()
-                if final_ctp == "@keep()":
-                    if basic_profile == 'Z/D':
-                        df.at[idx, 'Basic Prof.'] = 'blank'
-                    else:
-                        df.at[idx, 'Basic Prof.'] = 'remove'
+            if vr in ['DA', 'DT', 'TM']:
+                df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
+            elif basic_profile in ['X/Z/U*','X/D', 'Z/D', 'X/Z/D'] and vr == 'UI':
+                df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
+            elif basic_profile in ['X/Z/U*', 'X/Z']:
+                df.at[idx, 'Basic Prof.'] = 'blank'
+            elif basic_profile in ['X/D', 'Z/D', 'X/Z/D']:
+                if vr in ['OB', 'OW', 'OF', 'UN']:
+                    df.at[idx, 'Basic Prof.'] = 'remove'
                 else:
-                    if final_ctp == "@hashuid(@UIDROOT,this)":
-                        df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
-                    elif final_ctp == "@incrementdate(this,@DATEINC)":
-                        df.at[idx, 'Basic Prof.'] = 'func:hash_increment_date'
-                    elif final_ctp == "@empty()":
-                        df.at[idx, 'Basic Prof.'] = 'blank'
-                    elif final_ctp == "@remove()":
-                        df.at[idx, 'Basic Prof.'] = 'remove'
-                    elif final_ctp == "@process()":
-                        if vr == 'UI':
-                            df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
-                        else:
-                            df.at[idx, 'Basic Prof.'] = 'remove'
-                    else:
-                        df.at[idx, 'Basic Prof.'] = 'manual_review'
+                    df.at[idx, 'Basic Prof.'] = 'replace'
+            else:
+                df.at[idx, 'Basic Prof.'] = 'manual_review'
     
     return df
 
