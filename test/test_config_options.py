@@ -85,5 +85,52 @@ class TestConfigOptions(unittest.TestCase):
         anonymizer = LuwakAnonymizer(config_path)
         self.assertEqual(anonymizer.config["projectHashRoot"], "mytestroot")
 
+    def test_manually_revised_tags_standard(self):
+        config_path = self.make_config({"manuallyRevisedTags": {"standard": "./data/custom_standard.csv"}})
+        anonymizer = LuwakAnonymizer(config_path)
+        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "data/custom_standard.csv"))
+        self.assertEqual(anonymizer.config["manuallyRevisedTags"]["standard"], expected)
+
+    def test_manually_revised_tags_private(self):
+        config_path = self.make_config({"manuallyRevisedTags": {"private": "./data/custom_private.csv"}})
+        anonymizer = LuwakAnonymizer(config_path)
+        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "data/custom_private.csv"))
+        self.assertEqual(anonymizer.config["manuallyRevisedTags"]["private"], expected)
+
+    def test_manually_revised_tags_both(self):
+        config_path = self.make_config({
+            "manuallyRevisedTags": {
+                "standard": "./data/custom_standard.csv",
+                "private": "./data/custom_private.csv"
+            }
+        })
+        anonymizer = LuwakAnonymizer(config_path)
+        expected_standard = os.path.abspath(os.path.join(os.path.dirname(config_path), "data/custom_standard.csv"))
+        expected_private = os.path.abspath(os.path.join(os.path.dirname(config_path), "data/custom_private.csv"))
+        self.assertEqual(anonymizer.config["manuallyRevisedTags"]["standard"], expected_standard)
+        self.assertEqual(anonymizer.config["manuallyRevisedTags"]["private"], expected_private)
+
+    def test_llm_cache_folder(self):
+        # Include clean_descriptors recipe so llmCacheFolder is resolved
+        config_path = self.make_config({
+            "llmCacheFolder": "./cache/llm",
+            "recipes": ["basic_profile", "clean_descriptors"]
+        })
+        anonymizer = LuwakAnonymizer(config_path)
+        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "cache/llm"))
+        self.assertEqual(anonymizer.config["llmCacheFolder"], expected)
+
+    def test_llm_cache_ttl_days(self):
+        config_path = self.make_config({"llmCacheTtlDays": 60})
+        anonymizer = LuwakAnonymizer(config_path)
+        self.assertEqual(anonymizer.config["llmCacheTtlDays"], 60)
+
+    def test_test_options(self):
+        # Only use allowed properties per schema (useExistingMaskDefacer)
+        test_opts = {"useExistingMaskDefacer": ["/path/to/mask1.nii.gz", "/path/to/mask2.nii.gz"]}
+        config_path = self.make_config({"testOptions": test_opts})
+        anonymizer = LuwakAnonymizer(config_path)
+        self.assertEqual(anonymizer.config["testOptions"]["useExistingMaskDefacer"], ["/path/to/mask1.nii.gz", "/path/to/mask2.nii.gz"])
+
 if __name__ == "__main__":
     unittest.main()

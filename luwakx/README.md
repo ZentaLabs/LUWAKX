@@ -164,6 +164,40 @@ When multiple recipes are specified:
 1. **Action Priority**: `keep` > `replace` > `remove` 
 3. **Conflict Resolution**: Most restrictive action wins (keep > replace > others)
 
+## Manual Revision of Tag Templates
+
+You can manually revise the standard and private tag templates used for anonymization. This is useful for handling special cases, nested tags (sequences), or custom anonymization requirements.
+
+### How to Revise Tag Templates
+
+1. **Export the current template**  
+   - Standard tags: `standard_tags_template.csv`
+   - Private tags: `private_tags_template.csv`
+   - These files are generated in the `data/TagsArchive` directory by default.
+
+2. **Edit the CSV files**  
+   - Open the CSV in a spreadsheet editor or text editor.
+   - For **nested tags** (sequences, e.g. VR=`SQ`), you can add or modify rows to specify how child elements should be handled.  
+     - Example: For a sequence tag, add rows for each nested element with the parent tag using the following syntax for group/element column: xxxx__item0__xxxx__item1__xxxx where each xxxx represents the group/elemnt. Ex: for a child tag (cccc,dddd) with parent (aaaa,bbbb) that follows this relation `(aaaa,bbbb)__0__(cccc,dddd)` you should fill in the group column with `aaaa__0__cccc` and the element column with `bbbb__0__dddd`.
+     - Note: this functionality is currently developed only for standard tags.
+   - Modify the action of the profile column desired with `keep`, `remove`, `blank`, `replace` to replace with dummy value based on vr -- you must fill in the vr column, if it is a nested tag specify only the vr of the child tag, `func:generate_hashuid` if the tag requires UID generation, `func:set_fixed_datetime` if the tag has a vr =DA,DT and you want to apply a dummy value or `func:hash_increment_date` if you want to apply a date-shift, `func:clean_descriptors_with_llm` if the tag is a text that can contain PHI.
+
+3. **Save your revised files**  
+   - Save the edited CSVs to a location of your choice, e.g.:
+     - `./data/custom_standard_tags.csv`
+     - `./data/custom_private_tags.csv`
+
+4. **Update your config to use the revised files**  
+   Add the following to your config JSON:
+   ```json
+   "manuallyRevisedTags": {
+     "standard": "./data/custom_standard_tags.csv",
+     "private": "./data/custom_private_tags.csv"
+   }
+   ```
+   - You can specify only one of the two if needed.
+   - If the file path is invalid or missing, the default template will be used.
+
 ## Usage
 
 ### Command Line Interface

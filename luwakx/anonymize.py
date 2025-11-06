@@ -216,7 +216,7 @@ class LuwakAnonymizer:
             )
         # Recursively apply defaults from schema to config dict
         for key, prop in schema.get('properties', {}).items():
-            if key not in config:
+            if key not in config and 'default' in prop:
                 config[key] = prop['default']
         # Validate config against schema
         try:
@@ -328,6 +328,18 @@ class LuwakAnonymizer:
             self.config['llmCacheFolder'] = cache_folder
             os.makedirs(cache_folder, exist_ok=True)
             self.logger.info(f"  LLM cache folder: {cache_folder}")
+        
+        # Resolve manuallyRevisedTags paths relative to config file
+        if 'manuallyRevisedTags' in self.config:
+            if 'standard' in self.config['manuallyRevisedTags'] and self.config['manuallyRevisedTags']['standard']:
+                resolved_standard = self.resolve_path(self.config['manuallyRevisedTags']['standard'])
+                self.config['manuallyRevisedTags']['standard'] = resolved_standard
+                self.logger.debug(f"  Manually revised standard tags: {resolved_standard}")
+            if 'private' in self.config['manuallyRevisedTags'] and self.config['manuallyRevisedTags']['private']:
+                resolved_private = self.resolve_path(self.config['manuallyRevisedTags']['private'])
+                self.config['manuallyRevisedTags']['private'] = resolved_private
+                self.logger.debug(f"  Manually revised private tags: {resolved_private}")
+        
         # Log configuration info
         self.logger.info(f"Configuration loaded from: {self.config_path}")
         self.logger.debug(f"  Config keys: {list(self.config.keys())}")
@@ -388,8 +400,8 @@ class LuwakAnonymizer:
                 recipes_to_process = [recipes_list]
         else:
             recipes_to_process = recipes_list
-        # Generate the recipe file in the recipes folder
-        generated_recipe_file = make_recipe_file(recipes_to_process, recipes_folder)
+        # Generate the recipe file in the recipes folder, passing config for manually revised tags
+        generated_recipe_file = make_recipe_file(recipes_to_process, recipes_folder, self.config)
         if generated_recipe_file and os.path.exists(generated_recipe_file):
             recipe_paths.append(generated_recipe_file)
             self.logger.info(f"Using generated recipe file: {generated_recipe_file}")

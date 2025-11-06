@@ -108,6 +108,22 @@
         }
       },
       "additionalProperties": false
+    },
+    "manuallyRevisedTags": {
+      "type": "object",
+      "description": "Paths to manually revised tag CSV files for standard and private tags.",
+      "properties": {
+        "standard": {
+          "type": "string",
+          "description": "Path to the manually revised standard tags CSV file.",
+          "examples": ["./data/standard_tags.csv", "/path/to/custom/standard_tags.csv"]
+        },
+        "private": {
+          "type": "string",
+          "description": "Path to the manually revised private tags CSV file.",
+          "examples": ["./data/private_tags.csv", "/path/to/custom/private_tags.csv"]
+        }
+      }
     }
   },
   "required": [

@@ -17,13 +17,14 @@ from typing import List, Optional
 from luwak_logger import get_logger
 
 
-def make_recipe_file(recipes_to_process: List[str], recipe_folder: str) -> Optional[str]:
+def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: Optional[dict] = None) -> Optional[str]:
     """Generate a deid recipe file from standard_tags_template.csv and private_tags_template.csv 
     based on selected recipes.
 
     Args:
         recipes_to_process: List of recipe names to process (e.g., ['basic_profile', 'retain_uid'])
         recipe_folder: Path to the folder where the recipe file will be saved
+        config: Optional configuration dictionary containing manuallyRevisedTags paths
     
     Returns:
         str: Path to the generated recipe file, or None if generation fails
@@ -32,8 +33,30 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str) -> Optio
     logger.info(f"Generating recipe file for profiles: {recipes_to_process}")
     logger.debug(f"Recipe output folder: {recipe_folder}")
     
+    # Default template paths
     input_standard_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "standard_tags_template.csv")
     input_private_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "private_tags_template.csv")
+
+    if config and 'manuallyRevisedTags' in config:
+        manually_revised = config['manuallyRevisedTags']
+        
+        # Use custom standard tags path if provided
+        if 'standard' in manually_revised and manually_revised['standard']:
+            custom_standard_path = manually_revised['standard']
+            if os.path.exists(custom_standard_path):
+                input_standard_template = custom_standard_path
+                logger.info(f"Using manually revised standard tags from: {custom_standard_path}")
+            else:
+                logger.warning(f"Manually revised standard tags file not found: {custom_standard_path}, using default")
+        
+        # Use custom private tags path if provided
+        if 'private' in manually_revised and manually_revised['private']:
+            custom_private_path = manually_revised['private']
+            if os.path.exists(custom_private_path):
+                input_private_template = custom_private_path
+                logger.info(f"Using manually revised private tags from: {custom_private_path}")
+            else:
+                logger.warning(f"Manually revised private tags file not found: {custom_private_path}, using default")
 
     # Map recipe names to column names in the CSV (original mapping)
     recipe_column_map = {
@@ -67,10 +90,31 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str) -> Optio
         outfile.write("FORMAT dicom\n\n%header\n\n")
         with open(input_standard_template, 'r') as csvfile:
             reader = csv.DictReader(csvfile)
-            
             for row in reader:
-                tag = (f"({row['Group']},{row['Element']})").upper()
-                
+                # Support nested sequence tag syntax in standard tag CSV only
+                group_val = row['Group']
+                elem_val = row['Element']
+                if '__' in group_val and '__' in elem_val:
+                    # Parse nested tag syntax: aaaa__0__cccc, bbbb__0__dddd
+                    group_parts = group_val.split('__')
+                    elem_parts = elem_val.split('__')
+                    if len(group_parts) == len(elem_parts):
+                        # Build tag string: (aaaa,bbbb)__0__(cccc,dddd)...
+                        tag_segments = []
+                        for g, e in zip(group_parts, elem_parts):
+                            g_clean = g.strip().upper()
+                            e_clean = e.strip().upper()
+                            # If both are a single integer (e.g., '0'), output as just the number
+                            if len(g_clean) == 1 and g_clean.isdigit() and len(e_clean) == 1 and e_clean.isdigit() and g_clean == e_clean:
+                                tag_segments.append(g_clean)
+                            else:
+                                tag_segments.append(f"({g_clean},{e_clean})")
+                        tag = '__'.join(tag_segments)
+                    else:
+                        logger.warning(f"Malformed nested tag syntax: Group={group_val}, Element={elem_val}, it will be skipped.")
+                else:
+                    # Fallback to default if mismatch
+                    tag = (f"({group_val},{elem_val})").upper()
                 name = row['Name']
                 comment = f" # {name}" if name else ""
                 vr = row['VR']

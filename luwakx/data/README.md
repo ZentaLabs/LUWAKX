@@ -160,6 +160,37 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
       "description": "Maximum number of days for date shifting anonymization.",
       "default": 1095,
       "minimum": 0
+    },
+    "manuallyRevisedTags": {
+      "type": "object",
+      "properties": {
+        "standard": {
+          "type": "string",
+          "description": "Path to the custom CSV file for standard DICOM tags."
+        },
+        "private": {
+          "type": "string",
+          "description": "Path to the custom CSV file for private DICOM tags."
+        }
+      },
+      "additionalProperties": false
+    },
+    "llmCacheFolder": {
+      "type": "string",
+      "description": "Path to folder for LLM cache files."
+    },
+    "testOptions": {
+      "type": "object",
+      "properties": {
+        "useExistingMaskDefacer": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "File path for mask defacer files used in testing."
+          }
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": ["inputFolder", "outputDeidentifiedFolder", "outputPrivateMappingFolder", "recipesFolder", "recipes"],
@@ -174,4 +205,41 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
 - See the example above for typical usage.
 
 For more details, refer to the main project README or script documentation.
+
+## Additional Configuration Options
+
+### Manually Revised Tag Files
+
+You can override the default tag templates by specifying custom CSV files for standard and private tags:
+
+```json
+"manuallyRevisedTags": {
+  "standard": "./data/custom_standard_tags.csv",
+  "private": "./data/custom_private_tags.csv"
+}
+```
+- If only one is provided, only that template is overridden.
+- If the file does not exist, the default template is used.
+
+### LLM Cache Options
+
+Control caching for LLM-based descriptor cleaning:
+
+```json
+"llmCacheFolder": "./llm_cache",
+"llmCacheTtlDays": 365
+```
+- `llmCacheFolder`: Path to folder for LLM cache files.
+- `llmCacheTtlDays`: Time-to-live for cached LLM results in days. Older entries are automatically cleaned up.
+
+### Test Options
+
+Options for testing and development, including mask defacer support:
+
+```json
+"testOptions": {
+  "useExistingMaskDefacer": ["/path/to/mask1.nii.gz", "/path/to/mask2.nii.gz"]
+}
+```
+- `useExistingMaskDefacer`: List of file paths for mask defacer files used in testing.
 
