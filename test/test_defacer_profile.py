@@ -159,7 +159,9 @@ class TestDefacerProfile(unittest.TestCase):
         if nrrd_image and nrrd_defaced:
             self.assertTrue(os.path.exists(nrrd_image), f"NRRD image not found at {nrrd_image}")
             self.assertTrue(os.path.exists(nrrd_defaced), f"NRRD defaced not found at {nrrd_defaced}")
-            
+            if not HAS_GPU:
+                return
+
             # Plot image.nrrd and image_defaced.nrrd side by side
             image = sitk.ReadImage(nrrd_image)
             defaced = sitk.ReadImage(nrrd_defaced)
@@ -204,9 +206,6 @@ class TestDefacerProfile(unittest.TestCase):
             plt.camera.SetPosition(cam_pos)
             plt.camera.SetFocalPoint(center)
             plt.camera.SetViewUp([1, 0, 0])
-            if not HAS_GPU:
-                plt.close()
-                return
             plt.show(mesh1, at=0)
             plt.show(mesh2, at=1, interactive=True)
             plt.close()
