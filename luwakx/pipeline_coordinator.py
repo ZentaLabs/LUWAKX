@@ -29,7 +29,8 @@ class PipelineCoordinator:
     """
     
     def __init__(self, all_series: List[DicomSeries], output_directory: str,
-                 config: Dict[str, Any], logger, num_workers: int = 1, llm_cache=None, recipe=None):
+                 config: Dict[str, Any], logger, num_workers: int = 1, 
+                 llm_cache=None, patient_uid_db=None, recipe=None):
         """Initialize PipelineCoordinator.
         
         Args:
@@ -39,6 +40,7 @@ class PipelineCoordinator:
             logger: Logger instance
             num_workers: Number of pipeline workers (default: 1)
             llm_cache: Shared LLM cache instance (thread-safe, read-only for workers)
+            patient_uid_db: Shared patient UID database instance (thread-safe)
             recipe: DeidRecipe instance for anonymization (shared across all workers)
         """
         self.all_series = all_series
@@ -47,6 +49,7 @@ class PipelineCoordinator:
         self.logger = logger
         self.num_workers = max(1, min(num_workers, len(all_series)))  # Cap at series count
         self.llm_cache = llm_cache  # Shared across all workers
+        self.patient_uid_db = patient_uid_db  # Shared across all workers
         self.recipe = recipe  # Shared across all workers
         
         self.pipelines: List[ProcessingPipeline] = []
@@ -73,6 +76,7 @@ class PipelineCoordinator:
                 logger=self.logger,
                 worker_id=worker_id,
                 llm_cache=self.llm_cache,  # Pass shared LLM cache to all workers
+                patient_uid_db=self.patient_uid_db,  # Pass shared patient UID DB to all workers
                 recipe=self.recipe  # Pass shared recipe to all workers
             )
             
@@ -280,7 +284,8 @@ class PipelineCoordinator:
     @classmethod
     def create_from_dicom_files(cls, dicom_files, output_directory: str,
                                config: Dict[str, Any], logger,
-                               num_workers: int = 1, llm_cache=None, recipe=None) -> 'PipelineCoordinator':
+                               num_workers: int = 1, llm_cache=None, 
+                               patient_uid_db=None, recipe=None) -> 'PipelineCoordinator':
         """Factory method to create coordinator from DICOM file list or input folder.
         
         This method scans DICOM files (or discovers them from a folder),
@@ -411,4 +416,5 @@ class PipelineCoordinator:
         logger.info(f"Created {len(all_series)} series from {len(dicom_files)} files")
         
         # Create and return coordinator
-        return cls(all_series, output_directory, config, logger, num_workers, llm_cache, recipe)
+        return cls(all_series, output_directory, config, logger, num_workers, 
+                  llm_cache, patient_uid_db, recipe)

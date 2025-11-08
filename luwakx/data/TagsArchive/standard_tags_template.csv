@@ -1,4 +1,5 @@
 Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst. Id. Opt.,Rtn. Pat. Chars. Opt.,Rtn. Long. Full Dates Opt.,Rtn. Long. Modif. Dates Opt.,Clean Desc. Opt.,Clean Struct. Cont. Opt.,Clean Graph. Opt.,TCIA element_sig_pattern,Final CTP Script
+0010,0020,Patient ID,LO,,func:generate_patient_id,,,,,,,,,,"(0010,0020)","LOOKUP(this,ptid)"
 0000,1000,Affected SOP Instance UID,UI,,remove,keep,,,,,,,,,"(0000,1000)",@remove()
 0000,1001,Requested SOP Instance UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0000,1001)","@hashuid(@UIDROOT,this)"
 0002,0003,Media Storage SOP Instance UID,UI,,func:generate_hashuid,keep,,,,,,,,,"(0002,0003)","@hashuid(@UIDROOT,this)"
@@ -77,7 +78,6 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0010,0014,Third Person Pronouns Sequence,SQ,,remove,,,,,,,,,,,
 0010,0015,Pronoun Code Sequence,SQ,,remove,,,,,,,,,,,
 0010,0016,Pronoun Comment,UT,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
-0010,0020,Patient ID,LO,,replace,,,,,,,,,,"(0010,0020)","LOOKUP(this,ptid)"
 0010,0021,Issuer of Patient ID,LO,,remove,,,,,,,,,,"(0010,0021)",@remove()
 0010,0030,Patient's Birth Date,DA,,func:set_fixed_datetime,,,,,,,,,,"(0010,0030)",@empty()
 0010,0032,Patient's Birth Time,TM,,remove,,,,,,,,,,"(0010,0032)",@remove()

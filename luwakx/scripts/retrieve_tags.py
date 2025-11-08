@@ -923,6 +923,21 @@ def create_final_file(final_df, output_csv):
     df = retain_device_id_option(df)
     df = retain_institution_id_option(df)
     df = clean_profiles(df)
+    
+    # Find Patient ID row (0010,0020) and move to beginning with special treatment
+    # This allows for custom Patient ID generation function to be set at the beginning
+    # of each anonymization recipe. This is important for consistent Patient ID generation.
+    patient_id_mask = (df['Group'] == '0010') & (df['Element'] == '0020')
+    if patient_id_mask.any():
+        # Extract the Patient ID row
+        patient_id_row = df[patient_id_mask].copy()
+        # Set Basic Prof. to func:generate_patient_id
+        patient_id_row.loc[:, 'Basic Prof.'] = 'func:generate_patient_id'
+        # Remove from current position
+        df = df[~patient_id_mask]
+        # Insert at the beginning
+        df = pd.concat([patient_id_row, df], ignore_index=True)
+    
     df.to_csv(output_csv, index=False)
     print(f"Saved merged standard tags to {output_csv}")
 

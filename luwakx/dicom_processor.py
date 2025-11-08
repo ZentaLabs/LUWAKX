@@ -32,17 +32,19 @@ class DicomProcessor:
         current_file_mappings: Dictionary storing UID mappings for this worker
     """
     
-    def __init__(self, config: Dict[str, Any], logger, llm_cache=None):
+    def __init__(self, config: Dict[str, Any], logger, llm_cache=None, patient_uid_db=None):
         """Initialize DicomProcessor.
         
         Args:
             config: Configuration dictionary
             logger: Logger instance
             llm_cache: Optional shared LLM cache instance (thread-safe)
+            patient_uid_db: Optional shared patient UID database instance (thread-safe)
         """
         self.config = config
         self.logger = logger
         self.llm_cache = llm_cache
+        self.patient_uid_db = patient_uid_db
         
         # Isolated state per worker (NOT shared)
         self.current_file_mappings: Dict[str, Any] = {}  # UID mappings
@@ -86,6 +88,7 @@ class DicomProcessor:
         # 3. Inject custom functions into each item
         for item in items:
             items[item]["generate_hashuid"] = self.generate_hashuid
+            items[item]["generate_patient_id"] = self.generate_patient_id
             items[item]["hash_increment_date"] = self.hash_increment_date
             items[item]["set_fixed_datetime"] = self.set_fixed_datetime
             items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
@@ -147,11 +150,69 @@ class DicomProcessor:
         if self.logger:
             self.logger.debug(f"DicomProcessor: Completed series {series.folder_name}")
     
-    # Methods to be fully implemented in Phase 2:
-    
     # =================================================================
     # DEID Custom Functions - Injected into DEID recipe processing
     # =================================================================
+    
+    def generate_patient_id(self, item, value, field, dicom):
+        """Generate consistent patient ID using patient UID database.
+        
+        This function is injected into deid recipe processing and can be called
+        via REPLACE statements in recipe files.
+        
+        Args:
+            item: Item identifier from deid processing
+            value: Recipe string (e.g., "func:generate_patient_id")
+            field: DICOM field element containing the PatientID tag
+            dicom: PyDicom dataset object
+            
+        Returns:
+            str: Anonymized patient ID (e.g., "Zenta00", "Zenta01")
+            
+        Example recipe usage:
+            REPLACE PatientID func:generate_patient_id
+        """
+        if not self.patient_uid_db:
+            # Fallback if database not initialized
+            self.logger.warning("Patient UID database not initialized, using default ID")
+            return "ANON00"
+        
+        # Extract original identifiers from DICOM dataset
+        original_patient_id = str(getattr(dicom, 'PatientID', ''))
+        original_patient_name = str(getattr(dicom, 'PatientName', ''))
+        birthdate = str(getattr(dicom, 'PatientBirthDate', ''))
+                
+        # Check cache first (read-only, thread-safe for concurrent reads)
+        cached_result = self.patient_uid_db.get_cached_patient_id(
+            original_patient_id,
+            original_patient_name,
+            birthdate
+        )
+        if cached_result is None:
+            # No cache hit - create and store new ID and random token
+            self.logger.debug(
+                f"No cached patient ID found, creating new entry for tag {field.element.tag}"
+            )
+            # Log original values at PRIVATE level
+            self.logger.private(
+                f"Generating patient ID from - PatientID: {original_patient_id}, "
+                f"PatientName: {original_patient_name}, BirthDate: {birthdate}"
+            )
+            anonymized_id, _ = self.patient_uid_db.store_patient_id(
+                original_patient_id,
+                original_patient_name,
+                birthdate
+            )
+        else:
+            anonymized_id, _ = cached_result
+            self.logger.debug(
+                f"Using cached patient ID for tag {field.element.tag}"
+            )
+        self.logger.debug(
+            f"Generated patient ID for tag {field.element.tag} "
+            f"({getattr(field.element, 'keyword', '')}): {anonymized_id}"
+        )
+        return anonymized_id
     
     def find_sequence_path(self, ds, target_uid, target_keyword, path_prefix=""):
         """Helper to recursively search for UID in sequences and build path.
@@ -268,7 +329,6 @@ class DicomProcessor:
             PatientID = dicom.get("PatientID", "")
             PatientName = dicom.get("PatientName", "")
             PatientBirthDate = dicom.get("PatientBirthDate", "")
-            
             # Log sensitive patient data at PRIVATE level
             self.logger.private(
                 f"Using patient data for date shift generation - "

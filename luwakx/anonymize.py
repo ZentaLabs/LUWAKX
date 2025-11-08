@@ -15,6 +15,8 @@ from exceptions import ConfigurationError
 from dicom_private_tag_registry import register_private_tags_from_csv
 # Import LLM cache
 from llm_cache import LLMResultCache
+# Import patient UID database
+from patient_uid_database import PatientUIDDatabase
 # Import recipe builder functions
 from anonymization_recipe_builder import make_recipe_file
 # Import utilities
@@ -89,11 +91,9 @@ class LuwakAnonymizer:
                 cache_folder = self.config.get('llmCacheFolder')
                 cache_file = os.path.join(cache_folder, 'llm_cache.db')
                 cache_ttl_days = self.config.get('llmCacheTtlDays', 30)
-                project_hash_root = self.config.get('projectHashRoot', '')
                 
                 self.llm_cache = LLMResultCache(
                     cache_file_path=cache_file,
-                    project_hash_root=project_hash_root,
                     cache_ttl_days=cache_ttl_days
                 )
                 
@@ -110,6 +110,28 @@ class LuwakAnonymizer:
                 self.llm_cache = None
         else:
             self.logger.info("LLM caching disabled by configuration or no LLM calls requested")
+        
+        # Initialize patient UID database
+        self.patient_uid_db = None
+        try:
+            patient_id_prefix = self.config.get('patientIdPrefix', 'Zenta')
+            uid_db_folder = self.config.get('outputPrivateMappingFolder')
+            uid_db_file = os.path.join(uid_db_folder, 'patient_uid.db')
+            project_hash_root = self.config.get('projectHashRoot', '')
+            
+            self.patient_uid_db = PatientUIDDatabase(
+                db_path=uid_db_file,
+                patient_id_prefix=patient_id_prefix,
+                project_hash_root=project_hash_root
+            )
+            
+            stats = self.patient_uid_db.get_stats()
+            self.logger.info(f"Patient UID database initialized with prefix '{patient_id_prefix}'")
+            self.logger.debug(f"Database file: {uid_db_file}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize patient UID database: {e}")
+            self.patient_uid_db = None
         
         self.logger.info("Registering private tags from CSV...")
         # Register private tags from CSV
@@ -490,6 +512,7 @@ class LuwakAnonymizer:
             logger=self.logger,
             num_workers=num_workers,
             llm_cache=self.llm_cache,
+            patient_uid_db=self.patient_uid_db,
             recipe=recipe
         )
         
@@ -519,6 +542,20 @@ class LuwakAnonymizer:
                 self.logger.debug("Closed LLM cache connection.")
             except Exception as e:
                 self.logger.warning(f"Error closing LLM cache: {e}")
+        
+        # Close and cleanup patient UID database
+        if self.patient_uid_db:
+            try:
+                stats = self.patient_uid_db.get_stats()
+                self.logger.info(f"Patient UID database final stats: {stats['total_patients']} unique patients")
+                self.patient_uid_db.close()
+                
+                # Remove database file after completion
+                if os.path.exists(self.patient_uid_db.db_path):
+                    os.remove(self.patient_uid_db.db_path)
+                    self.logger.debug("Patient UID database cleaned up")
+            except Exception as e:
+                self.logger.warning(f"Error closing patient UID database: {e}")
         
         # Cleanup GPU memory to free resources for other applications
         cleanup_gpu_memory()

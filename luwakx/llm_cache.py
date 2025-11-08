@@ -23,51 +23,48 @@ class LLMResultCache:
     
     Provides persistent caching of LLM PHI/PII detection results to avoid
     redundant API calls across parallel processing and multiple runs.
+    
+    Supports concurrent reads and serialized writes for parallel processing
+    on single or multiple nodes (with shared filesystem).
     """
     
-    def __init__(self, cache_file_path, project_hash_root="", cache_ttl_days=30):
+    def __init__(self, cache_file_path, cache_ttl_days=30):
         """
         Initialize the LLM result cache.
         
         Args:
             cache_file_path (str): Path to SQLite cache file
-            project_hash_root (str): Project hash root for cache key generation
             cache_ttl_days (int): Cache TTL in days (default: 30)
         """
         self.cache_file_path = cache_file_path
-        self.project_hash_root = project_hash_root
         self.cache_ttl_days = cache_ttl_days
         self.logger = get_logger('llm_cache')
         
-        # Thread-local storage for database connections
-        self._local = threading.local()
+        # Thread lock for write operations (serializes writes across threads)
+        self._write_lock = threading.Lock()
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self.cache_file_path), exist_ok=True)
+        
+        # Initialize database connection with settings for concurrent access
+        self.conn = sqlite3.connect(
+            self.cache_file_path,
+            check_same_thread=False,  # Allow multi-threaded access
+            timeout=30.0  # Wait up to 30 seconds for locks
+        )
+        
+        # Enable WAL mode for better concurrent read/write performance
+        self.conn.execute('PRAGMA journal_mode=WAL')
+        self.conn.execute('PRAGMA synchronous=NORMAL')
+        self.conn.execute('PRAGMA busy_timeout=30000')  # 30 second timeout
         
         # Initialize database
         self._init_database()
     
-    def _get_connection(self):
-        """Get thread-local database connection."""
-        if not hasattr(self._local, 'connection'):
-            # Create connection with thread-safe settings
-            self._local.connection = sqlite3.connect(
-                self.cache_file_path,
-                timeout=30.0,  # 30 second timeout
-                check_same_thread=False
-            )
-            # Enable WAL mode for better concurrent access
-            self._local.connection.execute("PRAGMA journal_mode=WAL")
-            self._local.connection.execute("PRAGMA synchronous=NORMAL")
-            self._local.connection.execute("PRAGMA busy_timeout=30000")  # 30 seconds
-        return self._local.connection
-    
     def _init_database(self):
         """Initialize the SQLite database with required schema."""
         try:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(self.cache_file_path), exist_ok=True)
-            
-            conn = self._get_connection()
-            cursor = conn.cursor()
+            cursor = self.conn.cursor()
             
             # Create cache table
             cursor.execute("""
@@ -76,15 +73,8 @@ class LLMResultCache:
                     input_text TEXT NOT NULL,
                     llm_model TEXT NOT NULL,
                     phi_result INTEGER NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    project_hash TEXT NOT NULL
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            
-            # Create index for faster lookups
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cache_key_project 
-                ON llm_phi_cache(cache_key, project_hash)
             """)
             
             # Create index for cleanup by timestamp
@@ -93,7 +83,7 @@ class LLMResultCache:
                 ON llm_phi_cache(created_at)
             """)
             
-            conn.commit()
+            self.conn.commit()
             self.logger.debug(f"Initialized LLM cache database: {self.cache_file_path}")
             
         except Exception as e:
@@ -106,6 +96,9 @@ class LLMResultCache:
         """
         Generate a deterministic cache key for the input.
         
+        PHI/PII detection results are universal across all projects,
+        so the cache is shared globally for efficiency.
+        
         Args:
             input_text (str): Input text to cache
             model (str): LLM model name
@@ -113,13 +106,16 @@ class LLMResultCache:
         Returns:
             str: Hexadecimal cache key
         """
-        # Combine input text, and model for uniqueness
+        # Hash only input and model - results are project-independent
         key_source = f"{model}:{input_text}"
         return hashlib.sha256(key_source.encode('utf-8')).hexdigest()
     
     def get_cached_result(self, input_text, model):
         """
-        Retrieve cached LLM result if available and not expired.
+        Retrieve cached LLM result if available and not expired (read-only).
+        
+        This method performs a read-only lookup and does NOT create
+        new entries. Thread-safe for concurrent reads.
         
         Args:
             input_text (str): Input text to check
@@ -130,8 +126,9 @@ class LLMResultCache:
         """
         try:
             cache_key = self._generate_cache_key(input_text, model)
-            conn = self._get_connection()
-            cursor = conn.cursor()
+            
+            # Read from database (no lock needed for reads in WAL mode)
+            cursor = self.conn.cursor()
             
             # Query with expiration check
             cursor.execute("""
@@ -157,6 +154,9 @@ class LLMResultCache:
         """
         Store LLM result in cache.
         
+        This method creates a new cache entry with write locking to prevent
+        race conditions. Thread-safe with write serialization.
+        
         Args:
             input_text (str): Input text that was processed
             model (str): LLM model name used
@@ -164,18 +164,20 @@ class LLMResultCache:
         """
         try:
             cache_key = self._generate_cache_key(input_text, model)
-            conn = self._get_connection()
-            cursor = conn.cursor()
             
-            # Use INSERT OR REPLACE to handle duplicates
-            cursor.execute("""
-                INSERT OR REPLACE INTO llm_phi_cache 
-                (cache_key, input_text, llm_model, phi_result, project_hash, created_at)
-                VALUES (?, ?, ?, ?, ?, datetime('now'))
-            """, (cache_key, input_text, model, phi_result, self.project_hash_root))
-            
-            conn.commit()
-            self.logger.debug(f"Cached result for key: {cache_key[:16]}... -> {phi_result}")
+            # Acquire write lock to serialize write operations
+            with self._write_lock:
+                cursor = self.conn.cursor()
+                
+                # Use INSERT OR REPLACE to handle duplicates
+                cursor.execute("""
+                    INSERT OR REPLACE INTO llm_phi_cache 
+                    (cache_key, input_text, llm_model, phi_result, created_at)
+                    VALUES (?, ?, ?, ?, datetime('now'))
+                """, (cache_key, input_text, model, phi_result))
+                
+                self.conn.commit()
+                self.logger.private(f"Cached result for key: {cache_key[:16]}... -> {phi_result}")
             
         except Exception as e:
             self.logger.warning(f"Error storing to LLM cache: {e}")
@@ -183,19 +185,20 @@ class LLMResultCache:
     def cleanup_expired(self):
         """Remove expired entries from cache."""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                DELETE FROM llm_phi_cache 
-                WHERE datetime(created_at, '+{} days') <= datetime('now')
-            """.format(self.cache_ttl_days))
-            
-            deleted_count = cursor.rowcount
-            conn.commit()
-            
-            if deleted_count > 0:
-                self.logger.info(f"Cleaned up {deleted_count} expired cache entries")
+            # Acquire write lock for cleanup operation
+            with self._write_lock:
+                cursor = self.conn.cursor()
+                
+                cursor.execute("""
+                    DELETE FROM llm_phi_cache 
+                    WHERE datetime(created_at, '+{} days') <= datetime('now')
+                """.format(self.cache_ttl_days))
+                
+                deleted_count = cursor.rowcount
+                self.conn.commit()
+                
+                if deleted_count > 0:
+                    self.logger.info(f"Cleaned up {deleted_count} expired cache entries")
                 
         except Exception as e:
             self.logger.warning(f"Error cleaning up LLM cache: {e}")
@@ -203,17 +206,15 @@ class LLMResultCache:
     def get_cache_stats(self):
         """Get cache statistics."""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
+            cursor = self.conn.cursor()
             
             cursor.execute("""
                 SELECT 
                     COUNT(*) as total_entries,
                     COUNT(CASE WHEN datetime(created_at, '+{} days') > datetime('now') THEN 1 END) as valid_entries,
                     MAX(created_at) as latest_entry
-                FROM llm_phi_cache 
-                WHERE project_hash = ?
-            """.format(self.cache_ttl_days), (self.project_hash_root,))
+                FROM llm_phi_cache
+            """.format(self.cache_ttl_days))
             
             result = cursor.fetchone()
             return {
@@ -228,11 +229,10 @@ class LLMResultCache:
             return {'error': str(e)}
     
     def close(self):
-        """Close database connection for current thread."""
-        if hasattr(self._local, 'connection'):
+        """Close database connection."""
+        if self.conn:
             try:
-                self._local.connection.close()
-                delattr(self._local, 'connection')
+                self.conn.close()
             except Exception as e:
                 self.logger.warning(f"Error closing LLM cache connection: {e}")
     

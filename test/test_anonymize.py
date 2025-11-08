@@ -50,6 +50,12 @@ class TestAnonymizeScript(unittest.TestCase):
             shutil.rmtree(self.test_output_dir)
         os.makedirs(self.test_output_dir, exist_ok=True)
 
+        # Remove patient UID database file to avoid stale prefix
+        private_mapping_folder = os.path.join(self.test_output_dir, "private")
+        uid_db_file = os.path.join(private_mapping_folder, "patient_uid.db")
+        if os.path.exists(uid_db_file):
+            os.remove(uid_db_file)
+
         # Create a limited input directory with first 50 files
         self.limited_input_dir = "test_input_50"
         self.create_limited_input_dataset()
@@ -111,7 +117,7 @@ class TestAnonymizeScript(unittest.TestCase):
         
         return None
     
-    def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None):
+    def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None, patientIdPrefix=None):
         """Helper method to create a temporary config file for testing."""
         if recipes is None:
             recipes = ""
@@ -144,6 +150,11 @@ class TestAnonymizeScript(unittest.TestCase):
             "cleanDescriptorsLlmModel": "gpt-4o-mini",
             "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
         }
+        
+        # Add patientIdPrefix if provided
+        if patientIdPrefix is not None:
+            config["patientIdPrefix"] = patientIdPrefix
+        
         # Create temporary config file
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
         json.dump(config, config_file, indent=2)
@@ -578,9 +589,9 @@ class TestAnonymizeScript(unittest.TestCase):
             self.assertIsNotNone(expected_output_path, f"Could not find output path for {original_file}")
             self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
             anonymized_ds = pydicom.dcmread(expected_output_path)
-            # Check that the AcquisitionDate has been retained
-            self.assertEqual(anonymized_ds.AcquisitionDate, '20130730',
-                        "AcquisitionDate should be the original value: expected '20130730', got {anonymized_ds.AcquisitionDate}")
+            # Check that the AcquisitionDate has been shifted correctly
+            self.assertEqual(anonymized_ds.AcquisitionDate, '20130424',
+                        "AcquisitionDate should be the original value shifted by -278 days: expected '20130424', got {anonymized_ds.AcquisitionDate}")
             self.logger.info(f"✓ AcquisitionDate modified: {original_value} → {anonymized_ds.AcquisitionDate}")
             
             self.assertEqual(anonymized_ds.LongitudinalTemporalInformationModified, 'MODIFIED',
@@ -627,6 +638,151 @@ class TestAnonymizeScript(unittest.TestCase):
         finally:
             os.unlink(config_path)
             self.logger.info("Basic profile + clean descriptors test completed and config cleaned up")
+
+    def test_generate_patient_id_method(self):
+        """Test the generate_patient_id method directly to verify correct patient ID generation."""
+        print("Test generate_patient_id method for patient ID consistency")
+        
+        # Use the first file for testing
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        
+        original_ds = pydicom.dcmread(original_file)
+        
+        # Create test config with custom patientIdPrefix
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile"],
+            patientIdPrefix="TestPatient"
+        )
+
+        try:
+            self.logger.info("Starting generate_patient_id method test")
+            # Initialize anonymizer to get config and logger
+            anonymizer = LuwakAnonymizer(config_path)
+            
+            # Create a DicomProcessor instance with patient_uid_db
+            processor = DicomProcessor(
+                config=anonymizer.config,
+                logger=anonymizer.logger,
+                llm_cache=None,
+                patient_uid_db=anonymizer.patient_uid_db
+            )
+            
+            # Create mock field for PatientID tag (0010,0020)
+            mock_patient_id_field = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'LO',
+                    'tag': pydicom.tag.Tag(0x0010, 0x0020),
+                    'keyword': 'PatientID',
+                    'value': original_ds.PatientID
+                })()
+            })()
+
+            # Test patient ID generation - first call should create new ID
+            self.logger.info(f"Testing patient ID generation for PatientID: {original_ds.PatientID}")
+            patient_id_1 = processor.generate_patient_id("PatientID", "func:generate_patient_id", mock_patient_id_field, original_ds)
+            
+            # Verify format: should start with prefix and end with digits
+            self.assertTrue(patient_id_1.startswith("TestPatient"), f"Patient ID should start with 'TestPatient', got '{patient_id_1}'")
+            self.assertTrue(patient_id_1[11:].isdigit(), f"Patient ID should end with digits, got '{patient_id_1}'")
+            self.logger.info(f"✓ Generated patient ID: {patient_id_1}")
+            
+            # Test patient ID generation - second call with same patient should return same ID
+            patient_id_2 = processor.generate_patient_id("PatientID", "func:generate_patient_id", mock_patient_id_field, original_ds)
+            self.assertEqual(patient_id_1, patient_id_2, f"Patient ID should be consistent: {patient_id_1} != {patient_id_2}")
+            self.logger.info(f"✓ Patient ID consistent on second call: {patient_id_2}")
+            
+            # Test with different patient - should generate different ID
+            modified_ds = original_ds.copy()
+            modified_ds.PatientID = "DIFFERENT_PATIENT_123"
+            
+            mock_different_patient_field = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'LO',
+                    'tag': pydicom.tag.Tag(0x0010, 0x0020),
+                    'keyword': 'PatientID',
+                    'value': modified_ds.PatientID
+                })()
+            })()
+            
+            patient_id_3 = processor.generate_patient_id("PatientID", "func:generate_patient_id", mock_different_patient_field, modified_ds)
+            self.assertNotEqual(patient_id_1, patient_id_3, f"Different patients should get different IDs: {patient_id_1} == {patient_id_3}")
+            self.assertTrue(patient_id_3.startswith("TestPatient"), f"Patient ID should start with 'TestPatient', got '{patient_id_3}'")
+            self.logger.info(f"✓ Different patient gets different ID: {patient_id_3}")
+            
+            self.logger.info("All generate_patient_id method tests passed!")
+            self.logger.info(f"    - Patient 1: '{patient_id_1}' (consistent across calls)")
+            self.logger.info(f"    - Patient 2: '{patient_id_3}' (different patient)")
+
+        finally:
+            # Clean up config file
+            os.unlink(config_path)
+            self.logger.info("Generate patient ID method test completed and config cleaned up")
+
+    def test_patient_id_with_basic_profile_recipe(self):
+        """Test patient ID generation when running full anonymization with basic profile recipe (batch input)."""
+        print("Test patient ID generation with basic profile recipe (batch input)")
+
+        config_path = self.create_test_config(
+            input_folder=self.limited_input_dir,
+            output_folder=self.test_output_dir,
+            recipes=['basic_profile'],
+            patientIdPrefix="Zenta"
+        )
+
+        try:
+            self.logger.info("Starting patient ID generation with basic profile recipe batch test")
+            anonymizer = LuwakAnonymizer(config_path)
+            coordinator = anonymizer.anonymize()
+
+            # Track original patient IDs and their anonymized counterparts
+            patient_id_mapping = {}
+            
+            for file in os.listdir(self.limited_input_dir):
+                if not file.endswith(".dcm"):
+                    continue
+                input_file = os.path.join(self.limited_input_dir, file)
+                original_ds = pydicom.dcmread(input_file)
+                original_patient_id = original_ds.PatientID
+                
+                # Find corresponding output file using helper method
+                output_file = self.get_output_path_for_file(coordinator, input_file)
+                
+                self.assertIsNotNone(output_file, f"Anonymized file {file} not found in output directory")
+                anonymized_ds = pydicom.dcmread(output_file)
+                anonymized_patient_id = anonymized_ds.PatientID
+                
+                # Verify patient ID was changed
+                self.assertNotEqual(original_patient_id, anonymized_patient_id, 
+                    f"Patient ID should be anonymized in file {file}")
+                
+                # Verify format
+                self.assertTrue(anonymized_patient_id.startswith("Zenta"), 
+                    f"Patient ID should start with 'Zenta', got '{anonymized_patient_id}' in file {file}")
+                self.assertTrue(anonymized_patient_id[5:].isdigit(), 
+                    f"Patient ID should end with digits, got '{anonymized_patient_id}' in file {file}")
+                
+                # Check consistency: same original patient should get same anonymized ID
+                if original_patient_id in patient_id_mapping:
+                    expected_anonymized_id = patient_id_mapping[original_patient_id]
+                    self.assertEqual(anonymized_patient_id, expected_anonymized_id,
+                        f"Same patient should get same anonymized ID: expected '{expected_anonymized_id}', got '{anonymized_patient_id}' in file {file}")
+                    self.logger.info(f"✓ Patient ID consistent for '{original_patient_id}': {anonymized_patient_id} (file: {file})")
+                else:
+                    # First time seeing this original patient ID
+                    patient_id_mapping[original_patient_id] = anonymized_patient_id
+                    self.logger.info(f"✓ Patient ID anonymized: {original_patient_id} → {anonymized_patient_id} (file: {file})")
+            
+            # Log summary
+            self.logger.info(f"Patient ID generation batch test completed:")
+            self.logger.info(f"  - Total unique original patients: {len(patient_id_mapping)}")
+            self.logger.info(f"  - All patient IDs consistently anonymized across {len([f for f in os.listdir(self.limited_input_dir) if f.endswith('.dcm')])} files")
+            
+        finally:
+            os.unlink(config_path)
+            self.logger.info("Patient ID generation batch test completed and config cleaned up")
 
         
 if __name__ == "__main__":

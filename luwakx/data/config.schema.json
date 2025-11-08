@@ -43,6 +43,12 @@
       "default": "myproject2025",
       "examples": ["myproject2025"]
     },
+    "patientIdPrefix": {
+      "type": "string",
+      "description": "Prefix for sequential patient IDs (e.g., 'Zenta' generates 'Zenta00', 'Zenta01', etc.).",
+      "default": "Zenta",
+      "examples": ["Zenta", "PATIENT"]
+    },
     "maxDateShiftDays": {
       "type": "integer",
       "description": "Maximum number of days for date shifting (default 1095).",

@@ -132,5 +132,18 @@ class TestConfigOptions(unittest.TestCase):
         anonymizer = LuwakAnonymizer(config_path)
         self.assertEqual(anonymizer.config["testOptions"]["useExistingMaskDefacer"], ["/path/to/mask1.nii.gz", "/path/to/mask2.nii.gz"])
 
+    def test_patient_id_prefix_custom(self):
+        config_path = self.make_config({"patientIdPrefix": "CustomPrefix"})
+        anonymizer = LuwakAnonymizer(config_path)
+        self.assertEqual(anonymizer.config["patientIdPrefix"], "CustomPrefix")
+
+    def test_patient_id_prefix_default(self):
+        # When not specified, should default to 'Zenta'
+        config_path = self.make_config()
+        anonymizer = LuwakAnonymizer(config_path)
+        # Check that patient_uid_db is initialized with default prefix
+        self.assertIsNotNone(anonymizer.patient_uid_db)
+        self.assertEqual(anonymizer.patient_uid_db.patient_id_prefix, "Zenta")
+
 if __name__ == "__main__":
     unittest.main()

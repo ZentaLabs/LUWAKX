@@ -33,7 +33,7 @@ class ProcessingPipeline:
     
     def __init__(self, series_subset: List[DicomSeries], output_directory: str,
                  config: Dict[str, Any], logger=None, worker_id: int = 0,
-                 llm_cache=None, recipe=None):
+                 llm_cache=None, patient_uid_db=None, recipe=None):
         """Initialize a ProcessingPipeline instance.
         
         Args:
@@ -43,6 +43,7 @@ class ProcessingPipeline:
             logger: Logger instance for logging (optional)
             worker_id: Unique identifier for this worker instance (default: 0)
             llm_cache: Shared LLM cache instance (thread-safe, read-only for workers)
+            patient_uid_db: Shared patient UID database instance (thread-safe)
             recipe: DeidRecipe instance for anonymization (shared across all workers)
         """
         self.worker_id = worker_id
@@ -64,6 +65,9 @@ class ProcessingPipeline:
         
         # Shared LLM cache (thread-safe, read-only for workers)
         self.llm_cache = llm_cache
+        
+        # Shared patient UID database (thread-safe)
+        self.patient_uid_db = patient_uid_db
         
         # Shared recipe (read-only for workers)
         self.recipe = recipe
@@ -97,13 +101,14 @@ class ProcessingPipeline:
     
     @property
     def processor(self):
-        """Lazy-load DicomProcessor instance with shared LLM cache."""
+        """Lazy-load DicomProcessor instance with shared LLM cache and patient UID DB."""
         if self._processor is None:
             from dicom_processor import DicomProcessor
             self._processor = DicomProcessor(
                 self.config, 
                 self.logger, 
-                llm_cache=self.llm_cache
+                llm_cache=self.llm_cache,
+                patient_uid_db=self.patient_uid_db
             )
         return self._processor
     

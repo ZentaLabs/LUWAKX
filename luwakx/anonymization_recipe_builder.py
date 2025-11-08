@@ -161,6 +161,8 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     line = f"JITTER {tag} func:hash_increment_date\n"
                 elif final_action == 'func:clean_descriptors_with_llm':
                     line = f"REPLACE {tag} func:clean_descriptors_with_llm\n"
+                elif final_action == 'func:generate_patient_id':
+                    line = f"REPLACE {tag} func:generate_patient_id\n"
                 elif final_action == 'clean_manually':
                     line = f"# REPLACE {tag} CLEANED NEEDS MANUAL REVIEW\n"
                 elif final_action == 'manual_review':
