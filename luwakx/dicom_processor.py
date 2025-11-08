@@ -9,6 +9,7 @@ Extracted from anonymize.py in Phase 2 refactoring.
 
 import os
 import hashlib
+import hmac
 import traceback
 import importlib.util
 from typing import Any, Dict, List
@@ -241,11 +242,35 @@ class DicomProcessor:
                     return f"{path_prefix}{elem.keyword}"
         return None
     
-    def generate_hashuid(self, item, value, field, dicom):
-        """Custom UID generation using combined salt as root for deterministic randomization.
+    def _compute_hmac(self, key: bytes, project_root: str, original_uid: str) -> str:
+        """Compute HMAC-SHA512 of project_root and original UID using patient's secret key.
         
-        Ensures remapping: the same original UID always maps to the same anonymized UID 
-        for a given file and field.
+        Args:
+            key: Raw bytes secret key (from patient UID database random token)
+            project_root: Project hash root for isolation
+            original_uid: Original DICOM UID to be anonymized
+            
+        Returns:
+            Hex string of HMAC-SHA512 digest for use as entropy (128 hex characters)
+        """
+        # Use original UID as-is to maintain 1:1 mapping uniqueness        
+        # Combine with separator to avoid ambiguity
+        data = f"{project_root}||{original_uid}".encode('utf-8')
+        
+        # Compute HMAC-SHA512 and return hex string (pydicom expects strings)
+        mac = hmac.new(key, data, hashlib.sha512)
+        
+        # Return hex digest string for use as entropy source
+        return mac.hexdigest()
+    
+    def generate_hashuid(self, item, value, field, dicom):
+        """Custom UID generation using HMAC-512 with patient-specific key.
+        
+        Uses the patient's cryptographic random token from the UID database as the
+        HMAC key to generate deterministic but unpredictable UIDs. This ensures:
+        - Same original UID always maps to same anonymized UID for a patient
+        - Different patients get different anonymized UIDs even for same original UID
+        - UIDs are cryptographically secure and cannot be reverse-engineered
         
         Args:
             item: Item identifier from deid processing
@@ -256,7 +281,7 @@ class DicomProcessor:
         Returns:
             str: Newly generated anonymized UID
         """
-        project_hash_root = self.config.get('projectHashRoot')
+        project_hash_root = self.config.get('projectHashRoot', '')
         
         # Extract the original UID value from the DICOM field
         try:
@@ -296,8 +321,50 @@ class DicomProcessor:
             if seq_path:
                 field_keyword = seq_path
 
-        # Combine project_hash_root and original UID as entropy for deterministic generation
-        new_uid = pydicom.uid.generate_uid(entropy_srcs=[project_hash_root, original_uid])
+        # Get patient's random token from database to use as HMAC key
+        hmac_key = None
+        if self.patient_uid_db:
+            try:
+                # Extract patient identifiers
+                original_patient_id = str(getattr(dicom, 'PatientID', ''))
+                original_patient_name = str(getattr(dicom, 'PatientName', ''))
+                birthdate = str(getattr(dicom, 'PatientBirthDate', ''))
+                
+                # Get cached patient data (includes random token)
+                cached_result = self.patient_uid_db.get_cached_patient_id(
+                    original_patient_id,
+                    original_patient_name,
+                    birthdate
+                )
+                
+                if cached_result is None:
+                    # Patient not yet in database - create entry
+                    _, random_token = self.patient_uid_db.store_patient_id(
+                        original_patient_id,
+                        original_patient_name,
+                        birthdate
+                    )
+                    hmac_key = random_token
+                else:
+                    # Use existing patient's random token
+                    _, random_token = cached_result
+                    hmac_key = random_token
+                    
+            except Exception as e:
+                self.logger.warning(f"Could not retrieve patient random token: {e}")
+        
+        # Generate UID using HMAC-512 if we have a key, otherwise fall back to old method
+        if hmac_key:
+            # Use HMAC-512 to generate deterministic entropy from patient's key
+            # This creates a unique, unpredictable UID that's consistent per patient
+            hmac_hex = self._compute_hmac(hmac_key, project_hash_root, original_uid)
+            # HMAC hex string provides entropy for pydicom UID generation
+            new_uid = pydicom.uid.generate_uid(entropy_srcs=[hmac_hex])
+        else:
+            # Fallback to simple project+UID entropy if no HMAC key available
+            self.logger.debug("No HMAC key available, using fallback UID generation")
+            new_uid = pydicom.uid.generate_uid(entropy_srcs=[project_hash_root, original_uid])
+        
         self.logger.debug(
             f"Replaced tag {field.element.tag} "
             f"({getattr(field.element, 'keyword', '')}): {new_uid}"
