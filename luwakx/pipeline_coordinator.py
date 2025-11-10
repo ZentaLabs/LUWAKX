@@ -6,10 +6,12 @@ by distributing series across multiple workers.
 """
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set, Tuple
+import pydicom
 from processing_pipeline import ProcessingPipeline
-from dicom_series import DicomSeries
+from dicom_series import DicomSeries, PathTooLongError
 from dicom_file import DicomFile
+from dicom_series_factory import DicomSeriesFactory
 
 
 class PipelineCoordinator:
@@ -288,9 +290,8 @@ class PipelineCoordinator:
                                patient_uid_db=None, recipe=None) -> 'PipelineCoordinator':
         """Factory method to create coordinator from DICOM file list or input folder.
         
-        This method scans DICOM files (or discovers them from a folder),
-        groups them by SeriesInstanceUID, creates DicomSeries objects,
-        and initializes the coordinator with multiple pipeline workers.
+        Uses DicomSeriesFactory to create DicomSeries objects, then initializes
+        the coordinator with multiple pipeline workers.
         
         Args:
             dicom_files: Either a list of DICOM file paths, a single file path (str),
@@ -300,121 +301,23 @@ class PipelineCoordinator:
             logger: Logger instance
             num_workers: Number of pipeline workers (default: 1)
             llm_cache: Shared LLM cache instance (thread-safe)
+            patient_uid_db: Patient UID database for anonymization
             recipe: DeidRecipe instance for anonymization (shared across workers)
             
         Returns:
             PipelineCoordinator: Initialized coordinator ready to run
         """
-        import pydicom
+        # Create factory and generate series from files
+        factory = DicomSeriesFactory(
+            patient_uid_db=patient_uid_db,
+            config=config,
+            logger=logger,
+            output_directory=output_directory
+        )
         
-        # Handle different input types: folder path, file path, or file list
-        if isinstance(dicom_files, str):
-            input_path = dicom_files
-            logger.info(f"Discovering DICOM files from: {input_path}")
-            
-            if os.path.isfile(input_path):
-                # Single file
-                dicom_files = [input_path]
-                logger.info("Processing single DICOM file")
-            elif os.path.isdir(input_path):
-                # Directory - walk and collect all files
-                dicom_files = []
-                for root, dirs, files in os.walk(input_path):
-                    for file in files:
-                        dicom_files.append(os.path.join(root, file))
-                logger.info(f"Found {len(dicom_files)} files in directory")
-            else:
-                logger.error(f"Input path does not exist: {input_path}")
-                dicom_files = []
+        # Factory handles file discovery, reading, grouping, and series creation
+        all_series = factory.create_series_from_files(dicom_files)
         
-        logger.info(f"Creating coordinator from {len(dicom_files)} DICOM files")
-        
-        # Group files by SeriesInstanceUID
-        series_groups: Dict[str, List[str]] = {}
-        series_metadata: Dict[str, Dict[str, Any]] = {}
-        
-        for file_path in dicom_files:
-            try:
-                ds = pydicom.dcmread(file_path, stop_before_pixels=True)
-                series_uid = getattr(ds, 'SeriesInstanceUID', 'unknown_series')
-                
-                if series_uid not in series_groups:
-                    series_groups[series_uid] = []
-                    
-                    # Extract metadata for folder naming
-                    series_desc = getattr(ds, 'SeriesDescription', '')
-                    series_number = getattr(ds, 'SeriesNumber', '')
-                    modality = getattr(ds, 'Modality', '')
-                    
-                    # Create folder name
-                    folder_parts = []
-                    if series_number:
-                        folder_parts.append(
-                            f"{series_number:03d}" if isinstance(series_number, int)
-                            else str(series_number)
-                        )
-                    if modality:
-                        folder_parts.append(modality)
-                    if series_desc:
-                        clean_desc = "".join(
-                            c for c in series_desc if c.isalnum() or c in " -_"
-                        ).strip()
-                        clean_desc = "_".join(clean_desc.split())
-                        if clean_desc:
-                            folder_parts.append(clean_desc[:30])
-                    
-                    folder_name = "_".join(folder_parts) if folder_parts else series_uid
-                    
-                    # Limit folder name length
-                    if len(folder_name) > 100:
-                        clean_series_uid = "".join(
-                            c for c in series_uid if c.isalnum() or c in ".-_"
-                        )
-                        folder_name = folder_name[:100] + "_" + clean_series_uid[-10:]
-                    
-                    series_metadata[series_uid] = {
-                        'folder_name': folder_name,
-                        'series_description': series_desc,
-                        'series_number': series_number,
-                        'modality': modality
-                    }
-                
-                series_groups[series_uid].append(file_path)
-                
-            except Exception as e:
-                logger.warning(f"Could not read DICOM file {file_path}: {e}")
-                # Add to unknown series group
-                if 'unknown' not in series_groups:
-                    series_groups['unknown'] = []
-                    series_metadata['unknown'] = {
-                        'folder_name': 'unknown_series',
-                        'series_description': None,
-                        'series_number': None,
-                        'modality': None
-                    }
-                series_groups['unknown'].append(file_path)
-        
-        # Create DicomSeries objects
-        all_series = []
-        for series_uid, files in series_groups.items():
-            metadata = series_metadata[series_uid]
-            series = DicomSeries(series_uid, metadata['folder_name'])
-            
-            # Set metadata
-            series.series_description = metadata['series_description']
-            series.series_number = metadata['series_number']
-            series.modality = metadata['modality']
-            
-            # Create and add DicomFile objects
-            files.sort()  # Ensure consistent ordering
-            for file_path in files:
-                dicom_file = DicomFile(file_path, series_uid)
-                series.add_file(dicom_file)
-            
-            all_series.append(series)
-        
-        logger.info(f"Created {len(all_series)} series from {len(dicom_files)} files")
-        
-        # Create and return coordinator
+        # Create and return coordinator with created series
         return cls(all_series, output_directory, config, logger, num_workers, 
                   llm_cache, patient_uid_db, recipe)

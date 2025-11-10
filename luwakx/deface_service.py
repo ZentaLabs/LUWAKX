@@ -100,16 +100,18 @@ class DefaceService:
             self.logger.error(f"Failed to load defacer module: {e}")
             return self._copy_without_defacing(series)
         
-        # Read DICOM metadata
+        # Get metadata from series (already loaded during series creation - no file re-reading!)
+        modality = series.modality
+        
+        # Read DICOM metadata for BodyPartExamined (not stored in series)
         try:
-            ds = pydicom.dcmread(organized_files[0])
-            modality = ds.Modality if 'Modality' in ds else None
+            ds = pydicom.dcmread(organized_files[0], stop_before_pixels=True)
             body_part = ds.BodyPartExamined if 'BodyPartExamined' in ds else None
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
-            self.logger.error(f"Failed to read DICOM metadata: {e}")
-            return self._copy_without_defacing(series)
+            self.logger.error(f"Failed to read DICOM metadata for BodyPartExamined: {e}")
+            body_part = None
         
         self.logger.private(
             f"Defacing series {series.series_uid} with modality {modality} "

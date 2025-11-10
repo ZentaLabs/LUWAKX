@@ -18,7 +18,8 @@ class DicomFile:
     
     Attributes:
         original_path: Original input file path
-        filename: Base filename (extracted from original_path)
+        filename: Sequential filename assigned by DicomSeriesFactory (e.g., 000001.dcm)
+                 Initialized from original_path basename, then overwritten with sequential name
         series_uid: SeriesInstanceUID this file belongs to
         organized_path: Path after series organization (or None)
         defaced_path: Path after visual defacing (or None)

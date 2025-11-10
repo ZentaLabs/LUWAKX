@@ -142,12 +142,14 @@ class ProcessingPipeline:
         
         self.series_collection[series.series_uid] = series
         
-        # Update base paths for the series
+        # Update base paths for the series (organized and defaced use UID hierarchy)
         series.update_base_paths(
             organized=self.organized_temp_dir,
-            defaced=self.defaced_temp_dir,
-            output=self.output_directory
+            defaced=self.defaced_temp_dir
         )
+        
+        # Note: output_base_path is already set by DicomSeriesFactory during creation
+        # with proper collision detection. No need to rebuild it here.
     
     def get_series(self, series_uid: str) -> Optional[DicomSeries]:
         """Get a DicomSeries by its UID.
