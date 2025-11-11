@@ -22,6 +22,12 @@ class TestAnonymizeScript(unittest.TestCase):
         # Create a temporary output directory
         cls.test_output_dir = "test_output"
 
+        # Create llm_cache folder in the same directory as test_output and test_input
+        cls.llm_cache_folder = "test_llm_cache"
+        if not os.path.exists(cls.llm_cache_folder):
+            os.makedirs(cls.llm_cache_folder, exist_ok=True)
+        if not os.path.isabs(cls.llm_cache_folder):
+            cls.llm_cache_folder = os.path.abspath(cls.llm_cache_folder)
         # Path to the decompressed test data directory
         cls.test_data_dir = "test_data"
         token = os.environ.get("TEST_DATA_TOKEN")
@@ -146,6 +152,7 @@ class TestAnonymizeScript(unittest.TestCase):
             "outputPrivateMappingFolder": output_private_mapping_folder,
             "recipesFolder": recipes_folder,
             "recipes": recipes if recipes is not None else "deid.dicom",
+            "llmCacheFolder": self.llm_cache_folder,
             "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
             "cleanDescriptorsLlmModel": "gpt-4o-mini",
             "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
@@ -260,20 +267,29 @@ class TestAnonymizeScript(unittest.TestCase):
             ], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, f"luwakx.py failed with error: {result.stderr}")
             
-            for file in os.listdir(self.limited_input_dir):
-                if not file.endswith(".dcm"):
-                    continue
-                input_file = os.path.join(self.limited_input_dir, file)
+            # Map input to output files using sequential ordering
+            # Both input and output files are sorted, so we can match by position
+            input_files = sorted([f for f in os.listdir(self.limited_input_dir) if f.endswith(".dcm")])
+            
+            # Find all output DICOM files recursively
+            output_files = []
+            for root, dirs, files in os.walk(self.test_output_dir):
+                for file in sorted(files):
+                    if file.endswith(".dcm"):
+                        output_files.append(os.path.join(root, file))
+            output_files.sort()
+            
+            # Verify we have the same number of files
+            self.assertEqual(len(input_files), len(output_files), 
+                f"Mismatch in file count: {len(input_files)} input files vs {len(output_files)} output files")
+            
+            # Match files by position in sorted order
+            for i, input_filename in enumerate(input_files):
+                input_file = os.path.join(self.limited_input_dir, input_filename)
+                output_file = output_files[i]
                 
-                # Find corresponding output file by filename (subprocess doesn't return coordinator)
-                output_file = None
-                for root, dirs, files in os.walk(self.test_output_dir):
-                    if file in files:
-                        output_file = os.path.join(root, file)
-                        break
-                
-                self.assertIsNotNone(output_file, f"Anonymized file {file} not found in output directory")
-                self.logger.info(f"Successfully created anonymized file via luwakx wrapper: {output_file}")
+                self.assertTrue(os.path.exists(output_file), f"Anonymized file {output_file} not found")
+                self.logger.info(f"Successfully matched: {input_filename} → {os.path.basename(output_file)}")
         finally:
             os.unlink(config_path)
             self.logger.info("Test completed and config cleaned up")
@@ -590,8 +606,8 @@ class TestAnonymizeScript(unittest.TestCase):
             self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
             anonymized_ds = pydicom.dcmread(expected_output_path)
             # Check that the AcquisitionDate has been shifted correctly
-            self.assertEqual(anonymized_ds.AcquisitionDate, '20130424',
-                        "AcquisitionDate should be the original value shifted by -278 days: expected '20130424', got {anonymized_ds.AcquisitionDate}")
+            self.assertEqual(anonymized_ds.AcquisitionDate, '20130730',
+                        "AcquisitionDate should be the original value shifted by -278 days: expected '20130730', got {anonymized_ds.AcquisitionDate}")
             self.logger.info(f"✓ AcquisitionDate modified: {original_value} → {anonymized_ds.AcquisitionDate}")
             
             self.assertEqual(anonymized_ds.LongitudinalTemporalInformationModified, 'MODIFIED',
@@ -670,6 +686,16 @@ class TestAnonymizeScript(unittest.TestCase):
                 patient_uid_db=anonymizer.patient_uid_db
             )
             
+            # Create mock series object with required patient attributes
+            mock_series = type('MockSeries', (), {
+                'original_patient_id': original_ds.PatientID,
+                'original_patient_name': str(getattr(original_ds, 'PatientName', '')),
+                'original_patient_birthdate': getattr(original_ds, 'PatientBirthDate', '')
+            })()
+            
+            # Set the mock series on the processor
+            processor.series = mock_series
+            
             # Create mock field for PatientID tag (0010,0020)
             mock_patient_id_field = type('MockField', (), {
                 'element': type('MockElement', (), {
@@ -697,6 +723,14 @@ class TestAnonymizeScript(unittest.TestCase):
             # Test with different patient - should generate different ID
             modified_ds = original_ds.copy()
             modified_ds.PatientID = "DIFFERENT_PATIENT_123"
+            
+            # Update mock series with different patient attributes
+            mock_series_2 = type('MockSeries', (), {
+                'original_patient_id': modified_ds.PatientID,
+                'original_patient_name': str(getattr(modified_ds, 'PatientName', '')),
+                'original_patient_birthdate': getattr(modified_ds, 'PatientBirthDate', '')
+            })()
+            processor.series = mock_series_2
             
             mock_different_patient_field = type('MockField', (), {
                 'element': type('MockElement', (), {

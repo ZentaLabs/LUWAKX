@@ -8,11 +8,12 @@ Extracted from anonymize.py in Phase 2 refactoring.
 """
 
 import os
+import gc
 import hashlib
 import hmac
 import traceback
 import importlib.util
-from typing import Any, Dict, List
+from typing import Any, Dict
 import pydicom
 
 from dicom_series import DicomSeries
@@ -46,6 +47,7 @@ class DicomProcessor:
         self.logger = logger
         self.llm_cache = llm_cache
         self.patient_uid_db = patient_uid_db
+        self.series = None
         
         # Isolated state per worker (NOT shared)
         self.current_file_mappings: Dict[str, Any] = {}  # UID mappings
@@ -72,14 +74,15 @@ class DicomProcessor:
         from deid.logger import bot
         from deid_logger_handler import DeidProgressHandler
         
-        if self.logger:
-            self.logger.info(f"DicomProcessor: Anonymizing series {series.folder_name}")
+        self.series = series
+        series_display = f"series:{self.series.anonymized_series_uid}, of study:{self.series.anonymized_study_uid}, for patient:{self.series.anonymized_patient_id}"
+        self.logger.info(f"DicomProcessor: Anonymizing series {series_display}")
         
         # 1. Get file paths from series (these may be defaced files if defacing was applied)
-        dicom_files = [f.get_current_path() for f in series.files]
+        dicom_files = [f.get_current_path() for f in self.series.files]
         
         if not dicom_files:
-            self.logger.warning(f"No DICOM files found for series {series.folder_name}")
+            self.logger.warning(f"No DICOM files found for series {series_display}")
             return
         
         # 2. Get identifiers using deid library
@@ -88,7 +91,7 @@ class DicomProcessor:
         
         # 3. Inject custom functions into each item
         for item in items:
-            items[item]["generate_hashuid"] = self.generate_hashuid
+            items[item]["generate_hmacuid"] = self.generate_hmacuid
             items[item]["generate_patient_id"] = self.generate_patient_id
             items[item]["hash_increment_date"] = self.hash_increment_date
             items[item]["set_fixed_datetime"] = self.set_fixed_datetime
@@ -99,10 +102,11 @@ class DicomProcessor:
         # 4. Setup progress handler to redirect deid.bot output to logger
         progress_handler = None
         try:
+            series_folder = os.path.basename(self.series.output_base_path)
             progress_handler = DeidProgressHandler(
                 self.logger,
                 len(dicom_files),
-                series_folder_name=series.folder_name
+                series_folder_name=series_folder
             )
             bot.outputStream = progress_handler
             bot.errorStream = progress_handler
@@ -111,7 +115,7 @@ class DicomProcessor:
         
         # 5. Perform anonymization using deid library
         # Note: Output directory is already created in organize stage
-        self.logger.info(f"Anonymizing {len(dicom_files)} files to {series.output_base_path}")
+        self.logger.info(f"Anonymizing {len(dicom_files)} files to {self.series.output_base_path}")
         
         try:
             parsed_files = replace_identifiers(
@@ -121,24 +125,25 @@ class DicomProcessor:
                 ids=items,
                 remove_private=False,  # Let recipes handle private tag removal
                 save=True,
-                output_folder=series.output_base_path,
+                output_folder=self.series.output_base_path,
                 overwrite=True,
                 force=True
             )
             
             if not parsed_files:
-                self.logger.warning(f"No files were anonymized for series {series.folder_name}")
+                self.logger.warning(f"No files were anonymized for series {series_display}")
                 return
             
             # 6. Update series files with anonymized paths
-            for dicom_file in series.files:
-                output_path = os.path.join(series.output_base_path, dicom_file.filename)
+            for dicom_file in self.series.files:
+                output_path = os.path.join(self.series.output_base_path, dicom_file.filename)
                 dicom_file.set_anonymized_path(output_path)
             
             self.logger.info(f"Successfully anonymized {len(parsed_files)} files")
             
         except Exception as e:
-            self.logger.error(f"Error during anonymization of series {series.folder_name}: {e}")
+            series_display = os.path.basename(self.series.output_base_path)
+            self.logger.error(f"Error during anonymization of series {series_display}: {e}")
             raise
         finally:
             # Close progress handler
@@ -147,9 +152,21 @@ class DicomProcessor:
                     progress_handler.close()
                 except Exception as e:
                     self.logger.warning(f"Error closing progress handler: {e}")
-        
-        if self.logger:
-            self.logger.debug(f"DicomProcessor: Completed series {series.folder_name}")
+            
+            # Free large memory structures immediately after anonymization completes
+            try:
+                del items
+                del parsed_files
+                gc.collect()
+                self.logger.debug("Freed items and parsed_files memory after anonymization")
+            except (NameError, UnboundLocalError):
+                # Variables may not exist if exception occurred before they were created
+                pass
+            
+            # NOTE: self.series and current_file_mappings remain in memory for export stage
+            # They are cleared later in clear_series_data() after export completes
+            
+        self.logger.debug(f"DicomProcessor: Completed series {series_display}")
     
     # =================================================================
     # DEID Custom Functions - Injected into DEID recipe processing
@@ -179,15 +196,14 @@ class DicomProcessor:
             return "ANON00"
         
         # Extract original identifiers from DICOM dataset
-        original_patient_id = str(getattr(dicom, 'PatientID', ''))
-        original_patient_name = str(getattr(dicom, 'PatientName', ''))
-        birthdate = str(getattr(dicom, 'PatientBirthDate', ''))
-                
+        original_patient_id = self.series.original_patient_id
+        original_patient_name = self.series.original_patient_name
+        original_patient_birthdate = self.series.original_patient_birthdate
         # Check cache first (read-only, thread-safe for concurrent reads)
         cached_result = self.patient_uid_db.get_cached_patient_id(
             original_patient_id,
             original_patient_name,
-            birthdate
+            original_patient_birthdate
         )
         if cached_result is None:
             # No cache hit - create and store new ID and random token
@@ -197,13 +213,18 @@ class DicomProcessor:
             # Log original values at PRIVATE level
             self.logger.private(
                 f"Generating patient ID from - PatientID: {original_patient_id}, "
-                f"PatientName: {original_patient_name}, BirthDate: {birthdate}"
+                f"PatientName: {original_patient_name}, BirthDate: {original_patient_birthdate}"
             )
             anonymized_id, _ = self.patient_uid_db.store_patient_id(
                 original_patient_id,
                 original_patient_name,
-                birthdate
+                original_patient_birthdate
             )
+            self.logger.warning(
+                f"Generating patient ID from - PatientID: {original_patient_id}, "
+                f"PatientName: {original_patient_name}, BirthDate: {original_patient_birthdate}, new ID: {anonymized_id}"
+            )
+
         else:
             anonymized_id, _ = cached_result
             self.logger.debug(
@@ -263,7 +284,7 @@ class DicomProcessor:
         # Return hex digest string for use as entropy source
         return mac.hexdigest()
     
-    def generate_hashuid(self, item, value, field, dicom):
+    def generate_hmacuid(self, item, value, field, dicom):
         """Custom UID generation using HMAC-512 with patient-specific key.
         
         Uses the patient's cryptographic random token from the UID database as the
@@ -326,29 +347,19 @@ class DicomProcessor:
         if self.patient_uid_db:
             try:
                 # Extract patient identifiers
-                original_patient_id = str(getattr(dicom, 'PatientID', ''))
-                original_patient_name = str(getattr(dicom, 'PatientName', ''))
-                birthdate = str(getattr(dicom, 'PatientBirthDate', ''))
-                
+                original_patient_id = self.series.original_patient_id
+                original_patient_name = self.series.original_patient_name
+                original_patient_birthdate = self.series.original_patient_birthdate
                 # Get cached patient data (includes random token)
                 cached_result = self.patient_uid_db.get_cached_patient_id(
                     original_patient_id,
                     original_patient_name,
-                    birthdate
+                    original_patient_birthdate
                 )
                 
-                if cached_result is None:
-                    # Patient not yet in database - create entry
-                    _, random_token = self.patient_uid_db.store_patient_id(
-                        original_patient_id,
-                        original_patient_name,
-                        birthdate
-                    )
-                    hmac_key = random_token
-                else:
-                    # Use existing patient's random token
-                    _, random_token = cached_result
-                    hmac_key = random_token
+                # Use existing patient's random token
+                _, random_token = cached_result
+                hmac_key = random_token
                     
             except Exception as e:
                 self.logger.warning(f"Could not retrieve patient random token: {e}")
@@ -393,9 +404,9 @@ class DicomProcessor:
         """
         project_hash_root = self.config.get('projectHashRoot')
         try:
-            PatientID = dicom.get("PatientID", "")
-            PatientName = dicom.get("PatientName", "")
-            PatientBirthDate = dicom.get("PatientBirthDate", "")
+            PatientID = self.series.original_patient_id
+            PatientName = self.series.original_patient_name
+            PatientBirthDate = self.series.original_patient_birthdate
             # Log sensitive patient data at PRIVATE level
             self.logger.private(
                 f"Using patient data for date shift generation - "
@@ -700,8 +711,19 @@ class DicomProcessor:
     def clear_series_data(self, series: DicomSeries) -> None:
         """Clear data for a processed series to free memory.
         
-        After exporting series results, we clear its data from memory
-        to keep memory usage constant regardless of dataset size.
+        This method is called AFTER the series has been fully processed and exported.
+        Memory cleanup now happens in two stages:
+        
+        1. Immediately after anonymization (in process_series finally block):
+           - items dict - freed immediately
+           - parsed_files list - freed immediately
+           
+        2. After export completes (this method):
+           - current_file_mappings - cleared here
+           - self.series reference - cleared here
+        
+        This two-stage approach minimizes peak memory usage while ensuring
+        data availability when needed.
         
         Args:
             series: DicomSeries whose data should be cleared
@@ -709,5 +731,12 @@ class DicomProcessor:
         # Clear UID mappings for this series
         self.current_file_mappings.clear()
         
+        # Clear series reference to allow garbage collection
+        self.series = None
+        
+        # Force garbage collection to free memory immediately
+        gc.collect()
+        
         if self.logger:
-            self.logger.debug(f"Cleared memory for series {series.folder_name}")
+            series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
+            self.logger.debug(f"Cleared memory for series {series_display}")

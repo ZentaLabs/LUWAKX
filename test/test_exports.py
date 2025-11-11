@@ -195,10 +195,11 @@ class TestExports(unittest.TestCase):
                 self.logger.info(f"✓ All required columns present: {required_columns}")
                 
                 # Verify file path (now includes series folder as relative path)
-                # The path should be like: 'series_folder/00000001.dcm'
+                # The path should be like: 'series_folder/000001.dcm' (sequential filename)
                 anonymized_path = row['anonymized_file_path']
-                self.assertTrue(anonymized_path.endswith('00000001.dcm'), 
-                              f"File path should end with '00000001.dcm', got: {anonymized_path}")
+                # For single file, should be 000001.dcm
+                self.assertTrue(anonymized_path.endswith('000001.dcm'), 
+                              f"File path should end with '000001.dcm' (sequential filename), got: {anonymized_path}")
                 self.logger.info(f"✓ File path verified (relative): {anonymized_path}")
 
                 # Verify original UIDs match what we read from the file
@@ -270,8 +271,9 @@ class TestExports(unittest.TestCase):
                 # Verify file paths (now includes series folder as relative path)
                 row = df.iloc[0]
                 anonymized_path = row['AnonymizedFilePath']
-                self.assertTrue(anonymized_path.endswith('00000001.dcm'), 
-                              f"Anonymized file path should end with '00000001.dcm', got: {anonymized_path}")
+                # For single file (first in series), should be 000001.dcm (sequential filename)
+                self.assertTrue(anonymized_path.endswith('000001.dcm'), 
+                              f"Anonymized file path should end with '000001.dcm' (sequential filename), got: {anonymized_path}")
                 self.logger.info(f"✓ File path verified (relative): {anonymized_path}")
                 
                 # Check that some DICOM metadata columns exist (after anonymization)

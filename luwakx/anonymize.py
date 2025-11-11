@@ -90,19 +90,14 @@ class LuwakAnonymizer:
             try:
                 cache_folder = self.config.get('llmCacheFolder')
                 cache_file = os.path.join(cache_folder, 'llm_cache.db')
-                cache_ttl_days = self.config.get('llmCacheTtlDays', 30)
                 
                 self.llm_cache = LLMResultCache(
                     cache_file_path=cache_file,
-                    cache_ttl_days=cache_ttl_days
                 )
-                
-                # Clean up expired entries on startup
-                self.llm_cache.cleanup_expired()
-                
+                                
                 # Log cache statistics
                 stats = self.llm_cache.get_cache_stats()
-                self.logger.info(f"LLM cache initialized: {stats['valid_entries']}/{stats['total_entries']} valid entries")
+                self.logger.info(f"LLM cache initialized: {stats['total_entries']} entries")
                 self.logger.debug(f"Cache file: {cache_file}")
                 
             except Exception as e:
@@ -351,15 +346,15 @@ class LuwakAnonymizer:
             os.makedirs(cache_folder, exist_ok=True)
             self.logger.info(f"  LLM cache folder: {cache_folder}")
         
-        # Resolve manuallyRevisedTags paths relative to config file
-        if 'manuallyRevisedTags' in self.config:
-            if 'standard' in self.config['manuallyRevisedTags'] and self.config['manuallyRevisedTags']['standard']:
-                resolved_standard = self.resolve_path(self.config['manuallyRevisedTags']['standard'])
-                self.config['manuallyRevisedTags']['standard'] = resolved_standard
+        # Resolve customTags paths relative to config file
+        if 'customTags' in self.config:
+            if 'standard' in self.config['customTags'] and self.config['customTags']['standard']:
+                resolved_standard = self.resolve_path(self.config['customTags']['standard'])
+                self.config['customTags']['standard'] = resolved_standard
                 self.logger.debug(f"  Manually revised standard tags: {resolved_standard}")
-            if 'private' in self.config['manuallyRevisedTags'] and self.config['manuallyRevisedTags']['private']:
-                resolved_private = self.resolve_path(self.config['manuallyRevisedTags']['private'])
-                self.config['manuallyRevisedTags']['private'] = resolved_private
+            if 'private' in self.config['customTags'] and self.config['customTags']['private']:
+                resolved_private = self.resolve_path(self.config['customTags']['private'])
+                self.config['customTags']['private'] = resolved_private
                 self.logger.debug(f"  Manually revised private tags: {resolved_private}")
         
         # Log configuration info
@@ -458,7 +453,6 @@ class LuwakAnonymizer:
         by delegating to two main service classes:
         - PipelineCoordinator: Manages multi-worker processing pipelines
           (internally uses ProcessingPipeline, DicomProcessor, and DefaceService)
-        - MetadataExporter: Exports UID mappings, metadata, and NRRD files
         
         Args:
             None (uses all configured instance attributes)
@@ -486,7 +480,6 @@ class LuwakAnonymizer:
             - {series_folder}/image_defaced.nrrd: Defaced volume (if CT)
         """
         from pipeline_coordinator import PipelineCoordinator
-        from metadata_exporter import MetadataExporter
 
         self.logger.info("=" * 50)
         self.logger.info("Starting DICOM anonymization process...")
@@ -535,9 +528,8 @@ class LuwakAnonymizer:
         # Close the LLM cache if it was initialized
         if self.llm_cache:
             try:
-                self.llm_cache.cleanup_expired()
                 stats = self.llm_cache.get_cache_stats()
-                self.logger.info(f"LLM cache final stats: {stats['valid_entries']} valid entries")
+                self.logger.info(f"LLM cache final stats: {stats['total_entries']} entries")
                 self.llm_cache.close()
                 self.logger.debug("Closed LLM cache connection.")
             except Exception as e:

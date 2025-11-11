@@ -161,7 +161,7 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
       "default": 1095,
       "minimum": 0
     },
-    "manuallyRevisedTags": {
+    "customTags": {
       "type": "object",
       "properties": {
         "standard": {
@@ -213,7 +213,7 @@ For more details, refer to the main project README or script documentation.
 You can override the default tag templates by specifying custom CSV files for standard and private tags:
 
 ```json
-"manuallyRevisedTags": {
+"customTags": {
   "standard": "./data/custom_standard_tags.csv",
   "private": "./data/custom_private_tags.csv"
 }

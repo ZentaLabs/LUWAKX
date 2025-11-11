@@ -122,9 +122,19 @@ class TestDefacerProfile(unittest.TestCase):
         first_ds = pydicom.dcmread(dicom_files[0], stop_before_pixels=True)
         series_uid = first_ds.SeriesInstanceUID
         modality = getattr(first_ds, 'Modality', None)
+        patient_id = getattr(first_ds, 'PatientID', 'TEST_PATIENT')
+        patient_name = getattr(first_ds, 'PatientName', '')
+        patient_birthdate = getattr(first_ds, 'PatientBirthDate', '')
+        study_uid = getattr(first_ds, 'StudyInstanceUID', 'TEST_STUDY')
         
-        # Create DicomSeries object
-        series = DicomSeries(series_uid, series_uid)  # Use series_uid as folder_name for simplicity
+        # Create DicomSeries object with new constructor
+        series = DicomSeries(
+            original_patient_id=patient_id,
+            original_patient_name=str(patient_name),
+            original_patient_birthdate=str(patient_birthdate),
+            original_study_uid=study_uid,
+            original_series_uid=series_uid
+        )
         series.modality = modality
         
         # Set up separate directories for each stage (like ProcessingPipeline does)

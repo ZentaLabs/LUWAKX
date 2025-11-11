@@ -5,7 +5,6 @@ import hashlib
 import os
 import secrets
 import threading
-from datetime import datetime
 from typing import Optional, Tuple
 
 
@@ -83,6 +82,9 @@ class PatientUIDDatabase:
         Includes project_hash_root for project-specific isolation, ensuring
         the same patient gets different anonymized IDs in different projects.
         
+        Normalizes identifiers (trim whitespace, uppercase) to ensure
+        consistent hashing even with minor metadata variations.
+        
         Args:
             patient_id: Original patient ID
             patient_name: Original patient name
@@ -91,9 +93,17 @@ class PatientUIDDatabase:
         Returns:
             Hex string of SHA256 hash
         """
+        # Normalize identifiers to handle metadata variations
+        # - Strip leading/trailing whitespace
+        # - Convert to uppercase for case-insensitive matching
+        # - Replace multiple spaces with single space
+        normalized_id = ' '.join(str(patient_id).strip().upper().split())
+        normalized_name = ' '.join(str(patient_name).strip().upper().split())
+        normalized_birthdate = ' '.join(str(birthdate).strip().upper().split())
+        
         # Include project_hash_root for true project isolation
         # Same patient will have different hash (and thus different ID) in different projects
-        combined = f"{self.project_hash_root}||{patient_id}||{patient_name}||{birthdate}"
+        combined = f"{self.project_hash_root}||{normalized_id}||{normalized_name}||{normalized_birthdate}"
         return hashlib.sha256(combined.encode('utf-8')).hexdigest()
     
     def get_cached_patient_id(self, original_patient_id: str, 
@@ -202,8 +212,8 @@ class PatientUIDDatabase:
                 # First patient in this project
                 next_seq = 0
             
-            # Format with zero-padding (e.g., "00", "01", "02")
-            new_patient_id = f"{self.patient_id_prefix}{next_seq:02d}"
+            # Format with zero-padding (e.g., "000000", "000001", ...)
+            new_patient_id = f"{self.patient_id_prefix}{next_seq:06d}"
             
             # Generate cryptographically secure random token (256 bits / 32 bytes)
             random_token = secrets.token_bytes(256 // 8)

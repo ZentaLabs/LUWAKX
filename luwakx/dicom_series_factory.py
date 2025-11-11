@@ -82,7 +82,7 @@ class DicomSeriesFactory:
         1. Pre-computes patient UID mappings
         2. Groups files by Patient/Study/Series hierarchy
         3. Creates DicomSeries objects with metadata
-        4. Generates anonymized UIDs
+        4. Generates anonymized UIDs used for output paths
         5. Builds output paths with collision detection
         
         Args:

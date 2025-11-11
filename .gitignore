@@ -4,6 +4,10 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
 
 # Virtual environments
 venv/
@@ -24,7 +28,7 @@ test_input_*/
 **/output/
 test_output/
 *.tar.gz
-**/llm_cache/
+**llm_cache/
 
 # Logs and temp files
 *.log

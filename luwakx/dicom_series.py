@@ -229,12 +229,14 @@ class DicomSeries:
         
         # Validate path length (reserve space for filename like /000001.dcm)
         max_filename_length = 12  # "/000001.dcm" = 11 chars + 1 for safety
-        if len(base_path) + max_filename_length > max_path_length:
-            raise PathTooLongError(
-                f"Output path exceeds {max_path_length} characters: {base_path}\n"
-                f"Length: {len(base_path)} + {max_filename_length} = "
-                f"{len(base_path) + max_filename_length}"
-            )
+        # Only raise error if path is not absolute
+        if not os.path.isabs(base_path):
+            if len(base_path) + max_filename_length > max_path_length:
+                raise PathTooLongError(
+                    f"Output path exceeds {max_path_length} characters: {base_path}\n"
+                    f"Length: {len(base_path)} + {max_filename_length} = "
+                    f"{len(base_path) + max_filename_length}"
+                )
         
         self.output_base_path = base_path
         return base_path

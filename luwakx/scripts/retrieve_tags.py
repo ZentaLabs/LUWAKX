@@ -204,7 +204,7 @@ def rtn_safe_priv_opt(row):
     Maps disposition codes to retention options:
     - 'k' -> 'keep'
     - 'o' -> 'func:hash_increment_date'
-    - 'h' -> 'func:generate_hashuid'
+    - 'h' -> 'func:generate_hmacuid'
     - 'd' and IsInDICOMRetainSafePrivateTags -> 'keep'
     
     Args:
@@ -219,7 +219,7 @@ def rtn_safe_priv_opt(row):
     elif disposition == 'o':
         return 'func:hash_increment_date'
     elif disposition == 'h':
-        return 'func:generate_hashuid'
+        return 'func:generate_hmacuid'
     elif row['IsInDICOMRetainSafePrivateTags'] and disposition == 'd':
         return 'keep'
 
@@ -594,7 +594,7 @@ def generate_basic_profile(final_df):
         elif basic_profile == 'U':
             # Check if VR is UI for UID replacement
             if vr == 'UI':
-                df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
+                df.at[idx, 'Basic Prof.'] = 'func:generate_hmacuid'
                 
         elif basic_profile == 'D':
             replace_tag = ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR", "DS", "IS", 
@@ -603,7 +603,7 @@ def generate_basic_profile(final_df):
             if vr in ['DA', 'DT', 'TM']:
                 df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
             elif vr in ['UI']:
-                df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
+                df.at[idx, 'Basic Prof.'] = 'func:generate_hmacuid'
             elif vr in replace_tag:
                 df.at[idx, 'Basic Prof.'] = 'replace'
             elif vr in ['OB', 'OW', 'OF', 'UN']:
@@ -622,7 +622,7 @@ def generate_basic_profile(final_df):
             if vr in ['DA', 'DT', 'TM']:
                 df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
             elif basic_profile in ['X/Z/U*','X/D', 'Z/D', 'X/Z/D'] and vr == 'UI':
-                df.at[idx, 'Basic Prof.'] = 'func:generate_hashuid'
+                df.at[idx, 'Basic Prof.'] = 'func:generate_hmacuid'
             elif basic_profile in ['X/Z/U*', 'X/Z']:
                 df.at[idx, 'Basic Prof.'] = 'blank'
             elif basic_profile in ['X/D', 'Z/D', 'X/Z/D']:
@@ -632,7 +632,9 @@ def generate_basic_profile(final_df):
                     df.at[idx, 'Basic Prof.'] = 'replace'
             else:
                 df.at[idx, 'Basic Prof.'] = 'manual_review'
-    
+
+    # Set Basic Prof. to func:generate_patient_id for PatientID row (0010,0020)
+    df.loc[(df['Group'] == '0010') & (df['Element'] == '0020'), 'Basic Prof.'] = 'func:generate_patient_id'
     return df
 
 def generate_retain_uid_profile(final_df):
@@ -923,21 +925,7 @@ def create_final_file(final_df, output_csv):
     df = retain_device_id_option(df)
     df = retain_institution_id_option(df)
     df = clean_profiles(df)
-    
-    # Find Patient ID row (0010,0020) and move to beginning with special treatment
-    # This allows for custom Patient ID generation function to be set at the beginning
-    # of each anonymization recipe. This is important for consistent Patient ID generation.
-    patient_id_mask = (df['Group'] == '0010') & (df['Element'] == '0020')
-    if patient_id_mask.any():
-        # Extract the Patient ID row
-        patient_id_row = df[patient_id_mask].copy()
-        # Set Basic Prof. to func:generate_patient_id
-        patient_id_row.loc[:, 'Basic Prof.'] = 'func:generate_patient_id'
-        # Remove from current position
-        df = df[~patient_id_mask]
-        # Insert at the beginning
-        df = pd.concat([patient_id_row, df], ignore_index=True)
-    
+        
     df.to_csv(output_csv, index=False)
     print(f"Saved merged standard tags to {output_csv}")
 

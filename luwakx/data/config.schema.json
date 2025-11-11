@@ -115,7 +115,7 @@
       },
       "additionalProperties": false
     },
-    "manuallyRevisedTags": {
+    "customTags": {
       "type": "object",
       "description": "Paths to manually revised tag CSV files for standard and private tags.",
       "properties": {

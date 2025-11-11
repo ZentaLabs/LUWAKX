@@ -118,7 +118,7 @@ class MetadataExporter:
         sorted_fields = sorted(all_modified_fields)
         
         # Build CSV structure with dynamic columns
-        patient_columns = ['PatientName', 'PatientID', 'PatientBirthDate']
+        patient_columns = ['PatientName', 'PatientID_original', 'PatientID_anonymized', 'PatientBirthDate']
         fieldnames = ['original_file_path', 'anonymized_file_path'] + patient_columns
         for field in sorted_fields:
             fieldnames.extend([f'{field}_original', f'{field}_anonymized'])
@@ -170,10 +170,10 @@ class MetadataExporter:
                 
                 # Try to extract patient info from original file
                 try:
-                    ds = pydicom.dcmread(file_path, stop_before_pixels=True)
-                    row['PatientName'] = str(getattr(ds, 'PatientName', ''))
-                    row['PatientID'] = str(getattr(ds, 'PatientID', ''))
-                    row['PatientBirthDate'] = str(getattr(ds, 'PatientBirthDate', ''))
+                    row['PatientName'] = series.original_patient_name
+                    row['PatientID_original'] = series.original_patient_id
+                    row['PatientID_anonymized'] = series.anonymized_patient_id
+                    row['PatientBirthDate'] = series.original_patient_birthdate
                 except Exception as e:
                     self.logger.warning(f"Could not read patient info from {file_path}: {e}")
                 
@@ -248,7 +248,7 @@ class MetadataExporter:
             
             if not os.path.exists(nrrd_image_src) or not os.path.exists(nrrd_defaced_src):
                 self.logger.debug(
-                    f"NRRD files already moved or not created for series {series.series_uid}"
+                    f"NRRD files already moved or not created for series {series.original_series_uid}"
                 )
                 continue
             
@@ -256,7 +256,7 @@ class MetadataExporter:
                 # Get series output path structure
                 series_output_path = series.output_base_path
                 if not series_output_path:
-                    self.logger.warning(f"No output path for series {series.series_uid}")
+                    self.logger.warning(f"No output path for series {series.original_series_uid}")
                     continue
                 
                 # Calculate relative path for structure mirroring
@@ -274,7 +274,8 @@ class MetadataExporter:
                 shutil.move(nrrd_image_src, nrrd_image_dst)
                 shutil.move(nrrd_defaced_src, nrrd_defaced_dst)
                 
-                self.logger.info(f"Moved NRRD files for series {series.folder_name}")
+                series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
+                self.logger.info(f"Moved NRRD files for series {series_display}")
                 self.logger.private(f"  image.nrrd: {nrrd_image_dst}")
                 self.logger.private(f"  image_defaced.nrrd: {nrrd_defaced_dst}")
                 
@@ -283,7 +284,7 @@ class MetadataExporter:
             except Exception as e:
                 tb = traceback.extract_tb(e.__traceback__)
                 log_project_stacktrace(self.logger, e)
-                self.logger.error(f"Failed to move NRRD files for series {series.series_uid}: {e}")
+                self.logger.error(f"Failed to move NRRD files for series {series.original_series_uid}: {e}")
         
         if nrrd_count > 0:
             self.logger.info(f"Moved {nrrd_count} remaining NRRD file(s)")

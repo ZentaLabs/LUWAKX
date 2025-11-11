@@ -180,7 +180,7 @@ You can manually revise the standard and private tag templates used for anonymiz
    - For **nested tags** (sequences, e.g. VR=`SQ`), you can add or modify rows to specify how child elements should be handled.  
      - Example: For a sequence tag, add rows for each nested element with the parent tag using the following syntax for group/element column: xxxx__item0__xxxx__item1__xxxx where each xxxx represents the group/elemnt. Ex: for a child tag (cccc,dddd) with parent (aaaa,bbbb) that follows this relation `(aaaa,bbbb)__0__(cccc,dddd)` you should fill in the group column with `aaaa__0__cccc` and the element column with `bbbb__0__dddd`.
      - Note: this functionality is currently developed only for standard tags.
-   - Modify the action of the profile column desired with `keep`, `remove`, `blank`, `replace` to replace with dummy value based on vr -- you must fill in the vr column, if it is a nested tag specify only the vr of the child tag, `func:generate_hashuid` if the tag requires UID generation, `func:set_fixed_datetime` if the tag has a vr =DA,DT and you want to apply a dummy value or `func:hash_increment_date` if you want to apply a date-shift, `func:clean_descriptors_with_llm` if the tag is a text that can contain PHI.
+   - Modify the action of the profile column desired with `keep`, `remove`, `blank`, `replace` to replace with dummy value based on vr -- you must fill in the vr column, if it is a nested tag specify only the vr of the child tag, `func:generate_hmacuid` if the tag requires UID generation, `func:set_fixed_datetime` if the tag has a vr =DA,DT and you want to apply a dummy value or `func:hash_increment_date` if you want to apply a date-shift, `func:clean_descriptors_with_llm` if the tag is a text that can contain PHI.
 
 3. **Save your revised files**  
    - Save the edited CSVs to a location of your choice, e.g.:
@@ -190,7 +190,7 @@ You can manually revise the standard and private tag templates used for anonymiz
 4. **Update your config to use the revised files**  
    Add the following to your config JSON:
    ```json
-   "manuallyRevisedTags": {
+   "customTags": {
      "standard": "./data/custom_standard_tags.csv",
      "private": "./data/custom_private_tags.csv"
    }

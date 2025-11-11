@@ -72,16 +72,18 @@ class DefaceService:
             self.logger.error("SimpleITK is required for defacing but not installed")
             raise
         
-        self.logger.info(f"DefaceService: Defacing series {series.folder_name}")
+        series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
+        self.logger.info(f"DefaceService: Defacing series {series_display}")
         
         # Get organized files for this series
         organized_files = series.get_organized_files()
         if not organized_files:
-            self.logger.warning(f"No organized files found for series {series.series_uid}")
+            self.logger.warning(f"No organized files found for series {series.original_series_uid}")
             return self._copy_without_defacing(series)
         
         # Create worker-specific temp directory for NRRD processing
-        series_temp_dir = os.path.join(series.defaced_base_path, series.folder_name)
+        # Note: defaced_base_path already contains the complete UID hierarchy
+        series_temp_dir = series.defaced_base_path
         os.makedirs(series_temp_dir, exist_ok=True)
         
         try:
@@ -114,7 +116,7 @@ class DefaceService:
             body_part = None
         
         self.logger.private(
-            f"Defacing series {series.series_uid} with modality {modality} "
+            f"Defacing series {series.original_series_uid} with modality {modality} "
             f"and body part {body_part}"
         )
         
@@ -125,7 +127,7 @@ class DefaceService:
             # Use GDCM to get properly sorted file names for this specific series
             # This handles ImagePositionPatient sorting correctly
             series_folder = os.path.dirname(organized_files[0])
-            reader.SetFileNames(reader.GetGDCMSeriesFileNames(series_folder, series.series_uid))
+            reader.SetFileNames(reader.GetGDCMSeriesFileNames(series_folder, series.original_series_uid))
             image = reader.Execute()
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
@@ -143,7 +145,6 @@ class DefaceService:
                 self._series_counter += 1
             else:
                 # Strategy 2: Run ML face detection
-                self.logger.info("Running ML face detection model")
                 image_face_segmentation = defacer.prepare_face_mask(image, modality)
                 
                 # Clean up GPU memory immediately after ML inference
@@ -214,8 +215,9 @@ class DefaceService:
                 self.logger.error(f"Failed to process DICOM slice {i}: {e}")
                 continue
         
+        series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
         self.logger.info(
-            f"Defacing completed for series {series.folder_name}: "
+            f"Defacing completed for series {series_display}: "
             f"{len(defaced_dicom_files)} files processed"
         )
         
@@ -235,10 +237,12 @@ class DefaceService:
         Returns:
             dict: Result dictionary with empty NRRD paths
         """
-        self.logger.info(f"Copying files without defacing for series {series.folder_name}")
+        series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
+        self.logger.info(f"Copying files without defacing for series {series_display}")
         
         organized_files = series.get_organized_files()
-        defaced_folder = os.path.join(series.defaced_base_path, series.folder_name)
+        # Note: defaced_base_path already contains the complete UID hierarchy
+        defaced_folder = series.defaced_base_path
         os.makedirs(defaced_folder, exist_ok=True)
         
         # Build mapping from organized_path to DicomFile for efficient lookup

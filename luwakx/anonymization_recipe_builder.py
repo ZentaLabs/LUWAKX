@@ -24,7 +24,7 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
     Args:
         recipes_to_process: List of recipe names to process (e.g., ['basic_profile', 'retain_uid'])
         recipe_folder: Path to the folder where the recipe file will be saved
-        config: Optional configuration dictionary containing manuallyRevisedTags paths
+        config: Optional configuration dictionary containing customTags paths
     
     Returns:
         str: Path to the generated recipe file, or None if generation fails
@@ -37,8 +37,8 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
     input_standard_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "standard_tags_template.csv")
     input_private_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "private_tags_template.csv")
 
-    if config and 'manuallyRevisedTags' in config:
-        manually_revised = config['manuallyRevisedTags']
+    if config and 'customTags' in config:
+        manually_revised = config['customTags']
         
         # Use custom standard tags path if provided
         if 'standard' in manually_revised and manually_revised['standard']:
@@ -153,8 +153,8 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                         line = f"REPLACE {tag} 000D\n"
                     elif vr in ['SQ']:
                         line = f"#REPLACE {tag} NEED to BE REVIEWED\n"
-                elif final_action == 'func:generate_hashuid':
-                    line = f"REPLACE {tag} func:generate_hashuid\n"
+                elif final_action == 'func:generate_hmacuid':
+                    line = f"REPLACE {tag} func:generate_hmacuid\n"
                 elif final_action == 'func:set_fixed_datetime':
                     line = f"REPLACE {tag} func:set_fixed_datetime\n"
                 elif final_action == 'func:hash_increment_date':
@@ -204,8 +204,8 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     if action.lower() == 'keep': 
                         # For safe private tags, we keep them
                         line = f"KEEP ({group},\"{private_creator}\",{element})\n"
-                    elif action.lower() == 'func:generate_hashuid':
-                        line = f"REPLACE ({group},\"{private_creator}\",{element}) func:generate_hashuid\n"
+                    elif action.lower() == 'func:generate_hmacuid':
+                        line = f"REPLACE ({group},\"{private_creator}\",{element}) func:generate_hmacuid\n"
                     elif action.lower() == 'func:hash_increment_date':
                         # TODO: Check if it is better to remove these in case the retain long modified dates is not selected
                         line = f"JITTER ({group},\"{private_creator}\",{element}) func:hash_increment_date\n"
@@ -234,8 +234,8 @@ def _determine_final_action(actions, vr):
         return 'keep'
     elif 'func:hash_increment_date' in actions:
         return 'func:hash_increment_date'
-    elif 'func:generate_hashuid' in actions:
-        return 'func:generate_hashuid'
+    elif 'func:generate_hmacuid' in actions:
+        return 'func:generate_hmacuid'
     elif 'func:clean_descriptors_with_llm' in actions:
         if vr == 'SQ':
             # For sequences, we need manual review
@@ -283,11 +283,16 @@ def _collect_actions_for_row(row, recipes_to_process, recipe_column_map):
 
 def set_values_to_zero(vr):
     """
-    Return the correct zero value for the given DICOM VR type.
-    Based on DICOM PS3.5 Section 6.2, Table 6.2-1.
+    Return the correct zero value for the given DICOM VR type 
+    defined at DICOM PS3.5 2025d Section 6.2, Table 6.2-1.
+    https://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_6.2.html
+    If more numerical VRs need to be supported in the future, they can be added here.
+    Make sure that this stays updated if more tags are addedd to DICOM PS3.15 Table E.1-1.
     """
+    logger = get_logger("set_values_to_zero")
+
     # Text VRs - return string zeros
-    if vr in ['DS', 'IS']:  # Decimal String
+    if vr in ['DS', 'IS']:  # Decimal/Integer String
         return "0"
     # Binary VRs - return binary zeros
     elif vr in ['OD', 'FD']:  # 64-bit IEEE 754 double
@@ -307,12 +312,24 @@ def set_values_to_zero(vr):
     elif vr == 'US':  # 16-bit unsigned int
         return struct.pack('<H', 0)
     else:
+        logger.warning(f"VR {vr} not recognized for zero value, returning empty bytes")
         return b''  # fallback: empty bytes
     
 def set_empty_value(vr):
+    """
+    Return the correct empty value for the given DICOM VR type 
+    defined at DICOM PS3.5 2025d Section 6.2, Table 6.2-1.
+    https://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_6.2.html
+    If more numerical VRs need to be supported in the future, they can be added here.
+    Make sure that this stays updated if more tags are addedd to DICOM PS3.15 Table E.1-1.
+    """
+    logger = get_logger("set_empty_value")
     # Text VRs
     if vr in ['DS', 'IS']:
         return ""
     # Binary VRs
     elif vr in ['OD', 'OL', 'OV', 'SV', 'UV', 'FD', 'FL', 'SS', 'US', 'SL', 'UL']:
         return b''
+    else:
+        logger.warning(f"VR {vr} not recognized for empty value, returning empty string")
+        return ""  # fallback: empty string

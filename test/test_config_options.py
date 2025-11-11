@@ -86,20 +86,20 @@ class TestConfigOptions(unittest.TestCase):
         self.assertEqual(anonymizer.config["projectHashRoot"], "mytestroot")
 
     def test_manually_revised_tags_standard(self):
-        config_path = self.make_config({"manuallyRevisedTags": {"standard": "./data/custom_standard.csv"}})
+        config_path = self.make_config({"customTags": {"standard": "./data/custom_standard.csv"}})
         anonymizer = LuwakAnonymizer(config_path)
         expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "data/custom_standard.csv"))
-        self.assertEqual(anonymizer.config["manuallyRevisedTags"]["standard"], expected)
+        self.assertEqual(anonymizer.config["customTags"]["standard"], expected)
 
     def test_manually_revised_tags_private(self):
-        config_path = self.make_config({"manuallyRevisedTags": {"private": "./data/custom_private.csv"}})
+        config_path = self.make_config({"customTags": {"private": "./data/custom_private.csv"}})
         anonymizer = LuwakAnonymizer(config_path)
         expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "data/custom_private.csv"))
-        self.assertEqual(anonymizer.config["manuallyRevisedTags"]["private"], expected)
+        self.assertEqual(anonymizer.config["customTags"]["private"], expected)
 
     def test_manually_revised_tags_both(self):
         config_path = self.make_config({
-            "manuallyRevisedTags": {
+            "customTags": {
                 "standard": "./data/custom_standard.csv",
                 "private": "./data/custom_private.csv"
             }
@@ -107,8 +107,8 @@ class TestConfigOptions(unittest.TestCase):
         anonymizer = LuwakAnonymizer(config_path)
         expected_standard = os.path.abspath(os.path.join(os.path.dirname(config_path), "data/custom_standard.csv"))
         expected_private = os.path.abspath(os.path.join(os.path.dirname(config_path), "data/custom_private.csv"))
-        self.assertEqual(anonymizer.config["manuallyRevisedTags"]["standard"], expected_standard)
-        self.assertEqual(anonymizer.config["manuallyRevisedTags"]["private"], expected_private)
+        self.assertEqual(anonymizer.config["customTags"]["standard"], expected_standard)
+        self.assertEqual(anonymizer.config["customTags"]["private"], expected_private)
 
     def test_llm_cache_folder(self):
         # Include clean_descriptors recipe so llmCacheFolder is resolved

@@ -28,16 +28,14 @@ class LLMResultCache:
     on single or multiple nodes (with shared filesystem).
     """
     
-    def __init__(self, cache_file_path, cache_ttl_days=30):
+    def __init__(self, cache_file_path):
         """
         Initialize the LLM result cache.
         
         Args:
             cache_file_path (str): Path to SQLite cache file
-            cache_ttl_days (int): Cache TTL in days (default: 30)
         """
         self.cache_file_path = cache_file_path
-        self.cache_ttl_days = cache_ttl_days
         self.logger = get_logger('llm_cache')
         
         # Thread lock for write operations (serializes writes across threads)
@@ -112,7 +110,7 @@ class LLMResultCache:
     
     def get_cached_result(self, input_text, model):
         """
-        Retrieve cached LLM result if available and not expired (read-only).
+        Retrieve cached LLM result if available (read-only).
         
         This method performs a read-only lookup and does NOT create
         new entries. Thread-safe for concurrent reads.
@@ -122,7 +120,7 @@ class LLMResultCache:
             model (str): LLM model name
             
         Returns:
-            int or None: Cached PHI result (0/1) or None if not cached/expired
+            int or None: Cached PHI result (0/1) or None if not cached
         """
         try:
             cache_key = self._generate_cache_key(input_text, model)
@@ -130,13 +128,11 @@ class LLMResultCache:
             # Read from database (no lock needed for reads in WAL mode)
             cursor = self.conn.cursor()
             
-            # Query with expiration check
             cursor.execute("""
                 SELECT phi_result 
                 FROM llm_phi_cache 
-                WHERE cache_key = ? 
-                  AND datetime(created_at, '+{} days') > datetime('now')
-            """.format(self.cache_ttl_days), (cache_key,))
+                WHERE cache_key = ?
+            """, (cache_key,))
             
             result = cursor.fetchone()
             if result:
@@ -182,27 +178,6 @@ class LLMResultCache:
         except Exception as e:
             self.logger.warning(f"Error storing to LLM cache: {e}")
     
-    def cleanup_expired(self):
-        """Remove expired entries from cache."""
-        try:
-            # Acquire write lock for cleanup operation
-            with self._write_lock:
-                cursor = self.conn.cursor()
-                
-                cursor.execute("""
-                    DELETE FROM llm_phi_cache 
-                    WHERE datetime(created_at, '+{} days') <= datetime('now')
-                """.format(self.cache_ttl_days))
-                
-                deleted_count = cursor.rowcount
-                self.conn.commit()
-                
-                if deleted_count > 0:
-                    self.logger.info(f"Cleaned up {deleted_count} expired cache entries")
-                
-        except Exception as e:
-            self.logger.warning(f"Error cleaning up LLM cache: {e}")
-    
     def get_cache_stats(self):
         """Get cache statistics."""
         try:
@@ -211,16 +186,14 @@ class LLMResultCache:
             cursor.execute("""
                 SELECT 
                     COUNT(*) as total_entries,
-                    COUNT(CASE WHEN datetime(created_at, '+{} days') > datetime('now') THEN 1 END) as valid_entries,
                     MAX(created_at) as latest_entry
                 FROM llm_phi_cache
-            """.format(self.cache_ttl_days))
+            """)
             
             result = cursor.fetchone()
             return {
                 'total_entries': result[0] or 0,
-                'valid_entries': result[1] or 0,
-                'latest_entry': result[2],
+                'latest_entry': result[1],
                 'cache_file': self.cache_file_path
             }
             

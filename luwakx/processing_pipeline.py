@@ -137,10 +137,10 @@ class ProcessingPipeline:
         Raises:
             ValueError: If series with same UID already exists
         """
-        if series.series_uid in self.series_collection:
-            raise ValueError(f"Series with UID '{series.series_uid}' already exists in pipeline")
+        if series.original_series_uid in self.series_collection:
+            raise ValueError(f"Series with UID '{series.original_series_uid}' already exists in pipeline")
         
-        self.series_collection[series.series_uid] = series
+        self.series_collection[series.original_series_uid] = series
         
         # Update base paths for the series (organized and defaced use UID hierarchy)
         series.update_base_paths(
@@ -192,9 +192,11 @@ class ProcessingPipeline:
         for series_uid, series in self.series_collection.items():
             try:
                 if self.logger:
+                    # Use output_base_path basename for logging (contains UID hierarchy)
+                    series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
                     self.logger.info(
                         f"Worker {self.worker_id}: Processing series "
-                        f"{completed + 1}/{len(self.series_collection)}: {series.folder_name}"
+                        f"{completed + 1}/{len(self.series_collection)}: {series_display}"
                     )
                 
                 # Process this series through ALL stages
@@ -202,13 +204,14 @@ class ProcessingPipeline:
                 
                 completed += 1
                 if self.logger:
-                    self.logger.info(f"✓ Completed: {series.folder_name}")
+                    self.logger.info(f"✓ Completed: {series_display}")
                 
             except Exception as e:
+                series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
                 failed += 1
                 series.processing_status = ProcessingStatus.FAILED
                 if self.logger:
-                    self.logger.error(f"✗ Failed: {series.folder_name}: {e}")
+                    self.logger.error(f"✗ Failed: {series_display}: {e}")
                 # Continue with next series
         
         if self.logger:
@@ -244,6 +247,10 @@ class ProcessingPipeline:
         # keeping memory usage constant regardless of dataset size
         self._export_series_results_incremental(series)
         
+        # Stage 5: Clear series data from memory after export completes
+        # This frees current_file_mappings and self.series reference
+        self.processor.clear_series_data(series)
+        
         # Clean up LM Studio worker processes after series is complete
         # The LLM inference (recipe generation) creates worker processes that
         # accumulate GPU memory. Clean them up after each series to prevent OOM.
@@ -257,26 +264,20 @@ class ProcessingPipeline:
         
         Args:
             series: DicomSeries to organize
+        
+        Note:
+            organized_base_path is already set by add_series() -> update_base_paths()
+            output_base_path is already set by DicomSeriesFactory with collision detection
         """
-        # Create organized directory if it doesn't exist
-        if not os.path.exists(self.organized_temp_dir):
-            os.makedirs(self.organized_temp_dir, exist_ok=True)
+        # Create organized directory structure (path already set in add_series)
+        os.makedirs(series.organized_base_path, exist_ok=True)
         
-        # Create series folder in temp organized directory
-        series_folder = os.path.join(self.organized_temp_dir, series.folder_name)
-        os.makedirs(series_folder, exist_ok=True)
-        
-        # Update series base path for organized stage
-        series.organized_base_path = series_folder
-        
-        # Create final output directory structure for this series
-        # This ensures the directory exists before anonymization and export stages
-        series.output_base_path = os.path.join(self.output_directory, series.folder_name)
+        # Create final output directory structure (path already set by DicomSeriesFactory)
         os.makedirs(series.output_base_path, exist_ok=True)
         
         # Copy files and update paths
         for dicom_file in series.files:
-            organized_path = os.path.join(series_folder, dicom_file.filename)
+            organized_path = os.path.join(series.organized_base_path, dicom_file.filename)
             
             try:
                 shutil.copy2(dicom_file.original_path, organized_path)
@@ -296,16 +297,16 @@ class ProcessingPipeline:
         
         Args:
             series: DicomSeries to deface
+        
+        Note:
+            defaced_base_path is already set by add_series() -> update_base_paths()
         """
         if self.logger:
-            self.logger.info(f"Defacing series: {series.folder_name}")
+            series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
+            self.logger.info(f"Defacing series: {series_display}")
         
-        # Create defaced directory if it doesn't exist
-        if not os.path.exists(self.defaced_temp_dir):
-            os.makedirs(self.defaced_temp_dir, exist_ok=True)
-        
-        # Update series defaced base path
-        series.defaced_base_path = os.path.join(self.defaced_temp_dir, series.folder_name)
+        # Create defaced directory structure (path already set in add_series)
+        os.makedirs(series.defaced_base_path, exist_ok=True)
         
         # Call deface service
         deface_result = self.deface_service.process_series(series)
@@ -334,8 +335,9 @@ class ProcessingPipeline:
         
         if not os.path.exists(nrrd_image_src) or not os.path.exists(nrrd_defaced_src):
             if self.logger:
+                series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
                 self.logger.warning(
-                    f"NRRD files not found for series {series.folder_name}: "
+                    f"NRRD files not found for series {series_display}: "
                     f"image={nrrd_image_src}, defaced={nrrd_defaced_src}"
                 )
             return
@@ -362,13 +364,15 @@ class ProcessingPipeline:
             series.metadata['nrrd_defaced_path'] = nrrd_defaced_dst
             
             if self.logger:
-                self.logger.info(f"Moved NRRD files for series {series.folder_name}")
+                series_display = os.path.basename(series.output_base_path) if series.output_base_path else series.original_series_uid
+                self.logger.info(f"Moved NRRD files for series {series_display}")
                 self.logger.private(f"  image.nrrd → {nrrd_image_dst}")
                 self.logger.private(f"  image_defaced.nrrd → {nrrd_defaced_dst}")
         except Exception as e:
             if self.logger:
+                series_display = os.path.basename(series.output_base_path) if series.output_base_path else series.original_series_uid
                 self.logger.warning(
-                    f"Failed to move NRRD files for series {series.folder_name}: {e}"
+                    f"Failed to move NRRD files for series {series_display}: {e}"
                 )
     
     def _anonymize_series(self, series: DicomSeries) -> None:
@@ -376,14 +380,16 @@ class ProcessingPipeline:
         
         Args:
             series: DicomSeries to anonymize
+        
+        Note:
+            output_base_path is already set by DicomSeriesFactory with collision detection.
+            No need to rebuild it here.
         """
         if self.logger:
-            self.logger.info(f"Anonymizing series: {series.folder_name}")
+            series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
+            self.logger.debug(f"Anonymizing {series_display}")
         
-        # Update series output base path
-        series.output_base_path = os.path.join(self.output_directory, series.folder_name)
-        
-        # Call processor with recipe
+        # Call processor with recipe (output_base_path already set by DicomSeriesFactory)
         self.processor.process_series(series, self.recipe)
         
         series.processing_status = ProcessingStatus.ANONYMIZED
@@ -405,6 +411,8 @@ class ProcessingPipeline:
         if series.modality and series.modality.upper() == "CT":
             return True
         
+        series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
+        self.logger.info(f"Skipping defacing for non-CT modality: {series_display}")
         return False
         
     def process_defacing(self) -> None:
@@ -562,8 +570,9 @@ class ProcessingPipeline:
             series: DicomSeries that was just processed
         """
         if self.logger:
+            series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
             self.logger.debug(
-                f"Worker {self.worker_id}: Exporting results for series {series.folder_name}"
+                f"Worker {self.worker_id}: Exporting results for series {series_display}"
             )
         
         # Get series-specific UID mappings from processor (file-based structure)
@@ -603,9 +612,6 @@ class ProcessingPipeline:
                     [metadata_dict]  # Wrap in list since append expects a list
                 )
         
-        # Clear memory for this series
-        self.processor.clear_series_data(series)
-        
     def get_processing_summary(self) -> Dict[str, Any]:
         """Get summary of processing status for all series.
         
@@ -628,37 +634,3 @@ class ProcessingPipeline:
             'status_breakdown': {str(k): v for k, v in status_counts.items()},
             'output_directory': self.output_directory
         }
-    
-    @classmethod
-    def create_from_dicom_files(cls, dicom_files: List[str], output_directory: str, 
-                               config: Dict[str, Any], logger=None) -> 'ProcessingPipeline':
-        """Factory method to create a ProcessingPipeline from a list of DICOM files.
-        
-        DEPRECATED: Use PipelineCoordinator.create_from_dicom_files() instead
-        for better parallelization support.
-        
-        This method is kept for backward compatibility only.
-        
-        Args:
-            dicom_files: List of DICOM file paths
-            output_directory: Output directory for processed files
-            config: Configuration dictionary
-            logger: Logger instance (optional)
-            
-        Returns:
-            ProcessingPipeline: Initialized pipeline with all series and files
-        """
-        if logger:
-            logger.warning(
-                "ProcessingPipeline.create_from_dicom_files() is deprecated. "
-                "Use PipelineCoordinator.create_from_dicom_files() instead."
-            )
-        
-        # Use coordinator with single worker for backward compatibility
-        from pipeline_coordinator import PipelineCoordinator
-        coordinator = PipelineCoordinator.create_from_dicom_files(
-            dicom_files, output_directory, config, logger, num_workers=1
-        )
-        
-        # Return the single pipeline instance
-        return coordinator.pipelines[0] if coordinator.pipelines else None
