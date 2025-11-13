@@ -177,46 +177,30 @@ class PipelineCoordinator:
         }
     
     def finalize_exports(self, private_folder: str) -> None:
-        """Concatenate all worker export files into final consolidated files.
+        """Finalize exports after processing completes.
         
-        This method implements streaming concatenation of worker-specific temp files
-        into final CSV and Parquet files, enabling memory-efficient processing of
-        large datasets.
+        With direct file writing (single-worker mode), exports are already
+        complete and no concatenation is needed. This method is kept for
+        compatibility and logs completion.
         
         Args:
-            private_folder: Path to private mapping folder containing temp exports
+            private_folder: Path to private mapping folder containing exports
         """
-        import glob
-        import shutil
+        self.logger.info("Export finalization: Files already written directly during processing")
         
-        self.logger.info("Finalizing exports: Concatenating worker files...")
+        # Verify final files exist
+        uid_mappings_path = os.path.join(private_folder, 'uid_mappings.csv')
+        metadata_path = os.path.join(private_folder, 'metadata.parquet')
         
-        temp_dir = os.path.join(private_folder, '.temp_worker_exports')
+        if os.path.exists(uid_mappings_path):
+            self.logger.info(f"✓ UID mappings available: {uid_mappings_path}")
+        else:
+            self.logger.warning(f"✗ UID mappings file not found: {uid_mappings_path}")
         
-        if not os.path.exists(temp_dir):
-            self.logger.warning(f"Temp export directory not found: {temp_dir}")
-            return
-        
-        # Concatenate UID mappings (CSV)
-        uid_mapping_files = sorted(glob.glob(f'{temp_dir}/worker_*_uid_mappings.csv'))
-        if uid_mapping_files:
-            final_mappings = os.path.join(private_folder, 'uid_mappings.csv')
-            self._concatenate_csv_files(uid_mapping_files, final_mappings)
-            self.logger.info(f"Created consolidated UID mappings: {final_mappings}")
-        
-        # Concatenate metadata (Parquet)
-        metadata_files = sorted(glob.glob(f'{temp_dir}/worker_*_metadata.parquet'))
-        if metadata_files:
-            final_metadata = os.path.join(private_folder, 'metadata.parquet')
-            self._concatenate_parquet_files(metadata_files, final_metadata)
-            self.logger.info(f"Created consolidated metadata: {final_metadata}")
-        
-        # Clean up temp directory
-        try:
-            shutil.rmtree(temp_dir)
-            self.logger.debug(f"Removed temp export directory: {temp_dir}")
-        except Exception as e:
-            self.logger.warning(f"Could not remove temp directory {temp_dir}: {e}")
+        if os.path.exists(metadata_path):
+            self.logger.info(f"✓ Metadata available: {metadata_path}")
+        else:
+            self.logger.warning(f"✗ Metadata file not found: {metadata_path}")
     
     def _concatenate_csv_files(self, input_files: List[str], output_file: str) -> None:
         """Concatenate multiple CSV files into one (streaming).

@@ -706,18 +706,31 @@ class TestAnonymizeScript(unittest.TestCase):
                 })()
             })()
 
+            # Create mock field for PatientName tag (0010,0010)
+            mock_patient_name_field = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'PN',
+                    'tag': pydicom.tag.Tag(0x0010, 0x0010),
+                    'keyword': 'PatientName',
+                    'value': str(getattr(original_ds, 'PatientName', ''))
+                })()
+            })()
+
             # Test patient ID generation - first call should create new ID
             self.logger.info(f"Testing patient ID generation for PatientID: {original_ds.PatientID}")
             patient_id_1 = processor.generate_patient_id("PatientID", "func:generate_patient_id", mock_patient_id_field, original_ds)
-            
+            patient_name_1 = processor.generate_patient_id("PatientName", "func:generate_patient_id", mock_patient_name_field, original_ds)
             # Verify format: should start with prefix and end with digits
             self.assertTrue(patient_id_1.startswith("TestPatient"), f"Patient ID should start with 'TestPatient', got '{patient_id_1}'")
             self.assertTrue(patient_id_1[11:].isdigit(), f"Patient ID should end with digits, got '{patient_id_1}'")
-            self.logger.info(f"✓ Generated patient ID: {patient_id_1}")
+            self.assertEqual(patient_id_1, patient_name_1, f"Patient ID and Patient Name should be equal: {patient_id_1} != {patient_name_1}")
+            self.logger.info(f"✓ Generated patient ID and patient name: {patient_id_1} and {patient_name_1}")
             
             # Test patient ID generation - second call with same patient should return same ID
             patient_id_2 = processor.generate_patient_id("PatientID", "func:generate_patient_id", mock_patient_id_field, original_ds)
             self.assertEqual(patient_id_1, patient_id_2, f"Patient ID should be consistent: {patient_id_1} != {patient_id_2}")
+            patient_name_2 = processor.generate_patient_id("PatientName", "func:generate_patient_id", mock_patient_name_field, original_ds) 
+            self.assertEqual(patient_name_1, patient_name_2, f"Patient Name should be consistent: {patient_name_1} != {patient_name_2}")
             self.logger.info(f"✓ Patient ID consistent on second call: {patient_id_2}")
             
             # Test with different patient - should generate different ID
@@ -740,8 +753,19 @@ class TestAnonymizeScript(unittest.TestCase):
                     'value': modified_ds.PatientID
                 })()
             })()
+
+            mock_different_patient_name_field = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'PN',
+                    'tag': pydicom.tag.Tag(0x0010, 0x0010),
+                    'keyword': 'PatientName',
+                    'value': str(getattr(modified_ds, 'PatientName', ''))
+                })()
+            })()
             
             patient_id_3 = processor.generate_patient_id("PatientID", "func:generate_patient_id", mock_different_patient_field, modified_ds)
+            patient_name_3 = processor.generate_patient_id("PatientName", "func:generate_patient_id", mock_different_patient_name_field, modified_ds)
+            self.assertEqual(patient_id_3, patient_name_3, f"Patient ID and Patient Name should be equal for different patient: {patient_id_3} != {patient_name_3}")
             self.assertNotEqual(patient_id_1, patient_id_3, f"Different patients should get different IDs: {patient_id_1} == {patient_id_3}")
             self.assertTrue(patient_id_3.startswith("TestPatient"), f"Patient ID should start with 'TestPatient', got '{patient_id_3}'")
             self.logger.info(f"✓ Different patient gets different ID: {patient_id_3}")
@@ -787,6 +811,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 self.assertIsNotNone(output_file, f"Anonymized file {file} not found in output directory")
                 anonymized_ds = pydicom.dcmread(output_file)
                 anonymized_patient_id = anonymized_ds.PatientID
+                anonymized_patient_name = anonymized_ds.PatientName
                 
                 # Verify patient ID was changed
                 self.assertNotEqual(original_patient_id, anonymized_patient_id, 
@@ -797,6 +822,8 @@ class TestAnonymizeScript(unittest.TestCase):
                     f"Patient ID should start with 'Zenta', got '{anonymized_patient_id}' in file {file}")
                 self.assertTrue(anonymized_patient_id[5:].isdigit(), 
                     f"Patient ID should end with digits, got '{anonymized_patient_id}' in file {file}")
+                self.assertTrue(anonymized_patient_id == str(anonymized_patient_name),
+                    f"Patient ID and Patient Name should be equal: '{anonymized_patient_id}' != '{anonymized_patient_name}' in file {file}")
                 
                 # Check consistency: same original patient should get same anonymized ID
                 if original_patient_id in patient_id_mapping:

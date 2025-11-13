@@ -70,7 +70,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0008,2112,Source Image Sequence,SQ,,blank,keep,,,,,,,,,"(0008,2112)",@process()
 0008,3010,Irradiation Event UID,UI,,func:generate_hmacuid,keep,,,,,,,,,"(0008,3010)","@hashuid(@UIDROOT,this)"
 0008,4000,Identifying Comments,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0008,4000)",@remove()
-0010,0010,Patient's Name,PN,,blank,,,,,,,,,,"(0010,0010)","LOOKUP(PatientID,ptid)"
+0010,0010,Patient's Name,PN,,func:generate_patient_id,,,,,,,,,,"(0010,0010)","LOOKUP(PatientID,ptid)"
 0010,0011,Person Names to Use Sequence,SQ,,remove,,,,,,,,,,,
 0010,0012,Name to Use,LT,,remove,,,,,,,,,,,
 0010,0013,Name to Use Comment,UT,,remove,,,,,,,,,,,

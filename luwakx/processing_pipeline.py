@@ -85,19 +85,12 @@ class ProcessingPipeline:
         self._deface_service = None
         self._exporter = None
         
-        # Streaming export: Setup temp files for incremental export
+        # Direct export to final files (for single-worker sequential processing)
+        # Files are written incrementally after each series for immediate availability
         private_folder = config.get('outputPrivateMappingFolder')
-        self.temp_export_dir = os.path.join(private_folder, '.temp_worker_exports')
-        os.makedirs(self.temp_export_dir, exist_ok=True)
         
-        self.uid_mappings_file = os.path.join(
-            self.temp_export_dir,
-            f'worker_{worker_id}_uid_mappings.csv'
-        )
-        self.metadata_file = os.path.join(
-            self.temp_export_dir,
-            f'worker_{worker_id}_metadata.parquet'
-        )
+        self.uid_mappings_file = os.path.join(private_folder, 'uid_mappings.csv')
+        self.metadata_file = os.path.join(private_folder, 'metadata.parquet')
     
     @property
     def processor(self):
@@ -559,10 +552,14 @@ class ProcessingPipeline:
     # ============================================================================
     
     def _export_series_results_incremental(self, series: DicomSeries) -> None:
-        """Export results for one series immediately (streaming mode).
+        """Export results for one series immediately to final files (streaming mode).
         
-        This method writes series results to worker-specific temp files immediately
-        after processing, keeping memory usage constant regardless of dataset size.
+        This method writes series results directly to final CSV and Parquet files
+        immediately after processing, keeping memory usage constant regardless of
+        dataset size. Files are available for inspection during processing.
+        
+        Note: Currently designed for single-worker sequential processing.
+        For parallel processing, file locking mechanisms would be required.
         
         Delegates to MetadataExporter for consistent export logic.
         
@@ -582,7 +579,7 @@ class ProcessingPipeline:
         input_folder = self.config.get('inputFolder', '')
         output_folder = self.config.get('outputDeidentifiedFolder', self.output_directory)
         
-        # Append to worker's CSV file using MetadataExporter
+        # Append directly to final CSV file using MetadataExporter
         # Pass series object to use DicomFile relative path methods
         self.exporter.append_series_uid_mappings(
             self.uid_mappings_file,
@@ -606,7 +603,7 @@ class ProcessingPipeline:
             )
             
             if metadata_dict:
-                # Append to worker's Parquet file (one row per series)
+                # Append directly to final Parquet file (one row per series)
                 self.exporter.append_series_metadata(
                     self.metadata_file,
                     [metadata_dict]  # Wrap in list since append expects a list

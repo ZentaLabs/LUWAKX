@@ -633,8 +633,8 @@ def generate_basic_profile(final_df):
             else:
                 df.at[idx, 'Basic Prof.'] = 'manual_review'
 
-    # Set Basic Prof. to func:generate_patient_id for PatientID row (0010,0020)
-    df.loc[(df['Group'] == '0010') & (df['Element'] == '0020'), 'Basic Prof.'] = 'func:generate_patient_id'
+    # Set Basic Prof. to func:generate_patient_id for PatientID row (0010,0020)and PatientName (0010,0010)
+    df.loc[(df['Group'] == '0010') & (df['Element'].isin(['0010', '0020'])), 'Basic Prof.'] = 'func:generate_patient_id'
     return df
 
 def generate_retain_uid_profile(final_df):

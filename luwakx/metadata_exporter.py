@@ -118,7 +118,7 @@ class MetadataExporter:
         sorted_fields = sorted(all_modified_fields)
         
         # Build CSV structure with dynamic columns
-        patient_columns = ['PatientName', 'PatientID_original', 'PatientID_anonymized', 'PatientBirthDate']
+        patient_columns = ['PatientName_original', 'PatientName_anonymized', 'PatientID_original', 'PatientID_anonymized', 'PatientBirthDate']
         fieldnames = ['original_file_path', 'anonymized_file_path'] + patient_columns
         for field in sorted_fields:
             fieldnames.extend([f'{field}_original', f'{field}_anonymized'])
@@ -170,7 +170,8 @@ class MetadataExporter:
                 
                 # Try to extract patient info from original file
                 try:
-                    row['PatientName'] = series.original_patient_name
+                    row['PatientName_original'] = series.original_patient_name
+                    row['PatientName_anonymized'] = series.anonymized_patient_id
                     row['PatientID_original'] = series.original_patient_id
                     row['PatientID_anonymized'] = series.anonymized_patient_id
                     row['PatientBirthDate'] = series.original_patient_birthdate

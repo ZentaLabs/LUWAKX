@@ -513,9 +513,8 @@ class LuwakAnonymizer:
         self.logger.info("Executing processing pipelines...")
         coordinator.run_all_pipelines_sequential()
         
-        # Finalize exports: Concatenate worker files into final files
-        # This uses streaming concatenation, keeping memory usage constant
-        self.logger.info("Finalizing exports: Concatenating worker results...")
+        # Finalize exports: Verify files were written correctly
+        self.logger.info("Finalizing exports: Verifying export files...")
         coordinator.finalize_exports(private_folder)
                 
         self.logger.info("=" * 50)
