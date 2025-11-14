@@ -179,6 +179,14 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
       "type": "string",
       "description": "Path to folder for LLM cache files."
     },
+    "patientUidDatabasePath": {
+      "type": "string",
+      "description": "Path to persistent patient UID database file (relative to config file location).
+                      If file exists, it will be loaded and updated; if not, a new database will be created at this location.
+                      Database persists across anonymization runs to ensure consistent patient ID and UID mappings.
+                      No default - must be explicitly specified to enable persistence.",
+      "examples": ["./patient_uid.db", "/var/data/luwak/patient_uid.db"]
+    },
     "testOptions": {
       "type": "object",
       "properties": {

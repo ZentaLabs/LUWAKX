@@ -93,12 +93,10 @@
       "default": "./llm_cache",
       "examples": ["./llm_cache", "/path/to/shared/cache"]
     },
-    "llmCacheTtlDays": {
-      "type": "integer",
-      "description": "Time-to-live for cached LLM results in days. Older entries are automatically cleaned up.",
-      "default": 365,
-      "minimum": 1,
-      "examples": [7, 30, 90]
+    "patientUidDatabasePath": {
+      "type": "string",
+      "description": "Path to persistent patient UID database file (relative to config file location).\nIf file exists, it will be loaded and updated; if not, a new database will be created at this location.\nDatabase persists across anonymization runs to ensure consistent patient ID and UID mappings.\nNo default - must be explicitly specified to enable persistence.",
+      "examples": ["./patient_uid.db", "/var/data/luwak/patient_uid.db"]
     },
     "testOptions": {
       "type": "object",

@@ -120,11 +120,6 @@ class TestConfigOptions(unittest.TestCase):
         expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "cache/llm"))
         self.assertEqual(anonymizer.config["llmCacheFolder"], expected)
 
-    def test_llm_cache_ttl_days(self):
-        config_path = self.make_config({"llmCacheTtlDays": 60})
-        anonymizer = LuwakAnonymizer(config_path)
-        self.assertEqual(anonymizer.config["llmCacheTtlDays"], 60)
-
     def test_test_options(self):
         # Only use allowed properties per schema (useExistingMaskDefacer)
         test_opts = {"useExistingMaskDefacer": ["/path/to/mask1.nii.gz", "/path/to/mask2.nii.gz"]}
@@ -144,6 +139,14 @@ class TestConfigOptions(unittest.TestCase):
         # Check that patient_uid_db is initialized with default prefix
         self.assertIsNotNone(anonymizer.patient_uid_db)
         self.assertEqual(anonymizer.patient_uid_db.patient_id_prefix, "Zenta")
+
+    def test_patient_uid_database_path(self):
+        # Test relative path resolution for persistent patient UID database
+        config_path = self.make_config({"patientUidDatabasePath": "./persistent/patient_uid.db"})
+        anonymizer = LuwakAnonymizer(config_path)
+        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "persistent/patient_uid.db"))
+        self.assertEqual(anonymizer.config["patientUidDatabasePath"], expected)
+        self.assertTrue(anonymizer.persistent_uid_db, "Should be marked as persistent database")
 
 if __name__ == "__main__":
     unittest.main()

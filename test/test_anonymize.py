@@ -123,7 +123,7 @@ class TestAnonymizeScript(unittest.TestCase):
         
         return None
     
-    def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None, patientIdPrefix=None):
+    def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None, patientIdPrefix=None, patientUidDatabasePath=None):
         """Helper method to create a temporary config file for testing."""
         if recipes is None:
             recipes = ""
@@ -161,6 +161,10 @@ class TestAnonymizeScript(unittest.TestCase):
         # Add patientIdPrefix if provided
         if patientIdPrefix is not None:
             config["patientIdPrefix"] = patientIdPrefix
+        
+        # Add patientUidDatabasePath if provided
+        if patientUidDatabasePath is not None:
+            config["patientUidDatabasePath"] = patientUidDatabasePath
         
         # Create temporary config file
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
@@ -399,29 +403,74 @@ class TestAnonymizeScript(unittest.TestCase):
         
         # Read original file to get date/time values
         original_ds = pydicom.dcmread(original_file)
-        original_value = original_ds['00080021'].value
+        original_series_date = original_ds['00080021'].value
         
-        # Create test config with basic profile (which should trigger date shifting)
+        # Create persistent UID database for this test
+        uid_db_path = os.path.abspath(os.path.join(self.test_output_dir, "private", "test_patient_uid.db"))
+        os.makedirs(os.path.dirname(uid_db_path), exist_ok=True)
+        
+        # Create test config with persistent database
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
             recipes=["retain_long_modified_dates"],
+            patientUidDatabasePath=uid_db_path
         )
         try:
-            self.logger.info("Starting date shift test")
-            self.logger.info(f"Original SeriesDate: {original_value}")
+            self.logger.info("Starting date shift test with persistent UID database")
+            self.logger.info(f"Original SeriesDate: {original_series_date}")
             
             anonymizer = LuwakAnonymizer(config_path)
             # Run anonymization
             coordinator = anonymizer.anonymize()
+            
+            # Now retrieve the patient's random token from the database to calculate expected shift
+            from datetime import datetime, timedelta
+            import sqlite3
+            import hmac
+            import hashlib
+            
+            # Query the database for the random token (we have only one patient entry)
+            conn = sqlite3.connect(uid_db_path)
+            cursor = conn.cursor()
+            # Get the first row from the patient_mappings table
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = cursor.fetchall()
+            self.logger.info(f"Available tables: {tables}")
+            cursor.execute("SELECT random_token FROM patient_mappings LIMIT 1")
+            result = cursor.fetchone()
+            conn.close()
+            
+            self.assertIsNotNone(result, "Patient not found in database")
+            random_token = result[0]
+            
+            # Calculate expected date shift using same logic as generate_hmacdate_shift
+            project_hash_root = anonymizer.config.get('projectHashRoot', '')
+            data = f"{project_hash_root}".encode('utf-8')
+            mac = hmac.new(random_token, data, hashlib.sha512)
+            hash_hex = mac.hexdigest()
+            hash_int = int(hash_hex[:16], 16)
+            max_shift = anonymizer.config.get('maxDateShiftDays', 1095)
+            expected_shift_days = (hash_int % max_shift) + 1  # +1 to ensure non-zero
+            
+            # Calculate expected shifted date
+            original_date = datetime.strptime(original_series_date, '%Y%m%d')
+            expected_shifted_date = original_date - timedelta(days=expected_shift_days)
+            expected_shifted_date_str = expected_shifted_date.strftime('%Y%m%d')
+            
+            self.logger.info(f"Calculated expected shift: -{expected_shift_days} days")
+            self.logger.info(f"Expected SeriesDate: {expected_shifted_date_str}")
+            
+            # Verify the anonymized file
             expected_output_path = self.get_output_path_for_file(coordinator, original_file)
             self.assertIsNotNone(expected_output_path, f"Could not find output path for {original_file}")
             self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
             anonymized_ds = pydicom.dcmread(expected_output_path)
-            # Check that the SeriesDate has been shifted correctly (if present)
-            self.assertEqual(anonymized_ds.SeriesDate, '20130730',
-                        "SeriesDate should be shifted by 181 days: expected '20130730', got {anonymized_ds.SeriesDate}")
-            self.logger.info(f"✓ SeriesDate shifted: {original_value} → {anonymized_ds.SeriesDate}")
+            
+            # Check that the SeriesDate has been shifted correctly
+            self.assertEqual(anonymized_ds.SeriesDate, expected_shifted_date_str,
+                        f"SeriesDate should be shifted by {expected_shift_days} days: expected '{expected_shifted_date_str}', got '{anonymized_ds.SeriesDate}'")
+            self.logger.info(f"✓ SeriesDate shifted: {original_series_date} → {anonymized_ds.SeriesDate} (shift: -{expected_shift_days} days)")
         finally:
             os.unlink(config_path)
             self.logger.info("Date shift test completed and config cleaned up")
@@ -579,8 +628,8 @@ class TestAnonymizeScript(unittest.TestCase):
             self.logger.info("Retain dates batch test completed and config cleaned up")
     
     def test_basic_modified_date_should_have_modified_date(self):
-        """Test the that mixing basic profile and date shift modifies original date."""
-        print("Test the that mixing basic profile and date shift modifies original date.")
+        """Test that mixing basic profile and date shift modifies original date."""
+        print("Test that mixing basic profile and date shift modifies original date.")
 
         # Use the first file for testing
         original_file = os.path.join(self.test_data_dir, "00000001.dcm")
@@ -588,30 +637,75 @@ class TestAnonymizeScript(unittest.TestCase):
         
         # Read original file to get date/time values
         original_ds = pydicom.dcmread(original_file)
-        original_value = original_ds['AcquisitionDate'].value
-        # Create test config with basic profile (which should trigger date shifting)
+        original_acquisition_date = original_ds['AcquisitionDate'].value
+        
+        # Create persistent UID database for this test
+        uid_db_path = os.path.abspath(os.path.join(self.test_output_dir, "private", "test_patient_uid.db"))
+        os.makedirs(os.path.dirname(uid_db_path), exist_ok=True)
+        
+        # Create test config with basic profile and persistent database
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
             recipes=["basic_profile", "retain_long_modified_dates"],
+            patientUidDatabasePath=uid_db_path
         )
         try:
-            self.logger.info("Starting basic profile + modified dates test")
-            self.logger.info(f"Original AcquisitionDate to be modified: {original_value}")
+            self.logger.info("Starting basic profile + modified dates test with persistent UID database")
+            self.logger.info(f"Original AcquisitionDate to be modified: {original_acquisition_date}")
             
             anonymizer = LuwakAnonymizer(config_path)
             coordinator = anonymizer.anonymize()
+            
+            # Now retrieve the patient's random token from the database to calculate expected shift
+            from datetime import datetime, timedelta
+            import sqlite3
+            import hmac
+            import hashlib
+            # Query the database for the random token (we have only one patient entry)
+            conn = sqlite3.connect(uid_db_path)
+            cursor = conn.cursor()
+            # Get the first row from the patient_mappings table
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = cursor.fetchall()
+            self.logger.info(f"Available tables: {tables}")
+            cursor.execute("SELECT random_token FROM patient_mappings LIMIT 1")
+            result = cursor.fetchone()
+            conn.close()
+            
+            self.assertIsNotNone(result, "Patient not found in database")
+            random_token = result[0]
+            
+            # Calculate expected date shift using same logic as generate_hmacdate_shift
+            project_hash_root = anonymizer.config.get('projectHashRoot', '')
+            data = f"{project_hash_root}".encode('utf-8')
+            mac = hmac.new(random_token, data, hashlib.sha512)
+            hash_hex = mac.hexdigest()
+            hash_int = int(hash_hex[:16], 16)
+            max_shift = anonymizer.config.get('maxDateShiftDays', 1095)
+            expected_shift_days = (hash_int % max_shift) + 1  # +1 to ensure non-zero
+            
+            # Calculate expected shifted date
+            original_date = datetime.strptime(original_acquisition_date, '%Y%m%d')
+            expected_shifted_date = original_date - timedelta(days=expected_shift_days)
+            expected_shifted_date_str = expected_shifted_date.strftime('%Y%m%d')
+            
+            self.logger.info(f"Calculated expected shift: -{expected_shift_days} days")
+            self.logger.info(f"Expected AcquisitionDate: {expected_shifted_date_str}")
+            
+            # Verify the anonymized file
             expected_output_path = self.get_output_path_for_file(coordinator, original_file)
             self.assertIsNotNone(expected_output_path, f"Could not find output path for {original_file}")
             self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
             anonymized_ds = pydicom.dcmread(expected_output_path)
+            
             # Check that the AcquisitionDate has been shifted correctly
-            self.assertEqual(anonymized_ds.AcquisitionDate, '20130730',
-                        "AcquisitionDate should be the original value shifted by -278 days: expected '20130730', got {anonymized_ds.AcquisitionDate}")
-            self.logger.info(f"✓ AcquisitionDate modified: {original_value} → {anonymized_ds.AcquisitionDate}")
+            self.assertEqual(anonymized_ds.AcquisitionDate, expected_shifted_date_str,
+                        f"AcquisitionDate should be shifted by {expected_shift_days} days: expected '{expected_shifted_date_str}', got '{anonymized_ds.AcquisitionDate}'")
+            self.logger.info(f"✓ AcquisitionDate modified: {original_acquisition_date} → {anonymized_ds.AcquisitionDate} (shift: -{expected_shift_days} days)")
             
             self.assertEqual(anonymized_ds.LongitudinalTemporalInformationModified, 'MODIFIED',
-                        "LongitudinalTemporalInformationModified should be 'MODIFIED': expected 'MODIFIED', got {anonymized_ds.LongitudinalTemporalInformationModified}")
+                        f"LongitudinalTemporalInformationModified should be 'MODIFIED': expected 'MODIFIED', got '{anonymized_ds.LongitudinalTemporalInformationModified}'")
             self.logger.info(f"✓ LongitudinalTemporalInformationModified: {anonymized_ds.LongitudinalTemporalInformationModified}")
         finally:
             os.unlink(config_path)

@@ -108,11 +108,29 @@ class LuwakAnonymizer:
         
         # Initialize patient UID database
         self.patient_uid_db = None
+        self.persistent_uid_db = False  # Track if uid database should persist
         try:
             patient_id_prefix = self.config.get('patientIdPrefix', 'Zenta')
-            uid_db_folder = self.config.get('outputPrivateMappingFolder')
-            uid_db_file = os.path.join(uid_db_folder, 'patient_uid.db')
             project_hash_root = self.config.get('projectHashRoot', '')
+            
+            # Get resolved uid database path from config
+            uid_db_file = self.config.get('patientUidDatabasePath')
+            
+            if uid_db_file:
+                # Using persistent database
+                self.persistent_uid_db = True
+                db_exists = os.path.exists(uid_db_file)
+                
+                self.logger.info(f"Using persistent patient UID database: {uid_db_file}")
+                if db_exists:
+                    self.logger.info("Existing database found - will load and update")
+                else:
+                    self.logger.info("No existing database - will create new persistent database")
+            else:
+                # Use temporary database in output folder
+                uid_db_folder = self.config.get('outputPrivateMappingFolder')
+                uid_db_file = os.path.join(uid_db_folder, 'patient_uid.db')
+                self.logger.debug("Using temporary patient UID database (will be deleted after run)")
             
             self.patient_uid_db = PatientUIDDatabase(
                 db_path=uid_db_file,
@@ -123,10 +141,13 @@ class LuwakAnonymizer:
             stats = self.patient_uid_db.get_stats()
             self.logger.info(f"Patient UID database initialized with prefix '{patient_id_prefix}'")
             self.logger.debug(f"Database file: {uid_db_file}")
+            if stats['total_patients'] > 0:
+                self.logger.info(f"Loaded {stats['total_patients']} existing patient(s) from database")
             
         except Exception as e:
             self.logger.warning(f"Failed to initialize patient UID database: {e}")
             self.patient_uid_db = None
+            self.persistent_uid_db = False
         
         self.logger.info("Registering private tags from CSV...")
         # Register private tags from CSV
@@ -339,6 +360,21 @@ class LuwakAnonymizer:
         self.logger.info(f"  Output directory: {output_directory}")
         self.logger.info(f"  Private mapping folder: {private_map_folder}")
         self.logger.info(f"  Recipes folder: {recipes_folder}")
+        
+        # Resolve and setup patient UID database path if specified
+        persistent_db_path = self.config.get('patientUidDatabasePath')
+        if persistent_db_path:
+            uid_db_file = self.resolve_path(persistent_db_path, is_output=True)
+            # Ensure directory exists
+            db_dir = os.path.dirname(uid_db_file)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+            # Store resolved path in config for later use
+            self.config['patientUidDatabasePath'] = uid_db_file
+            self.logger.info(f"  Patient UID database: {uid_db_file}")
+        else:
+            pass
+        
         if 'clean_descriptors' in self.config.get('recipes', []):
             cache_folder = self.config.get('llmCacheFolder')
             cache_folder = self.resolve_path(cache_folder, is_output=True)
@@ -541,10 +577,13 @@ class LuwakAnonymizer:
                 self.logger.info(f"Patient UID database final stats: {stats['total_patients']} unique patients")
                 self.patient_uid_db.close()
                 
-                # Remove database file after completion
-                if os.path.exists(self.patient_uid_db.db_path):
-                    os.remove(self.patient_uid_db.db_path)
-                    self.logger.debug("Patient UID database cleaned up")
+                # Only remove database file if NOT using persistent database
+                if not self.persistent_uid_db:
+                    if os.path.exists(self.patient_uid_db.db_path):
+                        os.remove(self.patient_uid_db.db_path)
+                        self.logger.debug("Temporary patient UID database cleaned up")
+                else:
+                    self.logger.info(f"Persistent patient UID database saved at: {self.patient_uid_db.db_path}")
             except Exception as e:
                 self.logger.warning(f"Error closing patient UID database: {e}")
         
