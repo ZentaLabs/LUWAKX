@@ -203,7 +203,7 @@ def rtn_safe_priv_opt(row):
     Determine the safe private attribute disposition for a DICOM row based on private_disposition value.
     Maps disposition codes to retention options:
     - 'k' -> 'keep'
-    - 'o' -> 'func:hash_increment_date'
+    - 'o' -> 'func:generate_hmacdate_shift'
     - 'h' -> 'func:generate_hmacuid'
     - 'd' and IsInDICOMRetainSafePrivateTags -> 'keep'
     
@@ -217,7 +217,7 @@ def rtn_safe_priv_opt(row):
     if disposition == 'k':
         return 'keep'
     elif disposition == 'o':
-        return 'func:hash_increment_date'
+        return 'func:generate_hmacdate_shift'
     elif disposition == 'h':
         return 'func:generate_hmacuid'
     elif row['IsInDICOMRetainSafePrivateTags'] and disposition == 'd':
@@ -781,7 +781,7 @@ def generate_retain_long_modified_dates_profile(final_df):
             if str(row['VR']) == 'TM':
                 df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'keep'
             else:
-                df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'func:hash_increment_date'
+                df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'func:generate_hmacdate_shift'
         else:
             # For any other values, keep them as is or set to default
             continue

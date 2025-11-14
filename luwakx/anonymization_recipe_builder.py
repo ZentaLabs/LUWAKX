@@ -157,8 +157,8 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     line = f"REPLACE {tag} func:generate_hmacuid\n"
                 elif final_action == 'func:set_fixed_datetime':
                     line = f"REPLACE {tag} func:set_fixed_datetime\n"
-                elif final_action == 'func:hash_increment_date':
-                    line = f"JITTER {tag} func:hash_increment_date\n"
+                elif final_action == 'func:generate_hmacdate_shift':
+                    line = f"JITTER {tag} func:generate_hmacdate_shift\n"
                 elif final_action == 'func:clean_descriptors_with_llm':
                     line = f"REPLACE {tag} func:clean_descriptors_with_llm\n"
                 elif final_action == 'func:generate_patient_id':
@@ -206,9 +206,9 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                         line = f"KEEP ({group},\"{private_creator}\",{element})\n"
                     elif action.lower() == 'func:generate_hmacuid':
                         line = f"REPLACE ({group},\"{private_creator}\",{element}) func:generate_hmacuid\n"
-                    elif action.lower() == 'func:hash_increment_date':
+                    elif action.lower() == 'func:generate_hmacdate_shift':
                         # TODO: Check if it is better to remove these in case the retain long modified dates is not selected
-                        line = f"JITTER ({group},\"{private_creator}\",{element}) func:hash_increment_date\n"
+                        line = f"JITTER ({group},\"{private_creator}\",{element}) func:generate_hmacdate_shift\n"
                     outfile.write(line)
 
         # Add the final line to remove all other private tags
@@ -232,8 +232,8 @@ def _determine_final_action(actions, vr):
     # If any action is 'keep', final action is 'keep'
     if 'keep' in actions:
         return 'keep'
-    elif 'func:hash_increment_date' in actions:
-        return 'func:hash_increment_date'
+    elif 'func:generate_hmacdate_shift' in actions:
+        return 'func:generate_hmacdate_shift'
     elif 'func:generate_hmacuid' in actions:
         return 'func:generate_hmacuid'
     elif 'func:clean_descriptors_with_llm' in actions:

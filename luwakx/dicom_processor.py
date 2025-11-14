@@ -93,7 +93,7 @@ class DicomProcessor:
         for item in items:
             items[item]["generate_hmacuid"] = self.generate_hmacuid
             items[item]["generate_patient_id"] = self.generate_patient_id
-            items[item]["hash_increment_date"] = self.hash_increment_date
+            items[item]["generate_hmacdate_shift"] = self.generate_hmacdate_shift
             items[item]["set_fixed_datetime"] = self.set_fixed_datetime
             items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
             items[item]["is_tag_private"] = self.is_tag_private
@@ -390,38 +390,68 @@ class DicomProcessor:
         }
         return new_uid
     
-    def hash_increment_date(self, item, value, field, dicom):
-        """Generate single date/time shift value for entire anonymization project.
+    def generate_hmacdate_shift(self, item, value, field, dicom):
+        """Generate date/time shift using HMAC with patient-specific key.
+        
+        Uses the patient's cryptographic random token (same as UID generation)
+        to ensure consistent, secure, unpredictable date shifts per patient.
+        This approach provides:
+        - Cryptographically secure randomness (HMAC-SHA512)
+        - Patient-specific deterministic shifts
         
         Args:
             item: Item identifier from deid processing
-            value: Recipe string (e.g., "func:hash_increment_date")
+            value: Recipe string (e.g., "func:generate_hmacdate_shift")
             field: DICOM field element containing the date/time tag
             dicom: PyDicom dataset object
         
         Returns:
-            int: Number of days to shift backward (0-maxDateShiftDays days, consistent for entire project)
+            int: Number of days to shift backward (0-maxDateShiftDays days, consistent per patient)
         """
-        project_hash_root = self.config.get('projectHashRoot')
+        project_hash_root = self.config.get('projectHashRoot', '')
+        
+        # Get patient's random token from database to use as HMAC key
+        hmac_key = None
+        if self.patient_uid_db:
+            try:
+                original_patient_id = self.series.original_patient_id
+                original_patient_name = self.series.original_patient_name
+                original_patient_birthdate = self.series.original_patient_birthdate
+                
+                # Get cached patient data (includes random token)
+                cached_result = self.patient_uid_db.get_cached_patient_id(
+                    original_patient_id,
+                    original_patient_name,
+                    original_patient_birthdate
+                )
+                
+                if cached_result:
+                    _, random_token = cached_result
+                    hmac_key = random_token
+            except Exception as e:
+                self.logger.warning(f"Could not retrieve patient random token for date shift: {e}")
+        
         try:
-            PatientID = self.series.original_patient_id
-            PatientName = self.series.original_patient_name
-            PatientBirthDate = self.series.original_patient_birthdate
-            # Log sensitive patient data at PRIVATE level
-            self.logger.private(
-                f"Using patient data for date shift generation - "
-                f"PatientID: {PatientID}, PatientName: {PatientName}, "
-                f"PatientBirthDate: {PatientBirthDate}"
-            )
+            # Generate date shift using HMAC if we have a key, otherwise fall back to old method
+            if hmac_key:
+                # Use HMAC-512 for cryptographically secure date shift
+                # Use project_hash_root as data (not in key) for project-specific isolation
+                data = f"{project_hash_root}".encode('utf-8')
+                mac = hmac.new(hmac_key, data, hashlib.sha512)
+                hash_hex = mac.hexdigest()
+                hash_int = int(hash_hex[:16], 16)  # Use first 16 hex chars for more entropy
+                self.logger.debug("Using HMAC-based date shift generation")
+            else:
+                # Fallback to old method if no HMAC key available
+                self.logger.warning("No HMAC key available, using fallback date shift generation")
+                project_salt = f"{project_hash_root}{self.series.original_patient_id}{self.series.original_patient_name}{self.series.original_patient_birthdate}"
+                salt_hash = hashlib.sha256(project_salt.encode()).hexdigest()
+                hash_int = int(salt_hash[:8], 16)
             
-            # Generate shift for project run and patient
-            # Use project_hash_root to generate consistent shift for this project
-            project_salt = f"{project_hash_root}{PatientID}{PatientName}{PatientBirthDate}"
-            salt_hash = hashlib.sha256(project_salt.encode()).hexdigest()
-            hash_int = int(salt_hash[:8], 16)  # Use first 8 hex chars
-            
-            # Use configurable max_date_shift_days (default 1095)
-            project_date_shift = hash_int % (self.config.get('maxDateShiftDays') + 1)
+            # Scale to max_date_shift_days (default 1095)
+            # Ensure shift is always at least 1 day (never 0) for proper anonymization
+            max_shift = self.config.get('maxDateShiftDays', 1095)
+            project_date_shift = (hash_int % max_shift) + 1
             
             self.logger.debug(
                 f"Replacing tag {field.element.tag} "
@@ -438,7 +468,7 @@ class DicomProcessor:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
             log_project_stacktrace(self.logger, e)
-            return 0  # Return 0 days shift on error
+            return 1  # Return 1 day shift on error
     
     def set_fixed_datetime(self, item, value, field, dicom):
         """Generate fixed date/time values based on VR type for anonymization.

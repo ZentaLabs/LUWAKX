@@ -389,7 +389,7 @@ class TestAnonymizeScript(unittest.TestCase):
             os.unlink(config_path)
             self.logger.info("Retain UID batch test completed and config cleaned up")
 
-    def test_hash_increment_date(self):
+    def test_generate_hmacdate_shift(self):
         """Test the date shift functionality for DA, DT, and TM fields."""
         print("Test date shift generation and application")
         
