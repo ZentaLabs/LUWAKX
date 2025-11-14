@@ -400,8 +400,9 @@ class MetadataExporter:
         """
         # String types
         if elem.VR in ['PN', 'DA', 'TM', 'DT', 'UI', 'SH', 'LO', 'ST', 'LT', 'UT', 'AE', 'CS', 'AS']:
-            if hasattr(elem.value, '__iter__') and not isinstance(elem.value, (str, bytes)):
-                return str(list(elem.value)) if elem.value else ''
+            # For all string-type VRs, convert directly to string
+            # This properly handles PersonName (iterable char-by-char) and MultiValue objects
+            # PyDICOM's str() on MultiValue gives backslash-separated values like "value1\value2"
             return str(elem.value) if elem.value else ''
         
         # Integer String
