@@ -211,8 +211,9 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                         line = f"KEEP ({group},\"{private_creator}\",{element})\n"
                     elif action.lower() == 'func:generate_hmacuid':
                         line = f"REPLACE ({group},\"{private_creator}\",{element}) func:generate_hmacuid\n"
-                    elif action.lower() == 'func:generate_hmacdate_shift':
+                    elif action.lower() == 'func:generate_hmacdate_shift' and 'retain_long_modified_dates' in recipes_to_process:
                         # TODO: Check if it is better to remove these in case the retain long modified dates is not selected
+                        # currently the jitter is only applied if retain_long_modified_dates is selected
                         line = f"JITTER ({group},\"{private_creator}\",{element}) func:generate_hmacdate_shift\n"
                     outfile.write(line)
 
