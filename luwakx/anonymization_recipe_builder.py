@@ -187,7 +187,12 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
             outfile.write("ADD LongitudinalTemporalInformationModified MODIFIED\n")
         if 'clean_recognizable_visual_features' in recipes_to_process:
             outfile.write("ADD RecognizableVisualFeatures NO\n")
-        
+
+        # Remove DeidentificationMethodCodeSequence if exists from previous runs. It will be added 
+        # again later at the end of the series deidentification.
+        outfile.write(f"# DeidentificationMethodCodeSequence\n")
+        outfile.write(f"REMOVE (0012,0064)\n")
+
         # Handle private tags
         if 'retain_safe_private_tags' in recipes_to_process:
             with open(input_private_template, 'r') as privfile:

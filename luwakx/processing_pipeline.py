@@ -357,15 +357,14 @@ class ProcessingPipeline:
             series.metadata['nrrd_defaced_path'] = nrrd_defaced_dst
             
             if self.logger:
-                series_display = os.path.basename(series.output_base_path) if series.output_base_path else series.original_series_uid
-                self.logger.info(f"Moved NRRD files for series {series_display}")
+                self.logger.info(f"Moved NRRD files for series {series.anonymized_series_uid}")
                 self.logger.private(f"  image.nrrd → {nrrd_image_dst}")
                 self.logger.private(f"  image_defaced.nrrd → {nrrd_defaced_dst}")
         except Exception as e:
             if self.logger:
                 series_display = os.path.basename(series.output_base_path) if series.output_base_path else series.original_series_uid
                 self.logger.warning(
-                    f"Failed to move NRRD files for series {series_display}: {e}"
+                    f"Failed to move NRRD files for series {series.anonymized_series_uid} in subfolder {series_display}: {e}"
                 )
     
     def _anonymize_series(self, series: DicomSeries) -> None:

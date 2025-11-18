@@ -102,11 +102,11 @@ class DicomProcessor:
         # 4. Setup progress handler to redirect deid.bot output to logger
         progress_handler = None
         try:
-            series_uid = self.anonymized_series_uid
+            series_uid = self.series.anonymized_series_uid
             progress_handler = DeidProgressHandler(
                 self.logger,
                 len(dicom_files),
-                series_folder_name=series_uid
+                series_uid_name=series_uid
             )
             bot.outputStream = progress_handler
             bot.errorStream = progress_handler
@@ -140,6 +140,9 @@ class DicomProcessor:
                 dicom_file.set_anonymized_path(output_path)
             
             self.logger.info(f"Successfully anonymized {len(parsed_files)} files")
+            
+            # 7. Inject DeidentificationMethodCodeSequence into anonymized files
+            self.inject_deidentification_method_code_sequence()
             
         except Exception as e:
             series_display = os.path.basename(self.series.output_base_path)
@@ -716,6 +719,114 @@ class DicomProcessor:
             return True
         
         return False
+        
+    def inject_deidentification_method_code_sequence(self):
+        """Inject DeidentificationMethodCodeSequence with child tags into anonymized DICOM files.
+        
+        This method loops through the anonymized DICOM files in the series, reads the recipes
+        from the config, maps them to DICOM CID 7050 De-identification Method codes, and adds
+        the DeidentificationMethodCodeSequence tag with appropriate child tags for each recipe.
+        
+        The mapping follows DICOM PS3.16 CID 7050 standard codes.
+        
+        Note:
+            This should be called after anonymization but before cleanup/deletion of files.
+        """
+        # Mapping of recipe names to DICOM CID 7050 De-identification Method codes
+        # Based on DICOM PS3.16 CID 7050 - https://dicom.nema.org/medical/dicom/current/output/chtml/part16/sect_CID_7050.html
+        RECIPE_TO_CID7050_MAP = {
+            'basic_profile': ('113100', 'DCM', 'Basic Application Confidentiality Profile'),
+            'clean_pixel_data': ('113101', 'DCM', 'Clean Pixel Data Option'),
+            'clean_recognizable_visual_features': ('113102', 'DCM', 'Clean Recognizable Visual Features Option'),
+            'clean_graphics': ('113103', 'DCM', 'Clean Graphics Option'),
+            'clean_structured_content': ('113104', 'DCM', 'Clean Structured Content Option'),
+            'clean_descriptors': ('113105', 'DCM', 'Clean Descriptors Option'),
+            'retain_long_full_dates': ('113106', 'DCM', 'Retain Longitudinal Temporal Information Full Dates Option'),
+            'retain_long_modified_dates': ('113107', 'DCM', 'Retain Longitudinal Temporal Information Modified Dates Option'),
+            'retain_patient_chars': ('113108', 'DCM', 'Retain Patient Characteristics Option'),
+            'retain_device_id': ('113109', 'DCM', 'Retain Device Identity Option'),
+            'retain_uid': ('113110', 'DCM', 'Retain UIDs Option'),
+            'retain_safe_private_tags': ('113111', 'DCM', 'Retain Safe Private Option'),
+            'retain_institution_id': ('113112', 'DCM', 'Retain Institution Identity Option'),
+        }
+        
+        if not self.series or not hasattr(self.series, 'files'):
+            self.logger.warning("No series or files found for DeidentificationMethodCodeSequence injection")
+            return
+        
+        # Get recipes from config
+        recipes_list = self.config.get('recipes', [])
+        if not recipes_list:
+            self.logger.warning("No recipes found in config, skipping DeidentificationMethodCodeSequence injection")
+            return
+        
+        # Normalize to list if single string
+        if isinstance(recipes_list, str):
+            recipes_list = [recipes_list]
+        
+        # Check if defacing was actually performed (for clean_recognizable_visual_features)
+        defacing_performed = len(self.series.get_defaced_files()) > 0
+        
+        # Build sequence items for all matching recipes
+        sequence_items = []
+        for recipe_name in recipes_list:
+            # Skip clean_recognizable_visual_features if defacing was not performed
+            if recipe_name == 'clean_recognizable_visual_features' and not defacing_performed:
+                self.logger.debug(f"Skipping DeidentificationMethodCodeSequence for '{recipe_name}': defacing was not performed for this series")
+                continue
+                
+            if recipe_name in RECIPE_TO_CID7050_MAP:
+                code_value, coding_scheme, code_meaning = RECIPE_TO_CID7050_MAP[recipe_name]
+                seq_item = pydicom.Dataset()
+                seq_item.CodeValue = code_value
+                seq_item.CodingSchemeDesignator = coding_scheme
+                seq_item.CodeMeaning = code_meaning
+                sequence_items.append(seq_item)
+                self.logger.debug(f"Adding DeidentificationMethodCodeSequence item for recipe '{recipe_name}': {code_value}")
+            else:
+                self.logger.debug(f"Recipe '{recipe_name}' has no CID 7050 mapping, skipping")
+        
+        # Sort sequence items by code value (numerical order)
+        sequence_items.sort(key=lambda item: item.CodeValue)
+        
+        if not sequence_items:
+            self.logger.warning("No valid CID 7050 codes found for configured recipes")
+            return
+        
+        # Inject sequence into all files
+        injected_count = 0
+        failed_count = 0
+        
+        for dicom_file in self.series.files:
+            # Get the current path (anonymized path)
+            try:
+                path = dicom_file.get_current_path()
+            except AttributeError:
+                path = getattr(dicom_file, 'filename', None)
+            
+            if not path or not os.path.exists(path):
+                self.logger.warning(f"File not found for DeidentificationMethodCodeSequence injection: {path}")
+                failed_count += 1
+                continue
+            
+            try:
+                # Read the DICOM file
+                ds = pydicom.dcmread(path)
+                
+                # Inject the DeidentificationMethodCodeSequence with all recipe items
+                ds.DeidentificationMethodCodeSequence = sequence_items
+                
+                # Save the file (overwrite)
+                ds.save_as(path, enforce_file_format=True)
+                
+                injected_count += 1
+                self.logger.debug(f"Injected DeidentificationMethodCodeSequence with {len(sequence_items)} items into {os.path.basename(path)}")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to inject DeidentificationMethodCodeSequence into {path}: {e}")
+                failed_count += 1
+        
+        self.logger.debug(f"DeidentificationMethodCodeSequence injection completed: {injected_count} succeeded, {failed_count} failed, {len(sequence_items)} codes per file")
     
     # ============================================================================
     # Streaming Export Support Methods (Memory Management)
@@ -768,5 +879,4 @@ class DicomProcessor:
         gc.collect()
         
         if self.logger:
-            series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
-            self.logger.debug(f"Cleared memory for series {series_display}")
+            self.logger.debug(f"Cleared memory for series")
