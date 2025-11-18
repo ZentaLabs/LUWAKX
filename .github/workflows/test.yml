@@ -26,7 +26,7 @@ jobs:
     # Install dependencies
     - name: Install dependencies
       run: |
-        pip install -r luwakx/requirements.txt
+        pip install --no-cache-dir -r luwakx/requirements.txt
           
     # Restore test data cache
     - name: Restore test data cache
@@ -45,7 +45,11 @@ jobs:
       env:
         ZENTA_OPENAI_API_KEY: ${{ secrets.ZENTA_OPENAI_API_KEY }}
       run: |
+        echo "Disk space before tests:"
+        df -h
         python -m unittest discover test -v
+        echo "Disk space after tests:"
+        df -h
 
     # Save test data cache
     - name: Save test data cache
