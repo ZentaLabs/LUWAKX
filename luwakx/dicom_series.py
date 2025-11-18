@@ -183,16 +183,15 @@ class DicomSeries:
         self.anonymized_series_uid = pydicom.uid.generate_uid(entropy_srcs=[series_hmac])
     
     def build_output_path(self, base_output_dir: str, 
-                         max_path_length: int = 200,
-                         used_paths: Optional[set] = None) -> str:
-        """Build hierarchical output path: PatientID/StudyUID/SeriesUID/
+                         max_path_length: int = 200) -> str:
+        """Build hierarchical output path: PatientID/StudyUID_hash/SeriesUID_hash/
         
-        Handles collision detection by appending _1, _2, etc. if path already exists.
+        Uses deterministic hashing for Study and Series UIDs to create shorter,
+        filesystem-safe directory names.
         
         Args:
             base_output_dir: Base output directory
             max_path_length: Maximum allowed path length (default: 200)
-            used_paths: Set of already-used paths for collision detection
             
         Returns:
             str: Built output path
@@ -207,25 +206,18 @@ class DicomSeries:
             raise ValueError(
                 f"Anonymized UIDs not set for series {self.original_series_uid}"
             )
-        
+        import base64
+        # Hash anonymized UIDs for shorter directory names
+        hash_anonymized_study_uid = base64.urlsafe_b64encode(hashlib.sha1(self.anonymized_study_uid.encode()).digest())[:16].decode()
+        hash_anonymized_series_uid = base64.urlsafe_b64encode(hashlib.sha1(self.anonymized_series_uid.encode()).digest())[:16].decode()
+
         # Build base path
         base_path = os.path.join(
             base_output_dir,
             self.anonymized_patient_id,
-            self.anonymized_study_uid,
-            self.anonymized_series_uid
+            hash_anonymized_study_uid,
+            hash_anonymized_series_uid
         )
-        
-        # Handle collision detection
-        if used_paths is not None:
-            original_path = base_path
-            suffix = 1
-            while base_path in used_paths:
-                base_path = f"{original_path}_{suffix}"
-                suffix += 1
-            
-            # Add to used paths
-            used_paths.add(base_path)
         
         # Validate path length (reserve space for filename like /000001.dcm)
         max_filename_length = 12  # "/000001.dcm" = 11 chars + 1 for safety
@@ -319,12 +311,17 @@ class DicomSeries:
             raise ValueError(
                 f"Anonymized UIDs must be set before calling update_base_paths for series {self.original_series_uid}"
             )
-        
+
+        import base64
+        # Hash anonymized UIDs for shorter directory names
+        hash_anonymized_study_uid = base64.urlsafe_b64encode(hashlib.sha1(self.anonymized_study_uid.encode()).digest())[:16].decode()
+        hash_anonymized_series_uid = base64.urlsafe_b64encode(hashlib.sha1(self.anonymized_series_uid.encode()).digest())[:16].decode()
+
         # Build UID-based path hierarchy
         uid_path = os.path.join(
             self.anonymized_patient_id,
-            self.anonymized_study_uid,
-            self.anonymized_series_uid
+            hash_anonymized_study_uid,
+            hash_anonymized_series_uid
         )
         
         if organized is not None:

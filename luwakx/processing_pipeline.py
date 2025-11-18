@@ -296,7 +296,7 @@ class ProcessingPipeline:
         """
         if self.logger:
             series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
-            self.logger.info(f"Defacing series: {series_display}")
+            self.logger.info(f"Defacing {series_display} at {series.defaced_base_path}")
         
         # Create defaced directory structure (path already set in add_series)
         os.makedirs(series.defaced_base_path, exist_ok=True)

@@ -102,11 +102,11 @@ class DicomProcessor:
         # 4. Setup progress handler to redirect deid.bot output to logger
         progress_handler = None
         try:
-            series_folder = os.path.basename(self.series.output_base_path)
+            series_uid = self.anonymized_series_uid
             progress_handler = DeidProgressHandler(
                 self.logger,
                 len(dicom_files),
-                series_folder_name=series_folder
+                series_folder_name=series_uid
             )
             bot.outputStream = progress_handler
             bot.errorStream = progress_handler

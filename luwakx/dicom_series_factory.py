@@ -164,7 +164,6 @@ class DicomSeriesFactory:
         
         # Create DicomSeries objects with Patient/Study/Series UID hierarchy
         all_series = []
-        used_output_paths: Set[str] = set()  # For collision detection
         
         for grouping_key, files in series_groups.items():
             patient_id, patient_name, birthdate, study_uid, series_uid = grouping_key
@@ -202,12 +201,11 @@ class DicomSeriesFactory:
                         project_hash_root = self.config.get('projectHashRoot', '')
                         series.generate_anonymized_uids(random_token, project_hash_root)
                         
-                        # Build hierarchical output path with collision detection
+                        # Build hierarchical output path with deterministic hashing
                         try:
                             series.build_output_path(
                                 self.output_directory,
-                                max_path_length=200,
-                                used_paths=used_output_paths
+                                max_path_length=200
                             )
                             self.logger.debug(
                                 f"Built output path for series: {series.output_base_path}"
