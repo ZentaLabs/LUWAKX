@@ -98,6 +98,9 @@ class DicomSeries:
         # Processing state
         self.processing_status = ProcessingStatus.ORIGINAL
         
+        # Defacing state - tracks if defacing was actually performed successfully
+        self.defacing_succeeded = False
+        
         # Base paths for different processing stages
         self.organized_base_path: Optional[str] = None
         self.defaced_base_path: Optional[str] = None

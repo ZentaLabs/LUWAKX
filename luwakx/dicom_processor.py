@@ -51,6 +51,7 @@ class DicomProcessor:
         
         # Isolated state per worker (NOT shared)
         self.current_file_mappings: Dict[str, Any] = {}  # UID mappings
+        self.warned_non_modified_tags: set = set()  # Track tags warned about wrong VR types per series which are not modified
     
     def process_series(self, series: DicomSeries, recipe) -> None:
         """Process (anonymize) a single DICOM series using deid library.
@@ -194,8 +195,15 @@ class DicomProcessor:
             REPLACE PatientID func:generate_patient_id
         """
         if not self.patient_uid_db:
-            # Fallback if database not initialized
-            self.logger.warning("Patient UID database not initialized, using default ID")
+            # Fallback if database not initialized - log once per series
+            warn_key = "patient_id_db_not_init"
+            if warn_key not in self.warned_non_modified_tags:
+                self.warned_non_modified_tags.add(warn_key)
+                series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+                self.logger.warning(
+                    f"Patient UID database not initialized, using default ID. "
+                    f"Series: {series_info}"
+                )
             return "ANON00"
         
         # Extract original identifiers from DICOM dataset
@@ -305,16 +313,34 @@ class DicomProcessor:
         Returns:
             str: Newly generated anonymized UID
         """
+        # Check VR type - only apply UID replacement to UI (Unique Identifier)
+        field_vr = None
+        if hasattr(field, 'element') and hasattr(field.element, 'VR'):
+            field_vr = str(field.element.VR)
+        
+        if field_vr != 'UI':
+            tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
+            keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
+            
+            # Only log warning once per unique tag per series
+            tag_key = f"replaceuid_{tag_str}_{keyword_str}"
+            if tag_key not in self.warned_non_modified_tags:
+                self.warned_non_modified_tags.add(tag_key)
+                series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+                self.logger.warning(
+                    f"Tag {tag_str} ({keyword_str}) has VR={field_vr}, which cannot have UID replacement applied. "
+                    f"UID replacement only applies to VR type UI. Please verify this tag manually. "
+                    f"Series: {series_info}"
+                )
+            
+            # Return original value for non-UI VR types
+            return str(field.element.value)
+        
         project_hash_root = self.config.get('projectHashRoot', '')
         
         # Extract the original UID value from the DICOM field
         try:
-            if hasattr(field, 'element') and hasattr(field.element, 'value'):
-                original_uid = str(field.element.value)
-            elif hasattr(field, 'value'):
-                original_uid = str(field.value)
-            else:
-                original_uid = str(value) if value else "unknown"
+            original_uid = str(field.element.value)
             # Log original UID at PRIVATE level
             self.logger.private(
                 f"Processing original UID for tag {field.element.tag} "
@@ -324,7 +350,7 @@ class DicomProcessor:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
             log_project_stacktrace(self.logger, e)
-            original_uid = str(value) if value else "unknown"
+            original_uid = "unknown"
 
         # Extract file path from the dicom dataset filename attribute
         file_path = f"{getattr(dicom, 'filename', str(dicom))}"
@@ -410,7 +436,29 @@ class DicomProcessor:
         
         Returns:
             int: Number of days to shift backward (0-maxDateShiftDays days, consistent per patient)
+                 or 0 if VR type is not DA or DT (no shift applied)
         """
+        # Check VR type - only apply date shift to DA (Date) and DT (DateTime)
+        field_vr = None
+        if hasattr(field, 'element') and hasattr(field.element, 'VR'):
+            field_vr = str(field.element.VR)
+        
+        if field_vr not in ['DA', 'DT']:
+            tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
+            keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
+            # Only log warning once per unique tag per series
+            tag_key = f"dateshift_{tag_str}_{keyword_str}"
+            if tag_key not in self.warned_non_modified_tags:
+                self.warned_non_modified_tags.add(tag_key)
+                series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+                self.logger.warning(
+                    f"Tag {tag_str} ({keyword_str}) has VR={field_vr}, which cannot be jittered. "
+                    f"Date shift only applies to VR types DA and DT. Please verify this tag manually. "
+                    f"Series: {series_info}"
+                )
+            
+            return 0  # Return 0 (no shift) for non-date VR types
+        
         project_hash_root = self.config.get('projectHashRoot', '')
         
         # Get patient's random token from database to use as HMAC key
@@ -524,9 +572,17 @@ class DicomProcessor:
                     )
                 return "000000.00"
             else:
-                # For unknown VR, return the original value
-                original_value = field.element.value if hasattr(field, 'element') and hasattr(field.element, 'value') else ""
-                self.logger.warning(f"Unknown VR type '{vr}' for tag {tag_str}, returning original value.")
+                # For unknown VR, log warning once per unique tag per series
+                tag_key = f"fixeddatetime_{tag_str}_{keyword_str}"
+                if tag_key not in self.warned_non_modified_tags:
+                    self.warned_non_modified_tags.add(tag_key)
+                    series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+                    original_value = field.element.value if hasattr(field, 'element') and hasattr(field.element, 'value') else ""
+                    self.logger.warning(
+                        f"Unknown VR type '{vr}' for tag {tag_str} ({keyword_str}). "
+                        f"Expected DA, DT, or TM. Returning original value. "
+                        f"Series: {series_info}"
+                    )
                 return str(original_value) if original_value is not None else ""
                 
         except Exception as e:
@@ -560,12 +616,7 @@ class DicomProcessor:
         
         # Extract original value
         try:
-            if hasattr(field, 'element') and hasattr(field.element, 'value'):
-                original_value = str(field.element.value)
-            elif hasattr(field, 'value'):
-                original_value = str(field.value)
-            else:
-                original_value = str(value) if value else "unknown"
+            original_value = str(field.element.value)
             # Log original value at PRIVATE level
             self.logger.private(
                 f"Processing original value for tag {field.element.tag} "
@@ -575,7 +626,7 @@ class DicomProcessor:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
             log_project_stacktrace(self.logger, e)
-            original_value = str(value) if value else "unknown"
+            original_value = "unknown"
         
         # Get LLM config
         base_url = self.config.get('cleanDescriptorsLlmBaseUrl', "https://api.openai.com/v1")
@@ -728,6 +779,7 @@ class DicomProcessor:
         the DeidentificationMethodCodeSequence tag with appropriate child tags for each recipe.
         
         The mapping follows DICOM PS3.16 CID 7050 standard codes.
+        Additionally if defacing was performed, the RecognizableVisualFeatures tag is set to "NO".
         
         Note:
             This should be called after anonymization but before cleanup/deletion of files.
@@ -765,7 +817,7 @@ class DicomProcessor:
             recipes_list = [recipes_list]
         
         # Check if defacing was actually performed (for clean_recognizable_visual_features)
-        defacing_performed = len(self.series.get_defaced_files()) > 0
+        defacing_performed = getattr(self.series, 'defacing_succeeded', False)
         
         # Build sequence items for all matching recipes
         sequence_items = []
@@ -816,6 +868,10 @@ class DicomProcessor:
                 # Inject the DeidentificationMethodCodeSequence with all recipe items
                 ds.DeidentificationMethodCodeSequence = sequence_items
                 
+                # Add RecognizableVisualFeatures tag if defacing was performed
+                if defacing_performed:
+                    ds.RecognizableVisualFeatures = "NO"
+
                 # Save the file (overwrite)
                 ds.save_as(path, enforce_file_format=True)
                 
@@ -871,6 +927,9 @@ class DicomProcessor:
         """
         # Clear UID mappings for this series
         self.current_file_mappings.clear()
+        
+        # Clear warning tracking for this series
+        self.warned_non_modified_tags.clear()
         
         # Clear series reference to allow garbage collection
         self.series = None

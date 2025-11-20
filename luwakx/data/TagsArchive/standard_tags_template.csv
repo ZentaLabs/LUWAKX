@@ -38,7 +38,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0008,009d,Consulting Physician Identification Sequence,SQ,,remove,,,,,,,,,,"(0008,009D)",@remove()
 0008,0106,Context Group Version,DT,,func:set_fixed_datetime,,,,,keep,func:generate_hmacdate_shift,,,,"(0008,0106)",@keep()
 0008,0107,Context Group Local Version,DT,,func:set_fixed_datetime,,,,,keep,func:generate_hmacdate_shift,,,,"(0008,0107)",@keep()
-0008,0201,Timezone Offset From UTC,SH,,remove,,,,,keep,func:generate_hmacdate_shift,,,,"(0008,0201)",@remove()
+0008,0201,Timezone Offset From UTC,SH,,remove,,,,,keep,remove,,,,"(0008,0201)",@remove()
 0008,1000,Network ID,AE,,remove,,clean_manually,,,,,,,,"(0008,1000)",@remove()
 0008,1010,Station Name,SH,,replace,,keep,,,,,,,,"(0008,1010)",@remove()
 0008,1030,Study Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0008,1030)",@keep()
@@ -83,7 +83,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0010,0032,Patient's Birth Time,TM,,remove,,,,,,,,,,"(0010,0032)",@remove()
 0010,0040,Patient's Sex,CS,,blank,,,,keep,,,,,,"(0010,0040)",@keep()
 0010,0041,Gender Identity Sequence,SQ,,remove,,,,,,,,,,,
-0010,0042,Sex Parameters for Clinical Use Category Comment,UT,,remove,,,,C,,,func:clean_descriptors_with_llm,,,,
+0010,0042,Sex Parameters for Clinical Use Category Comment,UT,,remove,,,,clean_manually,,,func:clean_descriptors_with_llm,,,,
 0010,0043,Sex Parameters for Clinical Use Category Sequence,SQ,,remove,,,,keep,,,,,,,
 0010,0044,Gender Identity Code Sequence,SQ,,remove,,,,,,,,,,,
 0010,0045,Gender Identity Comment,UT,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
@@ -107,7 +107,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0010,1090,Medical Record Locator,LO,,remove,,,,,,,,,,"(0010,1090)",@remove()
 0010,1100,Referenced Patient Photo Sequence,SQ,,remove,,,,,,,,,,"(0010,1100)",@remove()
 0010,2000,Medical Alerts,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0010,2000)",@keep()
-0010,2110,Allergies,LO,,remove,,,,C,,,func:clean_descriptors_with_llm,,,"(0010,2110)",@remove()
+0010,2110,Allergies,LO,,remove,,,,clean_manually,,,func:clean_descriptors_with_llm,,,"(0010,2110)",@remove()
 0010,2150,Country of Residence,LO,,remove,,,,,,,,,,"(0010,2150)",@remove()
 0010,2152,Region of Residence,LO,,remove,,,,,,,,,,"(0010,2152)",@remove()
 0010,2154,Patient's Telephone Numbers,SH,,remove,,,,,,,,,,"(0010,2154)",@remove()
@@ -288,7 +288,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0034,0001,Flow Identifier Sequence,SQ,,replace,,,,,,,,,,"(0034,0001)",@process()
 0034,0002,Flow Identifier,OB,,remove,,,,,,,,,,"(0034,0002)",removed
 0034,0005,Source Identifier,OB,,remove,,,,,,,,,,"(0034,0005)",removed
-0034,0007,Frame Origin Timestamp,OB,,remove,,,,,keep,func:generate_hmacdate_shift,,,,"(0034,0007)",@remove()
+0034,0007,Frame Origin Timestamp,OB,,remove,,,,,keep,remove,,,,"(0034,0007)",@remove()
 0038,0004,Referenced Patient Alias Sequence,SQ,,remove,,,,,,,,,,"(0038,0004)",@remove()
 0038,0010,Admission ID,LO,,remove,,,,,,,,,,"(0038,0010)",@remove()
 0038,0011,Issuer of Admission ID,LO,,remove,,,,,,,,,,"(0038,0011)",@remove()
@@ -303,15 +303,18 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0038,0030,Discharge Date,DA,,remove,,,,,keep,func:generate_hmacdate_shift,,,,"(0038,0030)","@incrementdate(this,@DATEINC)"
 0038,0032,Discharge Time,TM,,remove,,,,,keep,keep,,,,"(0038,0032)",@keep()
 0038,0040,Discharge Diagnosis Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0038,0040)",@keep()
-0038,0050,Special Needs,LO,,remove,,,,C,,,,,,"(0038,0050)",@remove()
+0038,0050,Special Needs,LO,,remove,,,,clean_manually,,,,,,"(0038,0050)",@remove()
 0038,0060,Service Episode ID,LO,,remove,,,,,,,,,,"(0038,0060)",@remove()
 0038,0061,Issuer of Service Episode ID,LO,,remove,,,,,,,,,,"(0038,0061)",@remove()
 0038,0062,Service Episode Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0038,0062)",@keep()
 0038,0064,Issuer of Service Episode ID Sequence,SQ,,remove,,,,,,,,,,"(0038,0064)",@remove()
 0038,0300,Current Patient Location,LO,,remove,,,,,,,,,,"(0038,0300)",@remove()
 0038,0400,Patient's Institution Residence,LO,,remove,,,,,,,,,,"(0038,0400)",@remove()
-0038,0500,Patient State,LO,,remove,,,,C,,,func:clean_descriptors_with_llm,,,"(0038,0500)",@remove()
+0038,0500,Patient State,LO,,remove,,,,clean_manually,,,func:clean_descriptors_with_llm,,,"(0038,0500)",@remove()
 0038,4000,Visit Comments,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0038,4000)",@remove()
+003a,0020,Multiplex Group Label,SH,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+003a,0203,Channel Label,SH,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
+003a,020c,Channel Derivation Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
 003a,0310,Multiplex Group UID,UI,,func:generate_hmacuid,keep,,,,,,,,,"(003A,0310)","@hashuid(@UIDROOT,this)"
 003a,0314,Impedance Measurement DateTime,DT,,func:set_fixed_datetime,,,,,keep,func:generate_hmacdate_shift,,,,"(003A,0314)","@incrementdate(this,@DATEINC)"
 003a,0329,​Waveform Filter Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(003A,0329)",@keep()
@@ -327,7 +330,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,000b,Scheduled Performing Physician Identification Sequence,SQ,,remove,,,,,,,,,,"(0040,000B)",@remove()
 0040,0010,Scheduled Station Name,SH,,remove,,keep,,,,,,,,"(0040,0010)",@remove()
 0040,0011,Scheduled Procedure Step Location,SH,,remove,,keep,,,,,,,,"(0040,0011)",@remove()
-0040,0012,Pre-Medication,LO,,remove,,,,C,,,,,,"(0040,0012)",@keep()
+0040,0012,Pre-Medication,LO,,remove,,,,clean_manually,,,,,,"(0040,0012)",@keep()
 0040,0241,Performed Station AE Title,AE,,remove,,clean_manually,,,,,,,,"(0040,0241)",@remove()
 0040,0242,Performed Station Name,SH,,remove,,keep,,,,,,,,"(0040,0242)",@remove()
 0040,0243,Performed Location,SH,,remove,,,,,,,,,,"(0040,0243)",@remove()
@@ -347,6 +350,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,0551,Specimen Identifier,LO,,replace,,,,,,,,,,"(0040,0551)",removed
 0040,0554,Specimen UID,UI,,func:generate_hmacuid,keep,,,,,,,,,"(0040,0554)","@hashuid(@UIDROOT,this)"
 0040,0555,Acquisition Context Sequence,SQ,,blank,,,,,,,,clean_manually,,"(0040,0555)",@process()
+0040,0556,Acquisition Context Description,ST,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
 0040,0562,Issuer of the Specimen Identifier Sequence,SQ,,blank,,,,,,,,,,"(0040,0562)",@process()
 0040,0600,Specimen Short Description,LO,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0040,0600)",@keep()
 0040,0602,Specimen Detailed Description,UT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(0040,0602)",@keep()
@@ -425,6 +429,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0040,a358,Verbal Source Identifier Code Sequence (Trial),SQ,,remove,,,,,,,,,,"(0040,A358)",@remove()
 0040,a402,Observation Subject UID (Trial),UI,,func:generate_hmacuid,keep,,,,,,,,,"(0040,A402)","@hashuid(@UIDROOT,this)"
 0040,a730,Content Sequence,SQ,,replace,,,,,,,,clean_manually,,"(0040,A730)",@process()
+0040,b020,Waveform Annotation Sequence,SQ,,replace,,,,,,,,clean_manually,,,
 0040,b034,Annotation DateTime,DT,,remove,,,,,keep,func:generate_hmacdate_shift,,,,,
 0040,b036,Segment Definition DateTime,DT,,remove,,,,,keep,func:generate_hmacdate_shift,,,,,
 0040,b03b,Montage Name,LT,,remove,,,,,,,func:clean_descriptors_with_llm,,,,
@@ -451,6 +456,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 006a,0005,Annotation Group Label,LO,,replace,,,,,,,func:clean_descriptors_with_llm,,,"(006A,0005)",@keep()
 006a,0006,Annotation Group Description,UT,,remove,,,,,,,func:clean_descriptors_with_llm,,,"(006A,0006)",@keep()
 0070,0001,Graphic Annotation Sequence,SQ,,replace,,,,,,,,,clean_manually,"(0070,0001)",@remove()
+0070,0006,Unformatted Text Value,ST,,replace,,,,,,,func:clean_descriptors_with_llm,,,,
 0070,0082,Presentation Creation Date,DA,,remove,,,,,keep,func:generate_hmacdate_shift,,,,"(0070,0082)","@incrementdate(this,@DATEINC)"
 0070,0083,Presentation Creation Time,TM,,remove,,,,,keep,keep,,,,"(0070,0083)",@keep()
 0070,0084,Content Creator's Name,PN,,replace,,,,,,,,,,"(0070,0084)",@empty()
@@ -486,7 +492,7 @@ Group,Element,Name,VR,VM,Basic Prof.,Rtn. UIDs Opt.,Rtn. Dev. Id. Opt.,Rtn. Inst
 0400,0100,Digital Signature UID,UI,,func:generate_hmacuid,,,,,,,,,,"(0400,0100)","@hashuid(@UIDROOT,this)"
 0400,0105,Digital Signature DateTime,DT,,func:set_fixed_datetime,,,,,keep,func:generate_hmacdate_shift,,,,"(0400,0105)","@incrementdate(this,@DATEINC)"
 0400,0115,Certificate of Signer,OB,,remove,,,,,,,,,,"(0400,0115)",@remove()
-0400,0310,Certified Timestamp,OB,,remove,,,,,keep,func:generate_hmacdate_shift,,,,"(0400,0310)",@remove()
+0400,0310,Certified Timestamp,OB,,remove,,,,,keep,remove,,,,"(0400,0310)",@remove()
 0400,0402,Referenced Digital Signature Sequence,SQ,,remove,,,,,,,,,,"(0400,0402)",@remove()
 0400,0403,Referenced SOP Instance MAC Sequence,SQ,,remove,,,,,,,,,,"(0400,0403)",@remove()
 0400,0404,MAC,OB,,remove,,,,,,,,,,"(0400,0404)",@remove()

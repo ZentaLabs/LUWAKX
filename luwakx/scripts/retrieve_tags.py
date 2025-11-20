@@ -5,9 +5,34 @@ import requests
 from bs4 import BeautifulSoup
 from pydicom.datadict import get_entry
 import sys
+from enum import Enum
 # Add the parent directory of luwakx to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from luwakx.utils import download_github_asset_by_tag
+
+
+class TCIAPrivateDisposition(Enum):
+    """TCIA private tag disposition codes from TCIA Private Tag Knowledge Base."""
+    KEEP = "k"
+    OFFSET_TIME = "o"
+    HASH_UID = "h"
+    DELETE = "d"
+
+
+class DICOMStandardActionCode(Enum):
+    """DICOM PS3.15 Appendix E Basic Profile action codes."""
+    X_REMOVE = "X"
+    D_REPLACE = "D"
+    Z_BLANK = "Z"
+    U_REPLACEUID = "U"
+    K_KEEP = "K"
+    C_CLEAN = "C"
+    # Composite action codes
+    Z_BLANK_D_REPLACE = "Z/D"
+    X_REMOVE_Z_BLANK = "X/Z"
+    X_REMOVE_D_REPLACE = "X/D"
+    X_REMOVE_Z_BLANK_D_REPLACE = "X/Z/D"
+    X_REMOVE_Z_BLANK_U_REPLACEUID = "X/Z/U*"
 
 
 def read_tcia_csv(tcia_csv_path, tcia_url=None):
@@ -25,11 +50,7 @@ def read_tcia_csv(tcia_csv_path, tcia_url=None):
         download_github_asset_by_tag(
             "ZentaLabs", "luwak", "standard-private-tags", filename, archive_path, token
         )
-        #response = requests.get(tcia_url)
-        #response.raise_for_status()
-        #with open(tcia_csv_path, "wb") as f:
-        #    f.write(response.content)
-        #print(f"Downloaded {tcia_csv_path}.")
+
     tcia_df = pd.read_csv(tcia_csv_path)
     tcia_df.insert(1, "Private_Creator", "")
     # Remove the CSV file after reading
@@ -105,7 +126,11 @@ def reorder_and_save(tcia_df, output_path, save_reformatted=False):
     # Transform rows
     tcia_df[['element_sig_pattern', 'Private_Creator','tag_name', 'vr','private_disposition']] = tcia_df.apply(transform_row, axis=1, result_type='expand')
     # Keep only rows where private_disposition is 'k', 'h', or 'o'
-    tcia_df = tcia_df[tcia_df['private_disposition'].isin(['k', 'h', 'o'])].copy()
+    tcia_df = tcia_df[tcia_df['private_disposition'].isin([
+        TCIAPrivateDisposition.KEEP.value,
+        TCIAPrivateDisposition.HASH_UID.value,
+        TCIAPrivateDisposition.OFFSET_TIME.value
+    ])].copy()
     # Exclude rows with Private_Creator == 'Unnamed Private Block - 10'
     tcia_df = tcia_df[tcia_df['Private_Creator'] != 'Unnamed Private Block - 10'].copy()
     # Remove rows with all-caps Private_Creator if a non-all-caps duplicate exists
@@ -201,27 +226,29 @@ def extract_last_paren(s, private_creator=False):
 def rtn_safe_priv_opt(row):
     """
     Determine the safe private attribute disposition for a DICOM row based on private_disposition value.
-    Maps disposition codes to retention options:
-    - 'k' -> 'keep'
-    - 'o' -> 'func:generate_hmacdate_shift'
-    - 'h' -> 'func:generate_hmacuid'
-    - 'd' and IsInDICOMRetainSafePrivateTags -> 'keep'
+    Maps disposition codes to retention action:
+    - TCIAPrivateDisposition.KEEP -> 'keep'
+    - TCIAPrivateDisposition.OFFSET_TIME -> 'func:generate_hmacdate_shift'
+    - TCIAPrivateDisposition.HASH_UID -> 'func:generate_hmacuid'
+    - TCIAPrivateDisposition.DELETE and IsInDICOMRetainSafePrivateTags -> 'keep'
     
     Args:
         row (dict): A dictionary representing a DICOM row, expected to contain 'IsInDICOMRetainSafePrivateTags' and 'private_disposition' keys.
     Returns:
-        str: The safe private retention option.
+        str or None: The safe private retention action, or None if tag should be excluded.
     """
     disposition = str(row['private_disposition']).strip().lower()
     
-    if disposition == 'k':
+    if disposition == TCIAPrivateDisposition.KEEP.value:
         return 'keep'
-    elif disposition == 'o':
+    elif disposition == TCIAPrivateDisposition.OFFSET_TIME.value:
         return 'func:generate_hmacdate_shift'
-    elif disposition == 'h':
+    elif disposition == TCIAPrivateDisposition.HASH_UID.value:
         return 'func:generate_hmacuid'
-    elif row['IsInDICOMRetainSafePrivateTags'] and disposition == 'd':
+    elif row['IsInDICOMRetainSafePrivateTags'] and disposition == TCIAPrivateDisposition.DELETE.value:
         return 'keep'
+    else:
+        return None
 
 def split_group_element(val):
     """Split element_sig_pattern_cmp into Group and Element"""
@@ -572,31 +599,18 @@ def generate_basic_profile(final_df):
         if basic_profile == '':
             continue
             
-        if basic_profile == 'X':
-            if name == "Digital Signatures Sequence":
-                df.at[idx, 'Basic Prof.'] = 'remove'
-            elif name == "Curve Data":
-                df.at[idx, 'Basic Prof.'] = 'remove'
-            elif name == "Overlay Data":
-                df.at[idx, 'Basic Prof.'] = 'remove'
-            elif name == "Overlay Comments":
-                df.at[idx, 'Basic Prof.'] = 'remove'
-            elif name == "Data Set Trailing Padding":
-                df.at[idx, 'Basic Prof.'] = 'remove'
-            elif name == "Private Attributes":
-                df.at[idx, 'Basic Prof.'] = 'remove'
-            else:
-                df.at[idx, 'Basic Prof.'] = 'remove'
+        if basic_profile == DICOMStandardActionCode.X_REMOVE.value:
+            df.at[idx, 'Basic Prof.'] = 'remove'
                 
-        elif basic_profile == 'K':
+        elif basic_profile == DICOMStandardActionCode.K_KEEP.value:
             df.at[idx, 'Basic Prof.'] = 'keep'
             
-        elif basic_profile == 'U':
+        elif basic_profile == DICOMStandardActionCode.U_REPLACEUID.value:
             # Check if VR is UI for UID replacement
             if vr == 'UI':
                 df.at[idx, 'Basic Prof.'] = 'func:generate_hmacuid'
                 
-        elif basic_profile == 'D':
+        elif basic_profile == DICOMStandardActionCode.D_REPLACE.value:
             replace_tag = ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR", "DS", "IS", 
                            "FD", "FL", "SS", "US", "SL", "UL", 'AS', 'SQ', 'OD', 'OL', 'OV', 'SV', 'UV']
             # Check if VR is date/time related for date replacement   
@@ -609,23 +623,33 @@ def generate_basic_profile(final_df):
             elif vr in ['OB', 'OW', 'OF', 'UN']:
                 df.at[idx, 'Basic Prof.'] = 'remove'
             else:
-                print(f"Tag {tag} with Basic Profile 'D' has unhandled VR '{vr}'. Keeping original value.")
+                print(f"Tag {tag} with Basic Profile '{DICOMStandardActionCode.D_REPLACE.value}' has unhandled VR '{vr}'. Keeping original value.")
                 
-        elif basic_profile == 'Z':
+        elif basic_profile == DICOMStandardActionCode.Z_BLANK.value:
             # Check if VR is date/time related for date replacement
             if vr in ['DA', 'DT', 'TM']:
                 df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
             else:
                 df.at[idx, 'Basic Prof.'] = 'blank'
                 
-        elif basic_profile in ['Z/D','X/Z','X/D','X/Z/D','X/Z/U*']:
+        elif basic_profile in [DICOMStandardActionCode.Z_BLANK_D_REPLACE.value,
+                               DICOMStandardActionCode.X_REMOVE_Z_BLANK.value,
+                               DICOMStandardActionCode.X_REMOVE_D_REPLACE.value,
+                               DICOMStandardActionCode.X_REMOVE_Z_BLANK_D_REPLACE.value,
+                               DICOMStandardActionCode.X_REMOVE_Z_BLANK_U_REPLACEUID.value]:
             if vr in ['DA', 'DT', 'TM']:
                 df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
-            elif basic_profile in ['X/Z/U*','X/D', 'Z/D', 'X/Z/D'] and vr == 'UI':
+            elif basic_profile in [DICOMStandardActionCode.X_REMOVE_Z_BLANK_U_REPLACEUID.value,
+                                   DICOMStandardActionCode.X_REMOVE_D_REPLACE.value,
+                                   DICOMStandardActionCode.Z_BLANK_D_REPLACE.value,
+                                   DICOMStandardActionCode.X_REMOVE_Z_BLANK_D_REPLACE.value] and vr == 'UI':
                 df.at[idx, 'Basic Prof.'] = 'func:generate_hmacuid'
-            elif basic_profile in ['X/Z/U*', 'X/Z']:
+            elif basic_profile in [DICOMStandardActionCode.X_REMOVE_Z_BLANK_U_REPLACEUID.value,
+                                   DICOMStandardActionCode.X_REMOVE_Z_BLANK.value]:
                 df.at[idx, 'Basic Prof.'] = 'blank'
-            elif basic_profile in ['X/D', 'Z/D', 'X/Z/D']:
+            elif basic_profile in [DICOMStandardActionCode.X_REMOVE_D_REPLACE.value,
+                                   DICOMStandardActionCode.Z_BLANK_D_REPLACE.value,
+                                   DICOMStandardActionCode.X_REMOVE_Z_BLANK_D_REPLACE.value]:
                 if vr in ['OB', 'OW', 'OF', 'UN']:
                     df.at[idx, 'Basic Prof.'] = 'remove'
                 else:
@@ -666,9 +690,12 @@ def generate_retain_uid_profile(final_df):
         if not tag:
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
         
-        if profile == 'K':
+        if profile == DICOMStandardActionCode.K_KEEP.value:
             df.at[idx, 'Rtn. UIDs Opt.'] = 'keep'
+        elif profile == "":
+            continue
         else:
+            print(f"Warning: Unrecognized profile value '{profile}' for tag {tag} in 'Rtn. UIDs Opt.' column, skipping.")
             # For any other values, keep them as is or set to default
             continue
     
@@ -703,9 +730,14 @@ def generate_retain_patient_characteristics_profile(final_df):
         if not tag:
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
         
-        if profile == 'K':
+        if profile == DICOMStandardActionCode.K_KEEP.value:
             df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'keep'
+        elif profile == DICOMStandardActionCode.C_CLEAN.value:
+            df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'clean_manually'
+        elif profile == "":
+            continue
         else:
+            print(f"Warning: Unrecognized profile value '{profile}' for tag {tag} in 'Rtn. Pat. Chars. Opt.' column, skipping.")
             # For any other values, keep them as is or set to default
             continue
     
@@ -738,11 +770,12 @@ def generate_retain_long_full_dates_profile(final_df):
         # Set empty tags
         if not tag:
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
-        if profile == 'K':
+        if profile == DICOMStandardActionCode.K_KEEP.value:
             df.at[idx, 'Rtn. Long. Full Dates Opt.'] = 'keep'
         elif profile == '':
             continue
         else:
+            print(f"Warning: Unrecognized profile value '{profile}' for tag {tag} in 'Rtn. Long. Full Dates Opt.' column, skipping.")
             # For any other values, keep them as is or set to default
             pass
     
@@ -777,12 +810,18 @@ def generate_retain_long_modified_dates_profile(final_df):
         if not tag:
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
         
-        if profile == 'C':
+        if profile == DICOMStandardActionCode.C_CLEAN.value:
             if str(row['VR']) == 'TM':
                 df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'keep'
-            else:
+            elif str(row['VR']) in ['DA', 'DT']:
                 df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'func:generate_hmacdate_shift'
+            else:
+                # For other VRs that can not be easily jittered, set to remove as a safe default
+                df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'remove'
+        elif profile == "":
+            continue
         else:
+            print(f"Warning: Unrecognized profile value '{profile}' for tag {tag} in 'Rtn. Long. Modif. Dates Opt.' column, skipping.")
             # For any other values, keep them as is or set to default
             continue
     
@@ -817,11 +856,14 @@ def retain_device_id_option(df):
         if not tag:
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
-        if profile == 'C':
+        if profile == DICOMStandardActionCode.C_CLEAN.value:
             df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'clean_manually'
-        elif profile == 'K':
+        elif profile == DICOMStandardActionCode.K_KEEP.value:
             df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'keep'
+        elif profile == '':
+            continue
         else:
+            print(f"Warning: Unrecognized profile value '{profile}' for tag {tag} in 'Rtn. Dev. Id. Opt.' column, skipping.")
             # For any other values, keep them as is or set to default
             continue
 
@@ -855,9 +897,12 @@ def retain_institution_id_option(df):
         if not tag:
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
-        if profile == 'K':
+        if profile == DICOMStandardActionCode.K_KEEP.value:
             df.at[idx, 'Rtn. Inst. Id. Opt.'] = 'keep'
+        elif profile == '':
+            continue
         else:
+            print(f"Warning: Unrecognized profile value '{profile}' for tag {tag} in 'Rtn. Inst. Id. Opt.' column, skipping.")
             # For any other values, keep them as is or set to default
             continue
 
@@ -893,13 +938,20 @@ def clean_profiles(df):
         if not tag:
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
-        if profile1 == 'C':
+        if profile1 == DICOMStandardActionCode.C_CLEAN.value:
             df.at[idx, 'Clean Desc. Opt.'] = 'func:clean_descriptors_with_llm'
-        if profile2 == 'C':
+        if profile2 == DICOMStandardActionCode.C_CLEAN.value:
             df.at[idx, 'Clean Struct. Cont. Opt.'] = 'clean_manually'
-        if profile3 == 'C':
+        if profile3 == DICOMStandardActionCode.C_CLEAN.value:
             df.at[idx, 'Clean Graph. Opt.'] = 'clean_manually'
+        if profile1 == '':
+            continue
+        if profile2 == '':
+            continue
+        if profile3 == '':
+            continue
         else:
+            print(f"Warning: Unrecognized profile for tag {tag} in the 'Clean Desc. Opt.'or 'Clean Struct. Cont. Opt.' or 'Clean Graph. Opt.' column, skipping.")
             # For any other values, keep them as is or set to default
             continue
 

@@ -103,21 +103,9 @@ class DefaceService:
             return self._copy_without_defacing(series)
         
         # Get metadata from series (already loaded during series creation - no file re-reading!)
-        modality = series.modality
-        
-        # Read DICOM metadata for BodyPartExamined (not stored in series)
-        try:
-            ds = pydicom.dcmread(organized_files[0], stop_before_pixels=True)
-            body_part = ds.BodyPartExamined if 'BodyPartExamined' in ds else None
-        except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
-            log_project_stacktrace(self.logger, e)
-            self.logger.error(f"Failed to read DICOM metadata for BodyPartExamined: {e}")
-            body_part = None
-        
+        modality = series.modality        
         self.logger.private(
-            f"Defacing series {series.original_series_uid} with modality {modality} "
-            f"and body part {body_part}"
+            f"Defacing series {series.original_series_uid} with modality {modality}"
         )
         
         # Load DICOM series as 3D volume
@@ -178,7 +166,6 @@ class DefaceService:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
             self.logger.error(f"Failed to save NRRD volumes: {e}")
-            return self._copy_without_defacing(series)
         
         # Convert defaced volume back to DICOM files
         defaced_array = SimpleITK.GetArrayFromImage(image_defaced)  # Shape: [slices, height, width]
@@ -187,8 +174,8 @@ class DefaceService:
         # Build mapping from organized_path to DicomFile for efficient lookup
         organized_to_dicom_file = {f.organized_path: f for f in series.files if f.organized_path is not None}
         
-        for i, original_file_path in enumerate(organized_files):
-            try:
+        try:
+            for i, original_file_path in enumerate(organized_files):
                 ds = pydicom.dcmread(original_file_path)
                 
                 # Get rescale parameters
@@ -208,18 +195,22 @@ class DefaceService:
                 dicom_file = organized_to_dicom_file.get(original_file_path)
                 if dicom_file:
                     dicom_file.set_defaced_path(defaced_file_path)
-                
-            except Exception as e:
-                tb = traceback.extract_tb(e.__traceback__)
-                log_project_stacktrace(self.logger, e)
-                self.logger.error(f"Failed to process DICOM slice {i}: {e}")
-                continue
+                    
+        except Exception as e:
+            tb = traceback.extract_tb(e.__traceback__)
+            log_project_stacktrace(self.logger, e)
+            self.logger.error(f"Failed to convert defaced volume to DICOM files: {e}")
+            self.logger.error("Defacing failed - falling back to undefaced files")
+            return self._copy_without_defacing(series)
         
         series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
         self.logger.info(
             f"Defacing completed for series {series_display}: "
             f"{len(defaced_dicom_files)} files processed"
         )
+        
+        # Mark defacing as successful
+        series.defacing_succeeded = True
         
         # Return paths for caller to handle final placement
         return {

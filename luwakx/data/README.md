@@ -175,17 +175,13 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
       },
       "additionalProperties": false
     },
-    "llmCacheFolder": {
+    "analysisCacheFolder": {
       "type": "string",
-      "description": "Path to folder for LLM cache files."
-    },
-    "patientUidDatabasePath": {
-      "type": "string",
-      "description": "Path to persistent patient UID database file (relative to config file location).
-                      If file exists, it will be loaded and updated; if not, a new database will be created at this location.
-                      Database persists across anonymization runs to ensure consistent patient ID and UID mappings.
-                      No default - must be explicitly specified to enable persistence.",
-      "examples": ["./patient_uid.db", "/var/data/luwak/patient_uid.db"]
+      "description": "Path to folder for analysis cache databases (patient_uid.db and llm_cache.db).
+                      If specified and folder exists with databases, they will be loaded and updated; if not, new databases will be created.
+                      Databases persist across anonymization runs to ensure consistent mappings.
+                      If not specified, temporary databases are created in the private mapping folder and deleted after processing.",
+      "examples": ["./analysis_cache", "/var/data/luwak/cache"]
     },
     "testOptions": {
       "type": "object",
@@ -229,16 +225,18 @@ You can override the default tag templates by specifying custom CSV files for st
 - If only one is provided, only that template is overridden.
 - If the file does not exist, the default template is used.
 
-### LLM Cache Options
+### Analysis Cache Options
 
-Control caching for LLM-based descriptor cleaning:
+Control persistent storage for patient UID database and LLM cache:
 
 ```json
-"llmCacheFolder": "./llm_cache",
-"llmCacheTtlDays": 365
+"analysisCacheFolder": "./analysis_cache"
 ```
-- `llmCacheFolder`: Path to folder for LLM cache files.
-- `llmCacheTtlDays`: Time-to-live for cached LLM results in days. Older entries are automatically cleaned up.
+- `analysisCacheFolder`: Path to folder for analysis databases (`patient_uid.db` and `llm_cache.db`)
+  - If specified: Databases persist in this folder across runs
+  - If not specified: Temporary databases are created and deleted after processing
+  - Enables consistent patient ID and UID mappings across multiple anonymization runs
+  - Enables LLM cache reuse for cost savings and performance
 
 ### Test Options
 

@@ -123,7 +123,7 @@ class TestAnonymizeScript(unittest.TestCase):
         
         return None
     
-    def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None, patientIdPrefix=None, patientUidDatabasePath=None):
+    def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None, patientIdPrefix=None, analysisCacheFolder=None):
         """Helper method to create a temporary config file for testing."""
         if recipes is None:
             recipes = ""
@@ -152,7 +152,6 @@ class TestAnonymizeScript(unittest.TestCase):
             "outputPrivateMappingFolder": output_private_mapping_folder,
             "recipesFolder": recipes_folder,
             "recipes": recipes if recipes is not None else "deid.dicom",
-            "llmCacheFolder": self.llm_cache_folder,
             "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
             "cleanDescriptorsLlmModel": "gpt-4o-mini",
             "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
@@ -162,9 +161,9 @@ class TestAnonymizeScript(unittest.TestCase):
         if patientIdPrefix is not None:
             config["patientIdPrefix"] = patientIdPrefix
         
-        # Add patientUidDatabasePath if provided
-        if patientUidDatabasePath is not None:
-            config["patientUidDatabasePath"] = patientUidDatabasePath
+        # Add analysisCacheFolder if provided
+        if analysisCacheFolder is not None:
+            config["analysisCacheFolder"] = analysisCacheFolder
         
         # Create temporary config file
         config_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
@@ -213,7 +212,7 @@ class TestAnonymizeScript(unittest.TestCase):
         config_path = self.create_test_config(
             input_folder=self.limited_input_dir,
             output_folder=self.test_output_dir,
-            recipes=["retain_safe_private_tags"]
+            recipes=["basic_profile","retain_safe_private_tags"]
         )
         try:
             self.logger.info("Starting private tags retention test (batch)")
@@ -405,16 +404,17 @@ class TestAnonymizeScript(unittest.TestCase):
         original_ds = pydicom.dcmread(original_file)
         original_series_date = original_ds['00080021'].value
         
-        # Create persistent UID database for this test
-        uid_db_path = os.path.abspath(os.path.join(self.test_output_dir, "private", "test_patient_uid.db"))
-        os.makedirs(os.path.dirname(uid_db_path), exist_ok=True)
+        # Create persistent analysis cache folder for this test
+        cache_folder = os.path.abspath(os.path.join(self.test_output_dir, "private", "analysis_cache"))
+        os.makedirs(cache_folder, exist_ok=True)
+        uid_db_path = os.path.join(cache_folder, "patient_uid.db")
         
-        # Create test config with persistent database
+        # Create test config with persistent cache
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
             recipes=["retain_long_modified_dates"],
-            patientUidDatabasePath=uid_db_path
+            analysisCacheFolder=cache_folder
         )
         try:
             self.logger.info("Starting date shift test with persistent UID database")
@@ -639,16 +639,17 @@ class TestAnonymizeScript(unittest.TestCase):
         original_ds = pydicom.dcmread(original_file)
         original_acquisition_date = original_ds['AcquisitionDate'].value
         
-        # Create persistent UID database for this test
-        uid_db_path = os.path.abspath(os.path.join(self.test_output_dir, "private", "test_patient_uid.db"))
-        os.makedirs(os.path.dirname(uid_db_path), exist_ok=True)
+        # Create persistent analysis cache folder for this test
+        cache_folder = os.path.abspath(os.path.join(self.test_output_dir, "private", "analysis_cache"))
+        os.makedirs(cache_folder, exist_ok=True)
+        uid_db_path = os.path.join(cache_folder, "patient_uid.db")
         
-        # Create test config with basic profile and persistent database
+        # Create test config with basic profile and persistent cache
         config_path = self.create_test_config(
             input_folder=original_file,
             output_folder=self.test_output_dir,
             recipes=["basic_profile", "retain_long_modified_dates"],
-            patientUidDatabasePath=uid_db_path
+            analysisCacheFolder=cache_folder
         )
         try:
             self.logger.info("Starting basic profile + modified dates test with persistent UID database")
@@ -727,6 +728,7 @@ class TestAnonymizeScript(unittest.TestCase):
             input_folder=original_file,
             output_folder=self.test_output_dir,
             recipes=["basic_profile", "clean_descriptors"],
+            analysisCacheFolder=self.llm_cache_folder
         )
         try:
             self.logger.info("Starting basic profile + clean descriptors test")

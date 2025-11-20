@@ -9,5 +9,6 @@
   "projectHashRoot": "7f4fsui293asdf",
   "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
   "cleanDescriptorsLlmModel": "gpt-4o-mini",
-  "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
+  "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY",
+  "analysisCacheFolder": "./outputs/privateMapping"
 }

@@ -62,23 +62,26 @@ Create a JSON configuration file with the following structure:
 - **`cleanDescriptorsLlmModel`**: LLM model name for descriptor cleaning (default: "openai/gpt-4o-mini")
 - **`cleanDescriptorsLlmApiKeyEnvVar`**: Environment variable name containing the LLM API key (optional)
 
-#### LLM Caching Parameters
+#### Analysis Cache Parameters
 
-- **`llmCacheFolder`**: SQLite cache folder path (default: "./llm_cache")
+- **`analysisCacheFolder`**: Folder path for persistent analysis databases (`patient_uid.db` and `llm_cache.db`)
+  - If specified: Databases are created/loaded from this folder and persist after processing
+  - If not specified: Temporary databases are created in the private mapping folder and deleted after processing
+  - Enables consistent mappings across multiple anonymization runs
 
-**LLM Caching Benefits:**
-- **Cost Savings**: Avoids redundant API calls for previously analyzed content
-- **Performance**: Faster processing for repeated DICOM tags across files
+**Analysis Cache Benefits:**
+- **Consistency**: Ensures same patient mappings and UID translations across runs
+- **Cost Savings**: LLM cache avoids redundant API calls for previously analyzed content
+- **Performance**: Faster processing for repeated content
 - **Parallel Safe**: Thread-safe SQLite implementation for concurrent processing
-- **Persistent**: Cache survives process restarts and can be shared across runs
 
-**Example LLM configuration with caching:**
+**Example configuration with persistent cache:**
 ```json
 {
   "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
   "cleanDescriptorsLlmModel": "gpt-4o-mini", 
   "cleanDescriptorsLlmApiKeyEnvVar": "OPENAI_API_KEY",
-  "llmCacheFolder": "./llm_cache",
+  "analysisCacheFolder": "./analysis_cache"
 }
 ```
 

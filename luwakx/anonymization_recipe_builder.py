@@ -134,7 +134,11 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                 if final_action == 'keep':
                     line = f"KEEP {tag}\n"
                 elif final_action == 'remove':
-                    line = f"REMOVE {tag}\n"
+                    if name.lower() == 'private attributes':
+                        # Add line to remove all private tags
+                        line = f"REMOVE ALL func:is_tag_private\n"
+                    else:
+                        line = f"REMOVE {tag}\n"
                 elif final_action == 'blank':
                     if vr in ['OD', 'OL', 'OV', 'SV', 'UV', 'DS', 'IS', 'FD', 
                                 'FL', 'SS', 'US', 'SL', 'UL']:
@@ -152,7 +156,13 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     elif vr == 'AS':
                         line = f"REPLACE {tag} 000D\n"
                     elif vr in ['SQ']:
-                        line = f"#REPLACE {tag} NEED to BE REVIEWED\n"
+                        if row['Final CTP Script'] in ['@remove()', 'removed']:
+                            line = f"REMOVE {tag}\n"
+                        else:
+                            line = f"#REPLACE {tag} SEQUENCE NEEDS REVIEW\n"
+                            logger.warning(f"Tag {tag} with VR=SQ requires custom template/manual review for replacement.")
+                    else:
+                        logger.warning(f"Tag {tag} with VR={vr} requires custom template/manual review for replacement.")
                 elif final_action == 'func:generate_hmacuid':
                     line = f"REPLACE {tag} func:generate_hmacuid\n"
                 elif final_action == 'func:set_fixed_datetime':
@@ -165,8 +175,13 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     line = f"REPLACE {tag} func:generate_patient_id\n"
                 elif final_action == 'clean_manually':
                     line = f"# REPLACE {tag} CLEANED NEEDS MANUAL REVIEW\n"
+                    logger.warning(f"Tag {tag} with VR={vr} requires manual cleaning.")
                 elif final_action == 'manual_review':
-                    line = f"# REPLACE {tag} MANUAL REVIEW NEEDED\n"
+                    line = f"# REPLACE {tag}  with VR={vr} MANUAL REVIEW NEEDED\n"
+                    logger.warning(f"Tag {tag} with VR={vr} requires manual review.")
+                else:
+                    logger.error(f"Unrecognized final action '{final_action}' for tag {tag} with VR={vr}")
+                    continue  # Skip unrecognized actions
                 outfile.write(line)
         
         # Add PatientIdentityRemoved if basic_profile is in the recipe list (original logic)
@@ -185,8 +200,6 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
             outfile.write("ADD LongitudinalTemporalInformationModified UNMODIFIED\n")
         elif 'retain_long_modified_dates' in recipes_to_process:
             outfile.write("ADD LongitudinalTemporalInformationModified MODIFIED\n")
-        if 'clean_recognizable_visual_features' in recipes_to_process:
-            outfile.write("ADD RecognizableVisualFeatures NO\n")
 
         # Remove DeidentificationMethodCodeSequence if exists from previous runs. It will be added 
         # again later at the end of the series deidentification.
@@ -212,14 +225,14 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     elif action.lower() == 'func:generate_hmacuid':
                         line = f"REPLACE ({group},\"{private_creator}\",{element}) func:generate_hmacuid\n"
                     elif action.lower() == 'func:generate_hmacdate_shift' and 'retain_long_modified_dates' in recipes_to_process:
-                        # TODO: Check if it is better to remove these in case the retain long modified dates is not selected
                         # currently the jitter is only applied if retain_long_modified_dates is selected
                         line = f"JITTER ({group},\"{private_creator}\",{element}) func:generate_hmacdate_shift\n"
+                    elif action.lower() == 'func:generate_hmacdate_shift' and not 'retain_long_modified_dates' in recipes_to_process:
+                        continue
+                    else:
+                        logger.warning(f"Unrecognized action '{action}' for private tag ({group},\"{private_creator}\",{element}), skipping.")
+                        continue  # Skip unrecognized actions
                     outfile.write(line)
-
-        # Add the final line to remove all other private tags
-        line = f"REMOVE ALL func:is_tag_private\n"
-        outfile.write(line)
 
     logger.info(f"Recipe generated: {output_file}")
     return output_file
@@ -254,6 +267,8 @@ def _determine_final_action(actions, vr):
         return 'replace'
     elif 'func:set_fixed_datetime' in actions:
         return 'func:set_fixed_datetime'
+    elif 'clean_manually' in actions:
+        return 'clean_manually'
     elif 'blank' in actions:
         return 'blank'
     elif 'remove' in actions:

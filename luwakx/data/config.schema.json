@@ -87,16 +87,10 @@
       "type": "string",
       "default": ""
     },
-    "llmCacheFolder": {
+    "analysisCacheFolder": {
       "type": "string",
-      "description": "Path to folder for LLM cache files.",
-      "default": "./llm_cache",
-      "examples": ["./llm_cache", "/path/to/shared/cache"]
-    },
-    "patientUidDatabasePath": {
-      "type": "string",
-      "description": "Path to persistent patient UID database file (relative to config file location).\nIf file exists, it will be loaded and updated; if not, a new database will be created at this location.\nDatabase persists across anonymization runs to ensure consistent patient ID and UID mappings.\nNo default - must be explicitly specified to enable persistence.",
-      "examples": ["./patient_uid.db", "/var/data/luwak/patient_uid.db"]
+      "description": "Path to folder for analysis cache databases (patient_uid.db and llm_cache.db).\nIf specified and folder exists with databases, they will be loaded and updated; if not, new databases will be created.\nDatabases persist across anonymization runs to ensure consistent mappings.\nIf not specified, temporary databases are created in the private mapping folder and deleted after processing.",
+      "examples": ["./analysis_cache", "/var/data/luwak/cache"]
     },
     "testOptions": {
       "type": "object",

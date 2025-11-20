@@ -85,11 +85,21 @@ class LuwakAnonymizer:
             sys.exit(1)
         
         # Initialize LLM cache if enabled
-        self.llm_cache = None        
+        self.llm_cache = None
+        self.persistent_llm_cache = False  # Track if LLM cache should persist
         if 'clean_descriptors' in self.config.get('recipes', []):
             try:
-                cache_folder = self.config.get('llmCacheFolder')
-                cache_file = os.path.join(cache_folder, 'llm_cache.db')
+                cache_folder = self.config.get('analysisCacheFolder')
+                if cache_folder:
+                    # Using persistent cache folder
+                    self.persistent_llm_cache = True
+                    cache_file = os.path.join(cache_folder, 'llm_cache.db')
+                    self.logger.info(f"Using persistent LLM cache folder: {cache_folder}")
+                else:
+                    # Use temporary cache in private mapping folder
+                    cache_folder = self.config.get('outputPrivateMappingFolder')
+                    cache_file = os.path.join(cache_folder, 'llm_cache.db')
+                    self.logger.debug("Using temporary LLM cache (will be deleted after run)")
                 
                 self.llm_cache = LLMResultCache(
                     cache_file_path=cache_file,
@@ -103,6 +113,7 @@ class LuwakAnonymizer:
             except Exception as e:
                 self.logger.warning(f"Failed to initialize LLM cache: {e}")
                 self.llm_cache = None
+                self.persistent_llm_cache = False
         else:
             self.logger.info("LLM caching disabled by configuration or no LLM calls requested")
         
@@ -113,12 +124,13 @@ class LuwakAnonymizer:
             patient_id_prefix = self.config.get('patientIdPrefix', 'Zenta')
             project_hash_root = self.config.get('projectHashRoot', '')
             
-            # Get resolved uid database path from config
-            uid_db_file = self.config.get('patientUidDatabasePath')
+            # Get analysisCacheFolder from config
+            cache_folder = self.config.get('analysisCacheFolder')
             
-            if uid_db_file:
-                # Using persistent database
+            if cache_folder:
+                # Using persistent cache folder
                 self.persistent_uid_db = True
+                uid_db_file = os.path.join(cache_folder, 'patient_uid.db')
                 db_exists = os.path.exists(uid_db_file)
                 
                 self.logger.info(f"Using persistent patient UID database: {uid_db_file}")
@@ -127,7 +139,7 @@ class LuwakAnonymizer:
                 else:
                     self.logger.info("No existing database - will create new persistent database")
             else:
-                # Use temporary database in output folder
+                # Use temporary database in private mapping folder
                 uid_db_folder = self.config.get('outputPrivateMappingFolder')
                 uid_db_file = os.path.join(uid_db_folder, 'patient_uid.db')
                 self.logger.debug("Using temporary patient UID database (will be deleted after run)")
@@ -361,26 +373,18 @@ class LuwakAnonymizer:
         self.logger.info(f"  Private mapping folder: {private_map_folder}")
         self.logger.info(f"  Recipes folder: {recipes_folder}")
         
-        # Resolve and setup patient UID database path if specified
-        persistent_db_path = self.config.get('patientUidDatabasePath')
-        if persistent_db_path:
-            uid_db_file = self.resolve_path(persistent_db_path, is_output=True)
-            # Ensure directory exists
-            db_dir = os.path.dirname(uid_db_file)
-            if db_dir:
-                os.makedirs(db_dir, exist_ok=True)
-            # Store resolved path in config for later use
-            self.config['patientUidDatabasePath'] = uid_db_file
-            self.logger.info(f"  Patient UID database: {uid_db_file}")
-        else:
-            pass
-        
-        if 'clean_descriptors' in self.config.get('recipes', []):
-            cache_folder = self.config.get('llmCacheFolder')
+        # Resolve and setup analysisCacheFolder if specified
+        cache_folder = self.config.get('analysisCacheFolder')
+        if cache_folder:
             cache_folder = self.resolve_path(cache_folder, is_output=True)
-            self.config['llmCacheFolder'] = cache_folder
+            # Ensure directory exists
             os.makedirs(cache_folder, exist_ok=True)
-            self.logger.info(f"  LLM cache folder: {cache_folder}")
+            # Store resolved path in config for later use
+            self.config['analysisCacheFolder'] = cache_folder
+            self.logger.info(f"  Analysis cache folder: {cache_folder}")
+            self.logger.info(f"    - Patient UID database: {os.path.join(cache_folder, 'patient_uid.db')}")
+            if 'clean_descriptors' in self.config.get('recipes', []):
+                self.logger.info(f"    - LLM cache database: {os.path.join(cache_folder, 'llm_cache.db')}")
         
         # Resolve customTags paths relative to config file
         if 'customTags' in self.config:
@@ -565,8 +569,17 @@ class LuwakAnonymizer:
             try:
                 stats = self.llm_cache.get_cache_stats()
                 self.logger.info(f"LLM cache final stats: {stats['total_entries']} entries")
+                cache_file = self.llm_cache.cache_file_path
                 self.llm_cache.close()
                 self.logger.debug("Closed LLM cache connection.")
+                
+                # Only remove cache file if NOT using persistent cache
+                if not self.persistent_llm_cache:
+                    if os.path.exists(cache_file):
+                        os.remove(cache_file)
+                        self.logger.debug("Temporary LLM cache database cleaned up")
+                else:
+                    self.logger.info(f"Persistent LLM cache database saved at: {cache_file}")
             except Exception as e:
                 self.logger.warning(f"Error closing LLM cache: {e}")
         

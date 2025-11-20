@@ -111,14 +111,14 @@ class TestConfigOptions(unittest.TestCase):
         self.assertEqual(anonymizer.config["customTags"]["private"], expected_private)
 
     def test_llm_cache_folder(self):
-        # Include clean_descriptors recipe so llmCacheFolder is resolved
+        # Include clean_descriptors recipe so analysisCacheFolder is resolved
         config_path = self.make_config({
-            "llmCacheFolder": "./cache/llm",
+            "analysisCacheFolder": "./cache/analysis",
             "recipes": ["basic_profile", "clean_descriptors"]
         })
         anonymizer = LuwakAnonymizer(config_path)
-        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "cache/llm"))
-        self.assertEqual(anonymizer.config["llmCacheFolder"], expected)
+        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "cache/analysis"))
+        self.assertEqual(anonymizer.config["analysisCacheFolder"], expected)
 
     def test_test_options(self):
         # Only use allowed properties per schema (useExistingMaskDefacer)
@@ -141,11 +141,11 @@ class TestConfigOptions(unittest.TestCase):
         self.assertEqual(anonymizer.patient_uid_db.patient_id_prefix, "Zenta")
 
     def test_patient_uid_database_path(self):
-        # Test relative path resolution for persistent patient UID database
-        config_path = self.make_config({"patientUidDatabasePath": "./persistent/patient_uid.db"})
+        # Test relative path resolution for persistent analysis cache folder
+        config_path = self.make_config({"analysisCacheFolder": "./persistent/analysis_cache"})
         anonymizer = LuwakAnonymizer(config_path)
-        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "persistent/patient_uid.db"))
-        self.assertEqual(anonymizer.config["patientUidDatabasePath"], expected)
+        expected = os.path.abspath(os.path.join(os.path.dirname(config_path), "persistent/analysis_cache"))
+        self.assertEqual(anonymizer.config["analysisCacheFolder"], expected)
         self.assertTrue(anonymizer.persistent_uid_db, "Should be marked as persistent database")
 
 if __name__ == "__main__":
