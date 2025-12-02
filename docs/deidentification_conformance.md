@@ -17,7 +17,7 @@ This conformance statement applies to the deidentification features provided by 
 - Standard and private DICOM tag anonymization
 - Recipe generation from configurable templates
 
-**Core Deidentification Engine:** Luwak uses the [deid](https://github.com/pydicom/deid) library (maintained in the [pydicom](https://github.com/pydicom) organization in GitHub) for DICOM metadata deidentification. The deid library provides the recipe processing engine that applies tag-level transformations according to configurable rules. Luwak extends deid with custom anonymization functions for HMAC-based UID generation, date shifting, LLM-based descriptor cleaning, and face defacing capabilities. It additionally provides support for a list of deidentification profiles from the DICOM Standard 2025b PS3.15 Appendix E, Table E.1-1.
+**Core Deidentification Engine:** Luwak uses the [deid](https://github.com/pydicom/deid) library (maintained in the [pydicom](https://github.com/pydicom) organization in GitHub) for DICOM metadata deidentification. The deid library provides the recipe processing engine that applies tag-level transformations according to configurable rules. Luwak extends deid with custom anonymization functions for HMAC-based UID generation, date shifting, LLM-supported descriptor cleaning, and image-defacing capabilities. It additionally provides support for a list of deidentification profiles from the [DICOM Standard 2025b PS3.15 Appendix E, Table E.1-1](https://dicom.nema.org/medical/dicom/current/output/html/part15.html#chapter_E).
 
 
 ### 1.3 Audience
@@ -155,7 +155,7 @@ Luwak uses the [DEID library](https://github.com/pydicom/deid) for DICOM header 
 - `generate_hmacuid` - Cryptographic UID deidentification
 - `generate_patient_id` - Sequential patient ID generation with database persistence
 - `generate_hmacdate_shift` - HMAC-based deterministic date shifting
-- `clean_descriptors_with_llm` - AI-powered PHI detection in textual tags
+- `clean_descriptors_with_llm` - LLM-based PHI detection in free-text/annotation tags
 - `set_fixed_datetime` - Fixed epoch datetime replacement
 - `is_tag_private` - Private tag identification for removal
 - `is_curve_or_overlay_tag` - Curve/overlay data identification for removal
@@ -191,7 +191,7 @@ Currently only CT is supported, but we are soon extenting this to PET and we pla
 **Implementation Module:** `luwakx/deface_service.py`  
 **ML Defacing Module:** `luwakx/scripts/defacing/image_defacer/image_anonymization.py`
 
-**Defacing Model Reference:** The defacing functionality in Luwak leverages the MOOSE framework and its pre-trained models for medical image segmentation and facial feature detection. MOOSE (https://github.com/ENHANCE-PET/MOOSE) provides robust deep learning models specifically designed for medical imaging tasks, enabling accurate and automated identification of facial regions in CT and PET scans. By integrating MOOSE, Luwak ensures state-of-the-art performance and reliability in the defacing process.
+**Defacing Model Reference:** The defacing functionality in Luwak leverages the MOOSE framework and its pre-trained AI models for medical image segmentation and facial feature detection. MOOSE (https://github.com/ENHANCE-PET/MOOSE) provides robust deep learning models specifically designed for medical imaging tasks, enabling accurate and automated identification of facial regions in CT and PET scans. By integrating MOOSE, Luwak ensures state-of-the-art performance and reliability in the defacing process.
 
 #### 4.1.2 Defacing Pipeline
 
@@ -214,10 +214,11 @@ Currently only CT is supported, but we are soon extenting this to PET and we pla
 - Converts defaced 3D volume back to individual DICOM files
 - Applies inverse rescale (RescaleSlope/RescaleIntercept) to restore raw pixel values
 - Preserves original DICOM tags and structure
+- CID 7050 code 113101 is added to DeidentificationMethodCodeSequence Attribute
 
 #### 4.1.3 Modality Support
-- **CT (Computed Tomography):** Fully supported with modality-specific ML models
-- **PET :** Soon to be developed as : 
+- **CT (Computed Tomography):** Fully supported with modality-specific AI models
+- **PET (Positron Emission Tomography):** Soon to be developed as : 
   - If the input image is a PET/CT, project CT-based face mask on PET and run the defacing algorithm on resampled face mask to pixelate (or blur) the face in the PET image.
   - If an input image has no associated CT, run a custom PET face segmentation model on the PET and deface the image based on the PET-derived face mask. 
 - **MR (Magnetic Resonance):** Planned for future implementation
@@ -237,7 +238,7 @@ To add the defacing option to the deidentification pipeline the correct recipe m
 #### 4.1.5 Conditional Processing
 Face defacing is only performed when:
 1. `clean_recognizable_visual_features` profile is selected in recipes
-2. Modality is CT (currently only CT is supported; PET support in progress)
+2. Modality is CT (currently only CT is supported; PET support in progress, MR support planned)
 
 **Decision Logic:** `ProcessingPipeline._needs_defacing()`
 
@@ -247,9 +248,9 @@ Face defacing is only performed when:
 - No files are copied to defaced directory
 
 **Behavior when defacing fails:**
-- If defacing is attempted but fails (e.g., ML model error, file read error)
+- If defacing is attempted but fails (e.g., AI model error, file read error)
 - Original organized files are copied to defaced directory without modification via `_copy_without_defacing()`
-- Error messages are issues in the log. 
+- Error messages are issued in the log. 
 - Processing continues with undefaced files.
 - CID 7050 code 113101 is NOT added to DeidentificationMethodCodeSequence Attribute
 
@@ -267,19 +268,19 @@ For each defaced series:
 Temporary NRRD files are stored in `defaced_base_path` during processing.
 
 #### 4.1.8 Performance Considerations
-- GPU acceleration recommended for ML face detection
-- Memory cleanup after each series to prevent GPU OOM
-- Typical processing time with GPU: 30-90 seconds per series
+- GPU acceleration recommended for AI face detection.
+- Memory cleanup after each series to prevent GPU OOM.
+- Typical processing time with GPU: 30-90 seconds per series (Linux, Ubuntu), 3 minutes (MacOS ARM).
 
 #### 4.1.9 Current limitations
-- Defacing is supported only for CT modality
-- The time/resource consuming ML model will run even when no face is included in the data, because we can't rely on BodyPartExamined correct labeling.
+- Defacing is supported only for CT modality.
+- The time/resource consuming AI model will run even when no face is included in the data, because we can't rely on BodyPartExamined correct labeling. For the future we plan to develop a functionality to determine from a coronal 2D slice whether the head is present and skip this step accordingly.
 - No modification on non-face data has been observed from the defacing model so far (David/Sebastian: tot number of tests??), but care must be taken to check the defacing result after each deidentification project. 
 
 ### 4.2 Clean Pixel Data Option
 
 #### 4.2.1 Overview
-Luwak includes DEID-based detection rules for burned-in pixel annotations that cannot be removed through header deidentification or face defacing.
+Luwak includes DEID-based detection rules for burned-in pixel annotations, that cannot be removed through header deidentification or defacing.
 
 **Recipe File:** `deid.dicom.burnedin-pixel-recipe`
 
@@ -561,12 +562,16 @@ REPLACE (0010,0020) func:generate_patient_id
 
 #### 5.3.7 LLM Descriptor Cleaning `func:clean_descriptors_with_llm`
 
-**Purpose:** Remove PHI/PII from textual descriptors using large language model. **Example:** Study/Series descriptions.
+**Purpose:** Remove PHI/PII from textual descriptors using open-source on-premise large language models. This module is intended to automatically detect PHI/PII in free-text and annotation fields that are often manually edited by technicians and operators. **Example:** Study/Series Description with free-text "CT scan for John Doe".
+**Note:** 
+This module is intended to be used with open-source LLMs (e.g., gpt-oss, llama3, qwen) that are running locally on-premise so that sensitive DICOM tag data is not sent to external cloud infrastructure.
+
+While Luwak theoretically allows to use an OpenAI API key for proprietary OpenAI LLMs (e.g. GPT-5), we do not recommend to do this. The OpenAI API key config option is intended to be used for benchmarking local LLMs against proprietary LLMs using synthetically infused DICOM data (e.g., from the MIDI-B challenge).
 
 **Method:**
-- Sends descriptor text to LLM API (OpenAI-compatible) for PHI/PII detection
+- Sends descriptor text to LLM for PHI/PII detection
 - Uses a binary classifier that returns 0 (no PHI/PII) or 1 (PHI/PII detected)
-- Caches results in shared SQLite database to avoid redundant API calls
+- Caches results in shared SQLite database to avoid redundant LLM calls
 - If PHI detected (result = 1): attempts to delete the tag entirely from the DICOM dataset; if deletion fails, replaces with "ANONYMIZED"
 - If no PHI detected (result = 0): keeps the original text value unchanged
 - Thread-safe for parallel processing with shared cache
@@ -610,9 +615,8 @@ REPLACE (0008,1030) func:clean_descriptors_with_llm
 ```
 
 **Supported LLM Providers:**
-- OpenAI (gpt-4o, gpt-4o-mini, gpt-oss-20b)
-- any OpenAI-compatible model
-- Local LLM servers (LM Studio)
+- Open-source, local models: Every LMStudio-compatible model: https://lmstudio.ai/models
+- Proprietary, external models: Every model from OpenAI Platform: https://platform.openai.com/docs/models
 
 **Cache Management:**
 - Cache stored in: `{analysisCacheFolder}/llm_cache.db` (SQLite)
@@ -620,8 +624,12 @@ REPLACE (0008,1030) func:clean_descriptors_with_llm
 - If `analysisCacheFolder` is specified: cache persists across anonymization runs
 - If not specified: temporary cache created in private mapping folder and deleted after processing
 
-**Current limitations**
-- This profile requires a LLM compatible with OpenAI, this implies either the usage of important local resources (GPU with VRAM > 8GB allows deidentification at speed ~5s/tag when run for first time), or the usage of an API KEY with pay access. 
+**Validation and Benchmarks:**
+
+A benchmark on 21,793 free-text/annotation DICOM tags (No PHI/PII: 20,383; PHI/PII: 1,410) from the MIDI-B Challenge Test Dataset revealed 97% sensitivity, 98% specificity, positive predictive value 80%, negative predictive value 100%, balanced accuracy 98%, and F2-score 93% in detecting PHI/PII. For more details, visit: https://github.com/ZentaLabs/luwak/tree/main/luwakx/scripts/detector 
+
+**Current limitations:**
+- This profile requires a local LLM compatible with LMStudio. This implies the usage of important local resources. When run for first time and for gpt-oss-20b, the used system allows deidentification at speed, e.g.: ~5s/tag when using a GPU with 8GB VRAM on Linux.
 - The LLM provides a binary output for either keeping or removing the tag, no other action is currently supported.
 - The LLM can have false negatives, so a final review of the content of the leftover tags is always advised.
 
@@ -1354,7 +1362,7 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `cleanDescriptorsLlmBaseUrl` | string | "https://api.openai.com/v1" | Base URL for LLM API (OpenAI-compatible) |
-| `cleanDescriptorsLlmModel` | string | "gpt-4o-mini" | Model name for LLM service |
+| `cleanDescriptorsLlmModel` | string | "gpt-oss-20b" | Model name for LLM service |
 | `cleanDescriptorsLlmApiKeyEnvVar` | string | "" | Environment variable name containing API key (empty by default) |
 
 **Custom Tag Templates:**
@@ -1490,7 +1498,7 @@ Luwak follows an object-oriented design with clear separation of concerns:
   - `run_full_pipeline()` - Process all series through all stages
   - `_process_single_series(series)` - Process one series completely
   - `_organize_series(series)` - Copy files to organized structure
-  - `_deface_series(series)` - Apply face defacing
+  - `_deface_series(series)` - Apply defacing
   - `_anonymize_series(series)` - Apply metadata anonymization
   - `_export_series_results_incremental(series)` - Export results
 
