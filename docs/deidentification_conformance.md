@@ -670,6 +670,7 @@ The Basic Application Confidentiality Profile applies different actions based on
 - If VR is date/time (`DA`, `DT`, `TM`): Maps to `func:set_fixed_datetime` (same action as in KitwareMedical/dicomanonymizer)
 - If VR is `UI`: Maps to `func:generate_hmacuid` (same action as in KitwareMedical/dicomanonymizer)
 - If VR is replaceable type (`AE`, `LO`, `LT`, `SH`, `PN`, `CS`, `ST`, `UT`, `UC`, `UR`, `DS`, `IS`, `FD`, `FL`, `SS`, `US`, `SL`, `UL`, `AS`, `SQ`, `OD`, `OL`, `OV`, `SV`, `UV`): Maps to `replace`
+  - Note: For `SQ` (sequences), the recipe builder checks TCIA's Final CTP Script and removes sequences if TCIA removes them (see [§6.3.1](#631-replace-action---dummy-value-generation))
 - If VR is binary (`OB`, `OW`, `OF`, `UN`): Maps to `remove` (same action as TCIA)
 
 **DICOM Code 'Z' (Empty Replacement):**
@@ -740,6 +741,9 @@ The Retain Patient Characteristics option preserves demographic patient informat
 **DICOM Code 'K' (Keep):**
 - Maps to `keep` action
 
+**DICOM Code 'C' (Clean):**
+- Maps to `clean_manually` action (requires manual review)
+
 **Implementation:** `generate_retain_patient_characteristics_profile()` in `luwakx/scripts/retrieve_tags.py`
 
 **Effect:** Retains patient age, sex, size, and weight that would otherwise be removed or replaced by Basic Profile.
@@ -762,10 +766,11 @@ The Retain Longitudinal Modified Dates option applies consistent date shifting t
 **DICOM Code 'C' (Clean/Modify):**
 - If VR is `TM` (Time): Maps to `keep` (times are preserved) (same action as TCIA)
 - If VR is `DA` or `DT`: Maps to `func:generate_hmacdate_shift` (dates are shifted)
+- If VR is any other type: Maps to `remove` (safe default for non-date/time fields, same action as TCIA)
 
 **Implementation:** `generate_retain_long_modified_dates_profile()` in `luwakx/scripts/retrieve_tags.py`
 
-**Effect:** Applies HMAC-based deterministic date shifting to all date fields while preserving time fields. All dates for the same patient are shifted by the same amount, maintaining relative temporal relationships for longitudinal analysis.
+**Effect:** Applies HMAC-based deterministic date shifting to all date fields while preserving time fields. All dates for the same patient are shifted by the same amount, maintaining relative temporal relationships for longitudinal analysis. Non-date/time fields with 'C' code are removed as they cannot be safely jittered.
 
 #### 5.4.8 Clean Descriptors Option
 
