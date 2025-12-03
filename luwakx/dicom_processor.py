@@ -4,7 +4,6 @@ This module provides the DicomProcessor class which handles all DICOM
 anonymization logic including UID generation, date shifting, descriptor
 cleaning, and private tag handling.
 
-Extracted from anonymize.py in Phase 2 refactoring.
 """
 
 import os
@@ -193,6 +192,9 @@ class DicomProcessor:
             
         Example recipe usage:
             REPLACE PatientID func:generate_patient_id
+            
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#536-patient-id-generation-funcgenerate_patient_id
         """
         if not self.patient_uid_db:
             # Fallback if database not initialized - log once per series
@@ -312,6 +314,9 @@ class DicomProcessor:
             
         Returns:
             str: Newly generated anonymized UID
+            
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-uid-generation-funcgenerate_hmacuid
         """
         # Check VR type - only apply UID replacement to UI (Unique Identifier)
         field_vr = None
@@ -437,6 +442,9 @@ class DicomProcessor:
         Returns:
             int: Number of days to shift backward (0-maxDateShiftDays days, consistent per patient)
                  or 0 if VR type is not DA or DT (no shift applied)
+                 
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#535-date-shifting-funcgenerate_hmacdate_shift
         """
         # Check VR type - only apply date shift to DA (Date) and DT (DateTime)
         field_vr = None
@@ -537,6 +545,9 @@ class DicomProcessor:
             - DA (Date): Returns "00010101" (January 1, year 1)
             - DT (DateTime): Returns "00010101010101.000000+0000"
             - TM (Time): Returns "000000.00"
+            
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#538-fixed-datetime-funcset_fixed_datetime
         """
         try:
             # Get the VR type from the field
@@ -611,6 +622,9 @@ class DicomProcessor:
             - If PHI/PII detected, deletes the element and returns ""
             - If no PHI/PII detected, returns original text value
             - Results are cached to avoid redundant LLM calls
+            
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#537-llm-descriptor-cleaning-funcclean_descriptors_with_llm
         """
         from openai import OpenAI
         
@@ -725,6 +739,10 @@ class DicomProcessor:
             
         Returns:
             bool: True if the tag is private (has private creator), False otherwise
+            
+        See conformance documentation:
+        - Private Tags Template: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#52-private-tags-template
+        - Private Tag Removal ("Private Tag Removal" paragraph): https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
         """
         # Log private tag details at PRIVATE level if it exists
         if field.element.is_private and (field.element.private_creator is not None):
@@ -749,6 +767,9 @@ class DicomProcessor:
             
         Returns:
             bool: True if the tag matches curve/overlay patterns, False otherwise
+            
+        See conformance documentation ("If basic_profile is selected" paragraph):
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
         """
         tag = field.element.tag
         group = tag.group
@@ -783,6 +804,9 @@ class DicomProcessor:
         
         Note:
             This should be called after anonymization but before cleanup/deletion of files.
+            
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-5
         """
         # Mapping of recipe names to DICOM CID 7050 De-identification Method codes
         # Based on DICOM PS3.16 CID 7050 - https://dicom.nema.org/medical/dicom/current/output/chtml/part16/sect_CID_7050.html
@@ -817,9 +841,13 @@ class DicomProcessor:
             recipes_list = [recipes_list]
         
         # Check if defacing was actually performed (for clean_recognizable_visual_features)
+        # See conformance documentation (§7.2 - "Conditionally includes defacing code"):
+        # https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#72-implementation
         defacing_performed = getattr(self.series, 'defacing_succeeded', False)
         
         # Build sequence items for all matching recipes
+        # Maps recipe profiles to DICOM CID 7050 codes (§7.3):
+        # https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#73-code-mapping
         sequence_items = []
         for recipe_name in recipes_list:
             # Skip clean_recognizable_visual_features if defacing was not performed
@@ -839,6 +867,8 @@ class DicomProcessor:
                 self.logger.debug(f"Recipe '{recipe_name}' has no CID 7050 mapping, skipping")
         
         # Sort sequence items by code value (numerical order)
+        # See conformance documentation (§7.2 - "Sorts sequence items"):
+        # https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#72-implementation
         sequence_items.sort(key=lambda item: item.CodeValue)
         
         if not sequence_items:

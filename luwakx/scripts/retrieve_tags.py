@@ -1,3 +1,12 @@
+"""Script for retrieving and processing DICOM standard and private tags.
+
+This script generates tag templates from DICOM standard and TCIA sources.
+It creates CSV templates used by the recipe builder for anonymization.
+
+See conformance documentation for details:
+https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#5-metadata-deideintification----tags-and-profiles-templates
+"""
+
 import os
 import argparse
 import pandas as pd
@@ -12,7 +21,10 @@ from luwakx.utils import download_github_asset_by_tag
 
 
 class TCIAPrivateDisposition(Enum):
-    """TCIA private tag disposition codes from TCIA Private Tag Knowledge Base."""
+    """TCIA private tag disposition codes from TCIA Private Tag Knowledge Base.
+    
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#5411-retain-safe-private-option
+    """
     KEEP = "k"
     OFFSET_TIME = "o"
     HASH_UID = "h"
@@ -20,7 +32,10 @@ class TCIAPrivateDisposition(Enum):
 
 
 class DICOMStandardActionCode(Enum):
-    """DICOM PS3.15 Appendix E Basic Profile action codes."""
+    """DICOM PS3.15 Appendix E Basic Profile action codes.
+    
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#541-basic-application-confidentiality-profile---action-mapping-logic
+    """
     X_REMOVE = "X"
     D_REPLACE = "D"
     Z_BLANK = "Z"
@@ -36,6 +51,22 @@ class DICOMStandardActionCode(Enum):
 
 
 def read_tcia_csv(tcia_csv_path, tcia_url=None):
+    """
+    Download and read TCIA Private Tag Knowledge Base CSV file.
+    
+    TCIA Reference: TCIA Private Tag Knowledge Base
+    URL: https://wiki.cancerimagingarchive.net/display/Public/TCIA+Private+Tag+Knowledge+Base
+    
+    See conformance documentation:
+    https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#52-private-tags-template
+    
+    Args:
+        tcia_csv_path (str): Path to TCIA CSV file
+        tcia_url (str, optional): URL to download CSV if not present
+    
+    Returns:
+        pd.DataFrame: DataFrame containing TCIA private tag data
+    """
     foldername = os.path.dirname(tcia_csv_path) or '.'
     filename = os.path.basename(tcia_csv_path)
     token = os.environ.get("TEST_DATA_TOKEN")
@@ -62,6 +93,10 @@ def read_tcia_csv(tcia_csv_path, tcia_url=None):
 def transform_row(row):
     """
     Transform a row from the local CSV to extract tag, private creator, name, VR, and disposition.
+    
+    Extracts only the final child tag from nested sequence structures and stores the private creator string separately.
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#525-tcia-data-processing
+    
     Args:
         row (pd.Series): Row from the DataFrame.
     Returns:
@@ -100,6 +135,13 @@ def is_all_caps(s):
     return isinstance(s, str) and s.isupper() and s != s.lower()
 
 def dedup_rows(df):
+    """
+    Remove rows with all-caps Private_Creator if a non-all-caps duplicate exists.
+    
+    When the same tag (matching element_sig_pattern, VR, and Private Creator in lowercase) 
+    appears with both all-caps and mixed-case Private Creator names, keeps only the mixed-case version.
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#525-tcia-data-processing
+    """
     # Group by element_sig_pattern, vr, and lower-case Private_Creator
     df['pc_lower'] = df['Private_Creator'].str.lower()
     df = df.sort_values(by=['Private_Creator'])  # so all-caps come after
@@ -118,6 +160,10 @@ def dedup_rows(df):
 def reorder_and_save(tcia_df, output_path, save_reformatted=False):
     """
     Apply transformation to DataFrame and save reformatted CSV if requested.
+    
+    Processes TCIA private tags by extracting nested structures and removing duplicates.
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#525-tcia-data-processing
+    
     Args:
         tcia_df (pd.DataFrame): DataFrame to transform.
         output_path (str): Path to save the reformatted CSV.
@@ -143,6 +189,13 @@ def reorder_and_save(tcia_df, output_path, save_reformatted=False):
 def fetch_dicom_table(url=None, dicom_csv_path=None):
     """
     Download and parse the safe private tags DICOM Table E.3.10-1 from the given URL, or load from a local CSV file if present.
+    
+    DICOM Reference: PS3.15 Appendix E.3.10 - Safe Private Attributes
+    URL: https://dicom.nema.org/medical/dicom/current/output/chtml/part15/sect_E.3.10.html
+    
+    See conformance documentation:
+    https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#52-private-tags-template
+    
     Args:
         url (str, optional): URL to fetch the DICOM table from.
         dicom_csv_path (str, optional): Path to local CSV file to load/save the table.
@@ -232,6 +285,8 @@ def rtn_safe_priv_opt(row):
     - TCIAPrivateDisposition.HASH_UID -> 'func:generate_hmacuid'
     - TCIAPrivateDisposition.DELETE and IsInDICOMRetainSafePrivateTags -> 'keep'
     
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#5411-retain-safe-private-option
+    
     Args:
         row (dict): A dictionary representing a DICOM row, expected to contain 'IsInDICOMRetainSafePrivateTags' and 'private_disposition' keys.
     Returns:
@@ -240,12 +295,17 @@ def rtn_safe_priv_opt(row):
     disposition = str(row['private_disposition']).strip().lower()
     
     if disposition == TCIAPrivateDisposition.KEEP.value:
+        # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
         return 'keep'
     elif disposition == TCIAPrivateDisposition.OFFSET_TIME.value:
+        # See date shifting: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#535-date-shifting-funcgenerate_hmacdate_shift
         return 'func:generate_hmacdate_shift'
     elif disposition == TCIAPrivateDisposition.HASH_UID.value:
+        # See UID generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-uid-generation-funcgenerate_hmacuid
         return 'func:generate_hmacuid'
     elif row['IsInDICOMRetainSafePrivateTags'] and disposition == TCIAPrivateDisposition.DELETE.value:
+        # When TCIA marks for deletion but DICOM standard lists as safe, we keep it
+        # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#5411-retain-safe-private-option
         return 'keep'
     else:
         return None
@@ -302,7 +362,9 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
         'Group', 'Element', 'Private Creator', 'VR', 'VM', 'Meaning', 'Rtn. Safe Priv. Opt.', 'IsInDICOMRetainSafePrivateTags',
         'TCIA element_sig_pattern'
     ]
-     # Remove rows where Group, Element, and Private Creator are all equal (duplicates)
+    # Remove rows where Group, Element, and Private Creator are all equal (duplicates)
+    # This keeps only the first occurrence when the same tag appears with different VRs
+    # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#525-tcia-data-processing
     final_out = final_out.drop_duplicates(subset=['Group', 'Element', 'Private Creator'])
 
     for col in requested_cols:
@@ -321,6 +383,12 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
 def fetch_tcia_table1(url, output_csv=None, save_csv=False):
     """
     Scrape Table 1 from TCIA Submission and De-identification Overview or load from CSV if present.
+    
+    TCIA Reference: Submission and De-identification Overview - Table 1
+    URL: https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview
+    
+    See conformance documentation:
+    https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#51-standard-tags-template
 
     Args:
         url (str): URL of the TCIA wiki page.
@@ -357,6 +425,12 @@ def fetch_tcia_table1(url, output_csv=None, save_csv=False):
 def fetch_dicom_table_e1(url, output_csv=None, save_csv=False):
     """
     Scrape Table E.1-1 from DICOM part 15 or load from CSV if present.
+    
+    DICOM Reference: PS3.15 Appendix E, Table E.1-1 - Application Level Confidentiality Profile Attributes
+    URL: https://dicom.nema.org/medical/dicom/current/output/html/part15.html#chapter_E
+    
+    See conformance documentation:
+    https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#51-standard-tags-template
 
     Args:
         url (str): URL of the DICOM part 15 page.
@@ -483,9 +557,6 @@ def build_final_df(tcia_df, dicom_df, requested_cols, output_csv):
         if col not in final.columns:
             final[col] = ''
     final = final[requested_cols]
-    #print(merged.columns)
-    #final.to_csv(output_csv, index=False)
-    #print(f"Saved merged standard tags to {output_csv}")
     return final
 
 def fill_missing_vr(df):
@@ -566,15 +637,18 @@ def get_vr_for_tag(tag_str, row):
         print(f"Could not determine VR for tag {tag_str}: {e}")
     return None
 
-def generate_basic_profile(final_df):
+def generate_basic_profile(final_df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Basic Prof.' column based on DICOM anonymization rules.
     
     Args:
         final_df: DataFrame with DICOM standard tags
+        doc_refs_dict: Dictionary mapping row indices to lists of documentation reference strings
     
     Returns:
         DataFrame: Updated DataFrame with modified 'Basic Prof.' column
+    
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#541-basic-application-confidentiality-profile---action-mapping-logic
     """
     # Make a copy to avoid modifying the original
     df = final_df.copy()
@@ -599,77 +673,122 @@ def generate_basic_profile(final_df):
         if basic_profile == '':
             continue
             
+        # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#541-basic-application-confidentiality-profile---action-mapping-logic
         if basic_profile == DICOMStandardActionCode.X_REMOVE.value:
+            # See remove action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove
             df.at[idx, 'Basic Prof.'] = 'remove'
+            doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove")
                 
         elif basic_profile == DICOMStandardActionCode.K_KEEP.value:
+            # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
             df.at[idx, 'Basic Prof.'] = 'keep'
+            doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep")
             
         elif basic_profile == DICOMStandardActionCode.U_REPLACEUID.value:
             # Check if VR is UI for UID replacement
+            # See UID generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-uid-generation-funcgenerate_hmacuid
             if vr == 'UI':
                 df.at[idx, 'Basic Prof.'] = 'func:generate_hmacuid'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-uid-generation-funcgenerate_hmacuid")
                 
         elif basic_profile == DICOMStandardActionCode.D_REPLACE.value:
+            # For this action you can have more informations by checking several sections of the documentation:
+            # See replace action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-replace
+            # See dummy value generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#631-replace-action---dummy-value-generation
+            # See VR-based mapping logic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#541-basic-application-confidentiality-profile---action-mapping-logic (DICOM Code 'D')
             replace_tag = ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR", "DS", "IS", 
                            "FD", "FL", "SS", "US", "SL", "UL", 'AS', 'SQ', 'OD', 'OL', 'OV', 'SV', 'UV']
-            # Check if VR is date/time related for date replacement   
+            # Check if VR is date/time related for date replacement
+            # See fixed datetime: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#538-fixed-datetime-funcset_fixed_datetime
             if vr in ['DA', 'DT', 'TM']:
+                # Note: Same action and dummy values as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
                 df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#538-fixed-datetime-funcset_fixed_datetime, Same action and dummy values as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer")
             elif vr in ['UI']:
+                # Note: Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
                 df.at[idx, 'Basic Prof.'] = 'func:generate_hmacuid'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-uid-generation-funcgenerate_hmacuid, Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer")
             elif vr in replace_tag:
                 df.at[idx, 'Basic Prof.'] = 'replace'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-replace")
             elif vr in ['OB', 'OW', 'OF', 'UN']:
+                # Note: Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview
                 df.at[idx, 'Basic Prof.'] = 'remove'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove, Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview")
             else:
                 print(f"Tag {tag} with Basic Profile '{DICOMStandardActionCode.D_REPLACE.value}' has unhandled VR '{vr}'. Keeping original value.")
                 
         elif basic_profile == DICOMStandardActionCode.Z_BLANK.value:
+            # See blank action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#533-blank
+            # See VR-based mapping logic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#541-basic-application-confidentiality-profile---action-mapping-logic (DICOM Code 'Z')
             # Check if VR is date/time related for date replacement
             if vr in ['DA', 'DT', 'TM']:
+                # Note: Same action and dummy values as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
                 df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#538-fixed-datetime-funcset_fixed_datetime, Same action and dummy values as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer")
             else:
                 df.at[idx, 'Basic Prof.'] = 'blank'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#533-blank")
                 
         elif basic_profile in [DICOMStandardActionCode.Z_BLANK_D_REPLACE.value,
                                DICOMStandardActionCode.X_REMOVE_Z_BLANK.value,
                                DICOMStandardActionCode.X_REMOVE_D_REPLACE.value,
                                DICOMStandardActionCode.X_REMOVE_Z_BLANK_D_REPLACE.value,
                                DICOMStandardActionCode.X_REMOVE_Z_BLANK_U_REPLACEUID.value]:
+            # See VR-based mapping logic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#541-basic-application-confidentiality-profile---action-mapping-logic (Modality Dependent Codes)
+            # Note: Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
             if vr in ['DA', 'DT', 'TM']:
                 df.at[idx, 'Basic Prof.'] = 'func:set_fixed_datetime'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#538-fixed-datetime-funcset_fixed_datetime, Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer")
+            # Note: Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
             elif basic_profile in [DICOMStandardActionCode.X_REMOVE_Z_BLANK_U_REPLACEUID.value,
                                    DICOMStandardActionCode.X_REMOVE_D_REPLACE.value,
                                    DICOMStandardActionCode.Z_BLANK_D_REPLACE.value,
                                    DICOMStandardActionCode.X_REMOVE_Z_BLANK_D_REPLACE.value] and vr == 'UI':
                 df.at[idx, 'Basic Prof.'] = 'func:generate_hmacuid'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-uid-generation-funcgenerate_hmacuid, Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer")
+            # Note: Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
             elif basic_profile in [DICOMStandardActionCode.X_REMOVE_Z_BLANK_U_REPLACEUID.value,
                                    DICOMStandardActionCode.X_REMOVE_Z_BLANK.value]:
                 df.at[idx, 'Basic Prof.'] = 'blank'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#533-blank, Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer")
             elif basic_profile in [DICOMStandardActionCode.X_REMOVE_D_REPLACE.value,
                                    DICOMStandardActionCode.Z_BLANK_D_REPLACE.value,
                                    DICOMStandardActionCode.X_REMOVE_Z_BLANK_D_REPLACE.value]:
+                # Note: Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview
                 if vr in ['OB', 'OW', 'OF', 'UN']:
                     df.at[idx, 'Basic Prof.'] = 'remove'
+                    doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove, Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview")
+                # Note: Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
                 else:
                     df.at[idx, 'Basic Prof.'] = 'replace'
+                    doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-replace, Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer")
             else:
                 df.at[idx, 'Basic Prof.'] = 'manual_review'
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action")
 
     # Set Basic Prof. to func:generate_patient_id for PatientID row (0010,0020)and PatientName (0010,0010)
-    df.loc[(df['Group'] == '0010') & (df['Element'].isin(['0010', '0020'])), 'Basic Prof.'] = 'func:generate_patient_id'
+    # See patient ID generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#536-patient-id-generation-funcgenerate_patient_id
+    for idx in df[(df['Group'] == '0010') & (df['Element'].isin(['0010', '0020']))].index:
+        df.at[idx, 'Basic Prof.'] = 'func:generate_patient_id'
+        # Replace any existing Basic reference with the patient ID one
+        doc_refs_dict[idx] = [ref for ref in doc_refs_dict[idx] if not ref.startswith('Basic:')]
+        doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#536-patient-id-generation-funcgenerate_patient_id")
+    
     return df
 
-def generate_retain_uid_profile(final_df):
+def generate_retain_uid_profile(final_df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Rtn. UIDs Opt.' column based on DICOM UID retention rules.
     
     Args:
         final_df: DataFrame with DICOM standard tags
+        doc_refs_dict: Dictionary mapping row indices to lists of documentation reference strings
     
     Returns:
         DataFrame: Updated DataFrame with modified 'Rtn. UIDs Opt.' column
+    
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#542-retain-uids-option
     """
     # Make a copy to avoid modifying the original
     df = final_df.copy()
@@ -691,7 +810,9 @@ def generate_retain_uid_profile(final_df):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
         
         if profile == DICOMStandardActionCode.K_KEEP.value:
+            # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
             df.at[idx, 'Rtn. UIDs Opt.'] = 'keep'
+            doc_refs_dict[idx].append("Retain UIDs: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep")
         elif profile == "":
             continue
         else:
@@ -701,15 +822,18 @@ def generate_retain_uid_profile(final_df):
     
     return df
                     
-def generate_retain_patient_characteristics_profile(final_df):
+def generate_retain_patient_characteristics_profile(final_df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Rtn. Pat. Chars. Opt.' column based on patient characteristics retention rules.
     
     Args:
         final_df: DataFrame with DICOM standard tags
+        doc_refs_dict: Dictionary mapping row indices to lists of documentation reference strings
     
     Returns:
         DataFrame: Updated DataFrame with modified 'Rtn. Pat. Chars. Opt.' column
+
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#545-retain-patient-characteristics-option
     """
     # Make a copy to avoid modifying the original
     df = final_df.copy()
@@ -731,9 +855,13 @@ def generate_retain_patient_characteristics_profile(final_df):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
         
         if profile == DICOMStandardActionCode.K_KEEP.value:
+            # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
             df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'keep'
+            doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep")
         elif profile == DICOMStandardActionCode.C_CLEAN.value:
+            # clean_manually action requires manual review - see: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
             df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'clean_manually'
+            doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action")
         elif profile == "":
             continue
         else:
@@ -743,15 +871,18 @@ def generate_retain_patient_characteristics_profile(final_df):
     
     return df
 
-def generate_retain_long_full_dates_profile(final_df):
+def generate_retain_long_full_dates_profile(final_df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Rtn. Long. Full Dates Opt.' column based on date retention rules.
     
     Args:
         final_df: DataFrame with DICOM standard tags
+        doc_refs_dict: Dictionary mapping row indices to lists of documentation reference strings
     
     Returns:
         DataFrame: Updated DataFrame with modified 'Rtn. Long. Full Dates Opt.' column
+
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#546-retain-longitudinal-temporal-information-with-full-dates-option
     """
     # Make a copy to avoid modifying the original
     df = final_df.copy()
@@ -771,7 +902,9 @@ def generate_retain_long_full_dates_profile(final_df):
         if not tag:
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
         if profile == DICOMStandardActionCode.K_KEEP.value:
+            # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
             df.at[idx, 'Rtn. Long. Full Dates Opt.'] = 'keep'
+            doc_refs_dict[idx].append("Retain Full Dates: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep")
         elif profile == '':
             continue
         else:
@@ -781,15 +914,18 @@ def generate_retain_long_full_dates_profile(final_df):
     
     return df
 
-def generate_retain_long_modified_dates_profile(final_df):
+def generate_retain_long_modified_dates_profile(final_df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Rtn. Long. Modif. Dates Opt.' column based on modified date retention rules.
     
     Args:
         final_df: DataFrame with DICOM standard tags
+        doc_refs_dict: Dictionary mapping row indices to lists of documentation reference strings
     
     Returns:
         DataFrame: Updated DataFrame with modified 'Rtn. Long. Modif. Dates Opt.' column
+    
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#547-retain-longitudinal-temporal-information-with-modified-dates-option
     """
     # Make a copy to avoid modifying the original
     df = final_df.copy()
@@ -811,13 +947,22 @@ def generate_retain_long_modified_dates_profile(final_df):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
         
         if profile == DICOMStandardActionCode.C_CLEAN.value:
+            # Note: For all three actions in this profile we follow the same action logic as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview
             if str(row['VR']) == 'TM':
+                # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
                 df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'keep'
+                doc_refs_dict[idx].append("Retain Modified Dates: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep")
             elif str(row['VR']) in ['DA', 'DT']:
+                # See date shifting: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#535-date-shifting-funcgenerate_hmacdate_shift
                 df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'func:generate_hmacdate_shift'
+                doc_refs_dict[idx].append("Retain Modified Dates: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#535-date-shifting-funcgenerate_hmacdate_shift, Same action logic as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview")
+            # Note: Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview
             else:
                 # For other VRs that can not be easily jittered, set to remove as a safe default
+                # See remove action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove
                 df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'remove'
+                doc_refs_dict[idx].append("Retain Modified Dates: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove, Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview")
+                print(f"Warning: Tag {tag} with VR '{row['VR']}' in 'Rtn. Long. Modif. Dates Opt.' column set to 'remove' as safe default.")
         elif profile == "":
             continue
         else:
@@ -827,15 +972,18 @@ def generate_retain_long_modified_dates_profile(final_df):
     
     return df
 
-def retain_device_id_option(df):
+def retain_device_id_option(df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Rtn. Device ID Opt.' column based on device ID retention rules.
 
     Args:
         df: DataFrame with DICOM standard tags
+        doc_refs_dict: Dictionary mapping row indices to lists of documentation reference strings
 
     Returns:
         DataFrame: Updated DataFrame with modified 'Rtn. Device ID Opt.' column
+
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#543-retain-device-identity-option
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
@@ -857,9 +1005,13 @@ def retain_device_id_option(df):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
         if profile == DICOMStandardActionCode.C_CLEAN.value:
+            # clean_manually action requires manual review - see: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
             df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'clean_manually'
+            doc_refs_dict[idx].append("Retain Device ID: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action")
         elif profile == DICOMStandardActionCode.K_KEEP.value:
+            # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
             df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'keep'
+            doc_refs_dict[idx].append("Retain Device ID: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep")
         elif profile == '':
             continue
         else:
@@ -869,14 +1021,18 @@ def retain_device_id_option(df):
 
     return df
 
-def retain_institution_id_option(df):
+def retain_institution_id_option(df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Rtn. Inst. Id. Opt.' column based on institution ID retention rules.
 
     Args:
         df: DataFrame with DICOM standard tags
+        doc_refs_dict: Dictionary mapping row indices to lists of documentation reference strings
+        
     Returns:
         DataFrame: Updated DataFrame with modified 'Rtn. Inst. Id. Opt.' column
+
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#544-retain-institution-identity-option
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
@@ -898,7 +1054,9 @@ def retain_institution_id_option(df):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
         if profile == DICOMStandardActionCode.K_KEEP.value:
+            # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
             df.at[idx, 'Rtn. Inst. Id. Opt.'] = 'keep'
+            doc_refs_dict[idx].append("Retain Institution ID: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep")
         elif profile == '':
             continue
         else:
@@ -908,14 +1066,18 @@ def retain_institution_id_option(df):
 
     return df
 
-def clean_profiles(df):
+def clean_profiles(df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', and 'Clean Graph. Opt.' columns based on institution ID retention rules.
 
     Args:
         df: DataFrame with DICOM standard tags
+        doc_refs_dict: Dictionary mapping row indices to lists of documentation reference strings
+        
     Returns:
         DataFrame: Updated DataFrame with modified 'Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', and 'Clean Graph. Opt.' columns
+    
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#548-clean-descriptors-option
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
@@ -939,11 +1101,21 @@ def clean_profiles(df):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
         if profile1 == DICOMStandardActionCode.C_CLEAN.value:
+            # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#548-clean-descriptors-option
             df.at[idx, 'Clean Desc. Opt.'] = 'func:clean_descriptors_with_llm'
+            doc_refs_dict[idx].append("Clean Descriptors: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#537-llm-descriptor-cleaning-funcclean_descriptors_with_llm")
         if profile2 == DICOMStandardActionCode.C_CLEAN.value:
+            # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#549-clean-structured-content-option
+            # clean_manually action requires manual review - see: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+            # Note: Clean Structured Content Option is not automated in Luwak - see: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#31-overview
             df.at[idx, 'Clean Struct. Cont. Opt.'] = 'clean_manually'
+            doc_refs_dict[idx].append("Clean Structured Content: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action, Not automated in Luwak - https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#31-overview")
         if profile3 == DICOMStandardActionCode.C_CLEAN.value:
+            # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#5410-clean-graphics-option
+            # clean_manually action requires manual review - see: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+            # Note: Clean Graphics Option is not automated in Luwak - see: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#31-overview
             df.at[idx, 'Clean Graph. Opt.'] = 'clean_manually'
+            doc_refs_dict[idx].append("Clean Graphics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action, Not automated in Luwak - https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#31-overview")
         if profile1 == '':
             continue
         if profile2 == '':
@@ -959,24 +1131,38 @@ def clean_profiles(df):
 
 def create_final_file(final_df, output_csv):
     """
-    Apply all profile cleaning functions to the DataFrame.
+    Apply all profile cleaning functions to the DataFrame and build documentation references incrementally.
     
     Args:
         final_df: DataFrame with DICOM standard tags
+        output_csv: Path to save the CSV file
     
     Returns:
-        DataFrame: Updated DataFrame with all profiles cleaned
+        DataFrame: Updated DataFrame with all profiles cleaned and documentation references
+    
+    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#51-standard-tags-template
     """
     df = final_df.copy()
+    
+    # Initialize documentation references dictionary - one list per row index
+    from collections import defaultdict
+    doc_refs_dict = defaultdict(list)
+    
+    # Fill missing VR values
     df = fill_missing_vr(df)
-    df = generate_basic_profile(df)
-    df = generate_retain_uid_profile(df)
-    df = generate_retain_patient_characteristics_profile(df)
-    df = generate_retain_long_full_dates_profile(df)
-    df = generate_retain_long_modified_dates_profile(df)
-    df = retain_device_id_option(df)
-    df = retain_institution_id_option(df)
-    df = clean_profiles(df)
+    
+    # Process all profiles, each appending to doc_refs_dict
+    df = generate_basic_profile(df, doc_refs_dict)
+    df = generate_retain_uid_profile(df, doc_refs_dict)
+    df = generate_retain_patient_characteristics_profile(df, doc_refs_dict)
+    df = generate_retain_long_full_dates_profile(df, doc_refs_dict)
+    df = generate_retain_long_modified_dates_profile(df, doc_refs_dict)
+    df = retain_device_id_option(df, doc_refs_dict)
+    df = retain_institution_id_option(df, doc_refs_dict)
+    df = clean_profiles(df, doc_refs_dict)
+    
+    # Convert documentation references lists to strings separated by " | "
+    df['Documentation References'] = df.index.map(lambda idx: ' | '.join(doc_refs_dict[idx]) if doc_refs_dict[idx] else '')
         
     df.to_csv(output_csv, index=False)
     print(f"Saved merged standard tags to {output_csv}")
@@ -1027,7 +1213,7 @@ def main():
         requested_cols = [
             'Group', 'Element', 'Name', 'VR', 'VM', 'Basic Prof.', 'Rtn. UIDs Opt.', 'Rtn. Dev. Id. Opt.', 'Rtn. Inst. Id. Opt.', 'Rtn. Pat. Chars. Opt.',
             'Rtn. Long. Full Dates Opt.', 'Rtn. Long. Modif. Dates Opt.', 'Clean Desc. Opt.',
-            'Clean Struct. Cont. Opt.', 'Clean Graph. Opt.','TCIA element_sig_pattern', 'Final CTP Script'
+            'Clean Struct. Cont. Opt.', 'Clean Graph. Opt.','TCIA element_sig_pattern', 'Final CTP Script', 'Documentation References'
         ]
         final_df = build_final_df(tcia_df, dicom_df, requested_cols, args.merged_standard_tags)
         create_final_file(final_df, args.merged_standard_tags)

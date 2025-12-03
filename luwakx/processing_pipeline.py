@@ -29,6 +29,10 @@ class ProcessingPipeline:
         defaced_temp_dir: Temporary directory for defaced files
         config: Configuration dictionary
         logger: Logger instance (optional)
+        
+    See conformance documentation:
+    - Pipeline Architecture: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#32-pipeline-architecture
+    - Core Classes: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#922-core-classes-and-relationships
     """
     
     def __init__(self, series_subset: List[DicomSeries], output_directory: str,
@@ -173,6 +177,9 @@ class ProcessingPipeline:
         - Enables better progress tracking
         - Facilitates parallelization
         - Allows independent error handling per series
+        
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#32-pipeline-architecture
         """
         if self.logger:
             self.logger.info(

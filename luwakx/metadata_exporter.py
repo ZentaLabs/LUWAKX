@@ -4,7 +4,6 @@ This module provides the MetadataExporter class which handles exporting
 UID mappings to CSV and DICOM metadata to Parquet format, plus handling
 NRRD file movement to final destinations.
 
-Extracted from anonymize.py in Phase 2 refactoring.
 """
 
 import os
@@ -102,6 +101,9 @@ class MetadataExporter:
             mappings: File-based UID mappings {file_path: {field: {original, anonymized}}}
             input_folder: Input directory from config (for relative paths)
             output_folder: Output directory from config (for relative paths)
+            
+        See conformance documentation ("UID Mappings CSV" section):
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
         """
         if not mappings:
             return
@@ -192,6 +194,9 @@ class MetadataExporter:
         Args:
             metadata_file: Path to worker's metadata Parquet file
             metadata: List of metadata dictionaries for one series
+            
+        See conformance documentation ("DICOM Metadata Parquet" section):
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
         """
         if not metadata:
             return
@@ -233,6 +238,9 @@ class MetadataExporter:
             all_series: List of all processed DicomSeries
             output_directory: Public output directory
             private_mapping_folder: Private mapping folder
+            
+        See conformance documentation ("NRRD Volumes" section):
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
         """
         self.logger.info("Moving NRRD files to final destinations...")
         
@@ -307,6 +315,9 @@ class MetadataExporter:
             
         Returns:
             Dict[str, Any]: Metadata dictionary with all retained DICOM tags
+            
+        See conformance documentation ("DICOM Metadata Parquet" section):
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
         """
         try:
             self.logger.debug(f"Extracting metadata from: {anonymized_file_path}")
@@ -469,6 +480,9 @@ class MetadataExporter:
             
         Returns:
             str: Path to created Parquet file, or None if export failed
+            
+        See conformance documentation:
+        - Export Logic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
         """
         try:
             if not metadata_list:

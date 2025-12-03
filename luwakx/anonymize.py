@@ -61,7 +61,12 @@ from deid.dicom import get_files, get_identifiers, replace_identifiers
 
 class LuwakAnonymizer:
     def __init__(self, config_path):
-        """Initialize the anonymizer with configuration from JSON file."""
+        """Initialize the anonymizer with configuration from JSON file.
+        
+        See conformance documentation:
+        - LuwakAnonymizer: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#922-core-classes-and-relationships
+        - Configuration: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#91-configuration-file
+        """
         self.config_path = config_path
         
         # Check if logger is already configured, if not set it up using this config file
@@ -229,6 +234,9 @@ class LuwakAnonymizer:
             - FileNotFoundError: Exits with error message
             - JSONDecodeError: Exits with parse error details
             - Other exceptions: Exits with generic error message
+            
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#91-configuration-file
         """
         # Load config JSON
         try:
@@ -441,6 +449,9 @@ class LuwakAnonymizer:
         Error Handling:
             - Missing recipe files: Prints warnings but continues with available recipes
             - Invalid recipe types: Treated as custom recipe filenames
+            
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-3---4
         """
         recipe_paths = []
         recipes_list = self.config.get('recipes')
@@ -518,6 +529,11 @@ class LuwakAnonymizer:
             - private/metadata.parquet: Structured metadata
             - private/{series_folder}/image.nrrd: Original volume (if CT)
             - {series_folder}/image_defaced.nrrd: Defaced volume (if CT)
+            
+        See conformance documentation:
+        - Pipeline Architecture: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#32-pipeline-architecture
+        - Workflow: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#934-typical-workflow
+        - Output Files: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
         """
         from pipeline_coordinator import PipelineCoordinator
 

@@ -15,6 +15,11 @@ Usage:
     # Get logger in any module
     logger = get_logger(__name__)
     logger.info("Processing started")
+    
+See conformance documentation:
+- Log Files: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
+- Log Levels: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#935-log-files
+- Configuration: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#912-optional-configuration-options
 """
 
 import logging
@@ -52,7 +57,7 @@ def setup_logger(log_level: str = 'INFO',
     Configure the global logging system for Luwak.
     
     Args:
-        log_level (str): Logging level ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
+        log_level (str): Logging level ('PRIVATE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
         log_file (str, optional): Path to log file. If None, no file logging.
         console_output (bool): Whether to output logs to console
         log_format (str, optional): Custom log format string
@@ -64,6 +69,10 @@ def setup_logger(log_level: str = 'INFO',
     Note:
         This function should be called once at the start of the application.
         Subsequent calls will reconfigure the existing loggers.
+        
+    See conformance documentation:
+    - Log Levels: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#935-log-files
+    - Logging Options: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#912-optional-configuration-options
     """
     global _logger_configured, _default_config
     

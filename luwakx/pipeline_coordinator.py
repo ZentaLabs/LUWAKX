@@ -28,6 +28,10 @@ class PipelineCoordinator:
         logger: Logger instance (shared thread-safe)
         output_directory: Main output directory for all processed files
         num_workers: Number of pipeline workers to create
+        
+    See conformance documentation:
+    - Pipeline Architecture: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#32-pipeline-architecture
+    - Core Classes: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#922-core-classes-and-relationships
     """
     
     def __init__(self, all_series: List[DicomSeries], output_directory: str,

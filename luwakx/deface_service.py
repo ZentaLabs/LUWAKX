@@ -1,9 +1,8 @@
 """Deface service for visual feature processing.
 
 This module provides the DefaceService class which handles removal of
-recognizable visual features (faces) from medical images using ML models.
+recognizable visual features (faces) from medical images using AI models.
 
-Extracted from anonymize.py in Phase 2 refactoring.
 """
 
 import os
@@ -63,6 +62,9 @@ class DefaceService:
                 - 'nrrd_image_path': Path to image.nrrd (original volume with faces)
                 - 'nrrd_defaced_path': Path to image_defaced.nrrd (defaced volume)
                 - 'defaced_dicom_files': List of defaced DICOM file paths
+                
+        See conformance documentation:
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#41-clean-recognizable-visual-features-defacing----pipeline-stage-2
         """
         import pydicom
         

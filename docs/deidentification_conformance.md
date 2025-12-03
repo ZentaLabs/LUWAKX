@@ -368,7 +368,7 @@ The last two columns are placed in the table to always provide a way to compare 
 Keep in mind that the TCIA final action comes from a combination of profiles: "Basic Application Confidentiality Profile" which is amended by inclusion of "Clean Pixel Data Option", "Clean Descriptors Option", "Retain Longitudinal With Modified Dates Option", "Retain Patient Characteristics Option", and "Retain Safe Private Option".
 
 #### 5.1.4 Nested Sequence Support
-Luwak supports nested DICOM sequences using double-underscore (`__`) notation:
+Luwak supports nested DICOM sequences in the standard tags template only using double-underscore (`__`) notation:
 
 **Example:**
 ```
@@ -376,6 +376,8 @@ Group: 0018__0__0008
 Element: 9346__0__0104
 ```
 This represents: `(0018,9346)[0](0008,0104)` - the Referenced SOP Instance UID within the first item of the Referenced Series Sequence.
+
+**Note:** The nested sequence syntax is only available for standard tags (`standard_tags_template.csv`). Private tags (`private_tags_template.csv`) use the standard `xx` placeholder notation and do not support nested sequence paths currently.
 
 ### 5.2 Private Tags Template
 
@@ -421,6 +423,20 @@ CSV columns include:
 #### 5.2.4 Private Tag Notation
 Private tags use `xx` notation where `xx` represents the private creator code block:
 - `(2001,xxc1)` with creator `"Philips Imaging DD 001"` represents tag `(2001,10c1)` if the private creator is at `(2001,0010)`.
+
+#### 5.2.5 TCIA Data Processing
+
+When processing TCIA Private Tag Knowledge Base data, the template generation script applies the following transformations:
+
+**Duplicate Tag Handling:**
+- If the same tag (matching Group, Element, and Private Creator) appears multiple times with different VRs in the TCIA source, only the first occurrence is retained
+- Implementation: `drop_duplicates(subset=['Group', 'Element', 'Private Creator'])` in `retrieve_tags.py`.
+
+**Nested Structure Extraction:**
+- When TCIA lists a private tag with nested sequence structure (e.g., `(0008,1110)[<0>](2001,"Philips Imaging DD 001",c1)` or `(0008,1115)[<0>](0008,1140)[<1>](0009,"GEIIS_RA1000",01)`), the script extracts only the final child tag as `(2001,xxc1)` or `(0009,xx01)` respectively, and stores the private creator string separately in the Private Creator column
+- The full nested path information from TCIA is preserved in the `TCIA element_sig_pattern` column for reference (e.g., `(0008,1110)[<0>](2001,xxc1)`)
+- This simplifies the template structure while preserving the essential tag identification information
+- Implementation: `transform_row()` function in `retrieve_tags.py`.
 
 ### 5.3 Tag/Profile Specific Actions
 
@@ -1754,10 +1770,9 @@ analysisCacheFolder/ (if specified in config)
 
 ### 10.1 Known Limitations
 1. **Burned-in annotations:** Cannot remove PHI permanently embedded in pixel data; detection only flags for manual review
-2. **Sequence depth:** Nested sequences beyond 3 levels may not be fully processed
-3. **Large files:** Files >2GB may impact memory performance in parallel processing
-4. **Private tags:** Non-standard private tags may not have complete VR information
-5. **Directory naming collisions:** The directory structure uses 16-character truncated hashes of anonymized UIDs for study and series folders. While collision probability is negligible for typical institutional or national-scale datasets, theoretical collisions become possible at extremely large dataset scales (multi-country aggregations exceeding hundreds of millions of studies). The 96 bits of entropy provide strong collision resistance but are not sufficient to guarantee uniqueness at population scales approaching billions of studies. Users managing multi-institutional or international data aggregations should monitor for directory collisions and consider extending hash length if operating at scales exceeding 100 million unique studies.
+2. **Large files:** Files >2GB may impact memory performance in parallel processing
+3. **Directory naming collisions:** The directory structure uses 16-character truncated hashes of anonymized UIDs for study and series folders. While collision probability is negligible for typical institutional or national-scale datasets, theoretical collisions become possible at extremely large dataset scales (multi-country aggregations exceeding hundreds of millions of studies). The 96 bits of entropy provide strong collision resistance but are not sufficient to guarantee uniqueness at population scales approaching billions of studies. Users managing multi-institutional or international data aggregations should monitor for directory collisions and consider extending hash length if operating at scales exceeding 100 million unique studies.
+4. **Manual verification requirement:** Considering the current limitations listed here and in each of the sections throughout this document, a complete deidentification workflow should include functionality to generate verification tables listing all files and tags for manual content review, and to display images for visual verification of correct defacing and/or burned-in pixel annotation removal. Such verification tools are not currently implemented in Luwak and must be performed using external DICOM viewers and analysis tools. 
 
 ### 10.2 Dependencies
 
