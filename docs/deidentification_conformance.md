@@ -95,6 +95,7 @@ This chapter provides a clickable index for all major sections of this conforman
 | Software Libraries | [§12.3](#123-software-libraries) |
 | Appendix A: Configuration Schema Reference | [Appendix A](#appendix-a-configuration-schema-reference) |
 | Appendix B: Tag Template Maintenance | [Appendix B](#appendix-b-tag-template-maintenance) |
+| Appendix C: Basic Application Confidentiality Profile Recipe | [Appendix C](#appendix-c-basic-application-confidentiality-profile-recipe) |
 
 ---
 
@@ -116,7 +117,7 @@ The following DICOM PS3.15 Appendix E profiles and options are supported by Luwa
 | Retain Longitudinal Temporal Information with Modified Dates | `retain_long_modified_dates` | 113107 | Retains dates but shifts them consistently |
 | Clean Descriptors | `clean_descriptors` | 113105 | Cleans textual descriptors of PHI using LLM |
 | Retain Safe Private | `retain_safe_private_tags` | 113112 | Retains DICOM-specified safe private attributes |
-| Clean Recognizable Visual Features | `clean_recognizable_visual_features` | 113101 | Applies face defacing to imaging pixel data |
+| Clean Recognizable Visual Features | `clean_recognizable_visual_features` | 113101 | Applies defacing to imaging pixel data |
 
 **Note on Unsupported Profiles:**
 
@@ -191,30 +192,40 @@ Currently only CT is supported, but we are soon extenting this to PET and we pla
 **Implementation Module:** `luwakx/deface_service.py`  
 **ML Defacing Module:** `luwakx/scripts/defacing/image_defacer/image_anonymization.py`
 
-**Defacing Model Reference:** The defacing functionality in Luwak leverages the MOOSE framework and its pre-trained AI models for medical image segmentation and facial feature detection. MOOSE (https://github.com/ENHANCE-PET/MOOSE) provides robust deep learning models specifically designed for medical imaging tasks, enabling accurate and automated identification of facial regions in CT and PET scans. By integrating MOOSE, Luwak ensures state-of-the-art performance and reliability in the defacing process.
+**Defacing Model Reference:** The defacing functionality in Luwak leverages the MOOSE framework and its pre-trained AI models for medical image segmentation and facial feature detection. MOOSE (https://github.com/ENHANCE-PET/MOOSE) provides robust deep learning models specifically designed for medical imaging tasks, enabling accurate and automated identification of facial regions in CT and PET scans. By integrating MOOSE, Luwak ensures performance and reliability in the defacing process.
 
 #### 4.1.2 Defacing Pipeline
 
+The defacing pipeline processes DICOM series through four main stages while maintaining complete spatial fidelity throughout. Luwak's implementation ensures that no reorientation or geometric transformation occurs at any stage, preserving all spatial metadata from the original DICOM files.
+
 **Step 1: Volume Reconstruction**
-- Loads DICOM series files as 3D volume using SimpleITK
-- Uses GDCM to properly sort files by ImagePositionPatient
-- Preserves spatial relationships for accurate 3D face detection
+- Loads DICOM series as a 3D volume using `SimpleITK.ImageSeriesReader`
+- Uses GDCM's `GetGDCMSeriesFileNames()` to properly sort files by Image Position Patient (0020,0032)
+- Preserves spatial metadata: Origin, Direction (from Image Orientation Patient 0020,0037), and Spacing
+- Creates in-memory SimpleITK.Image object with native patient coordinate system intact
+- No reorientation is performed; volume retains original acquisition plane and orientation
 
 **Step 2: Face Detection/Segmentation**
-- Uses CT-optimized face detection models
-- Automatically segments facial features in 3D volume
-- Generates binary segmentation mask
-- GPU-accelerated with automatic memory cleanup
+- Passes SimpleITK.Image object to MOOSE framework
+- MOOSE performs face segmentation in the original patient coordinate system
+- Uses CT-optimized deep learning models (clin_ct_face) for facial feature detection
+- Generates binary segmentation mask that inherits spatial metadata (Origin, Direction, Spacing) from input volume
+- GPU-accelerated with automatic memory cleanup after inference
 
 **Step 3: Pixelation**
-- Applies pixelation to face-segmented regions
-- Preserves diagnostic image quality in non-face regions
+- Applies pixelation algorithm to face-segmented regions using nearest-neighbor downsampling/upsampling
+- All resampling operations use identity transform with explicit preservation of spatial metadata:
+  - `outputOrigin=image.GetOrigin()` (preserves Image Position Patient)
+  - `outputDirection=image.GetDirection()` (preserves Image Orientation Patient)
+  - `outputSpacing=image.GetSpacing()` (maintains voxel dimensions)
+- Preserves diagnostic image quality and spatial accuracy in non-face regions
 
 **Step 4: DICOM Export**
-- Converts defaced 3D volume back to individual DICOM files
-- Applies inverse rescale (RescaleSlope/RescaleIntercept) to restore raw pixel values
-- Preserves original DICOM tags and structure
-- CID 7050 code 113101 is added to DeidentificationMethodCodeSequence Attribute
+- Extracts defaced pixel data from 3D volume, stored in the SimpleITK.Image object, as 2D slices
+- Reads original DICOM files to preserve all header metadata
+- Applies inverse rescale transformation: `raw_pixels = (defaced_pixels - RescaleIntercept) / RescaleSlope`
+- Replaces only PixelData attribute; all spatial tags remain unchanged:
+- Adds CID 7050 code 113101 to DeidentificationMethodCodeSequence (0012,0064) to document defacing method
 
 #### 4.1.3 Modality Support
 - **CT (Computed Tomography):** Fully supported with modality-specific AI models
@@ -226,7 +237,7 @@ Currently only CT is supported, but we are soon extenting this to PET and we pla
 
 #### 4.1.4 Configuration
 
-**Enable Face Defacing:**
+**Enable Defacing:**
 To add the defacing option to the deidentification pipeline the correct recipe must be added in the recipes option in the config file ([§9.1](#91-configuration-file)).
 
 ```json
@@ -236,7 +247,7 @@ To add the defacing option to the deidentification pipeline the correct recipe m
 ```
 
 #### 4.1.5 Conditional Processing
-Face defacing is only performed when:
+Defacing is only performed when:
 1. `clean_recognizable_visual_features` profile is selected in recipes
 2. Modality is CT (currently only CT is supported; PET support in progress, MR support planned)
 
@@ -1200,6 +1211,8 @@ Examples of these tests are:
 
 Output file: `deid.dicom.recipe`
 
+The recipe builder generates a DEID-format recipe file containing all tag-level actions determined by the selected deidentification profiles and options. A complete reference table showing all tags processed by the Basic Application Confidentiality Profile recipe is provided in [Appendix C](#appendix-c-basic-application-confidentiality-profile-recipe).
+
 **Example content:**
 ```
 FORMAT dicom
@@ -1539,7 +1552,7 @@ Luwak follows an object-oriented design with clear separation of concerns:
   - `inject_deidentification_method_code_sequence()` - Add CID 7050 codes
 
 **`DefaceService`**
-- **Purpose:** Face defacing for CT/PET imaging volumes
+- **Purpose:** Defacing for CT/PET imaging volumes
 - **Key Responsibilities:**
   - Load DICOM series as 3D volume
   - Apply MOOSE-based face segmentation
@@ -1815,7 +1828,7 @@ Luwak includes a comprehensive test suite validating core functionality and conf
 **Test Modules:**
 - `test_anonymize.py` - Core anonymization functionality and custom functions
 - `test_config_options.py` - Configuration validation and option handling
-- `test_defacer_profile.py` - Face defacing with MOOSE integration
+- `test_defacer_profile.py` - Defacing with MOOSE integration
 - `test_exports.py` - UID mappings, Parquet metadata, and file exports
 - `test_logger.py` - Logging system and custom log levels
 - `test_paths.py` - Path resolution and working directory independence
@@ -1839,7 +1852,7 @@ Luwak includes a comprehensive test suite validating core functionality and conf
 - `test_uid_mapping_file_creation` - UID mappings CSV generation
 - `test_parquet_metadata_export` - Parquet metadata export with dynamic schema
 - `test_csv_and_parquet_consistency` - Consistency between export formats
-- `test_defacer_service_makes_defacing` - Face defacing pipeline integration
+- `test_defacer_service_makes_defacing` - Defacing pipeline integration
 
 **System Tests:**
 - `test_script_runs_on_first_file` - Single-file processing
@@ -1966,4 +1979,702 @@ Tag templates should be regenerated when:
 - New vendor-specific private tags are discovered
 
 Use `retrieve_tags.py` script as documented in [§5](#5-metadata-deideintification----tags-and-profiles-templates) .
+
+## Appendix C: Basic Application Confidentiality Profile Recipe
+
+This appendix provides the complete list of DICOM tags processed by the Basic Application Confidentiality Profile, showing the specific actions applied to each tag. This table represents the actual recipe file generated by Luwak's anonymization recipe builder when the Basic Profile is selected (see [§5.4.1](#541-basic-application-confidentiality-profile---action-mapping-logic) and [§6](#6-deidentification-recipe-creation-pipeline-stage-3---4)).
+
+### C.1 Recipe Format
+
+The recipe follows the DEID library format with the following structure:
+- **FORMAT**: `dicom` - Specifies DICOM format processing
+- **%header**: Section containing all tag-level operations
+- **Comment Lines**: Begin with `#` and provide the human-readable tag name
+- **Action Lines**: Specify the operation to perform on each tag
+
+### C.2 Complete Tag Actions Table
+
+| Tag | Tag Name | Action | Replacement Value |
+|-----|----------|--------|-------------------|
+| (0000,1000) | Affected SOP Instance UID | REMOVE | - |
+| (0000,1001) | Requested SOP Instance UID | REPLACE | func:generate_hmacuid |
+| (0002,0003) | Media Storage SOP Instance UID | REPLACE | func:generate_hmacuid |
+| (0004,1511) | Referenced SOP Instance UID in File | REPLACE | func:generate_hmacuid |
+| (0008,0012) | Instance Creation Date | REPLACE | func:set_fixed_datetime |
+| (0008,0013) | Instance Creation Time | REPLACE | func:set_fixed_datetime |
+| (0008,0014) | Instance Creator UID | REPLACE | func:generate_hmacuid |
+| (0008,0015) | Instance Coercion DateTime | REMOVE | - |
+| (0008,0017) | Acquisition UID | REPLACE | func:generate_hmacuid |
+| (0008,0018) | SOP Instance UID | REPLACE | func:generate_hmacuid |
+| (0008,0019) | Pyramid UID | REPLACE | func:generate_hmacuid |
+| (0008,0020) | Study Date | REPLACE | func:set_fixed_datetime |
+| (0008,0021) | Series Date | REPLACE | func:set_fixed_datetime |
+| (0008,0022) | Acquisition Date | REPLACE | func:set_fixed_datetime |
+| (0008,0023) | Content Date | REPLACE | func:set_fixed_datetime |
+| (0008,0024) | Overlay Date | REMOVE | - |
+| (0008,0025) | Curve Date | REMOVE | - |
+| (0008,002A) | Acquisition DateTime | REPLACE | func:set_fixed_datetime |
+| (0008,0030) | Study Time | REPLACE | func:set_fixed_datetime |
+| (0008,0031) | Series Time | REPLACE | func:set_fixed_datetime |
+| (0008,0032) | Acquisition Time | REPLACE | func:set_fixed_datetime |
+| (0008,0033) | Content Time | REPLACE | func:set_fixed_datetime |
+| (0008,0034) | Overlay Time | REMOVE | - |
+| (0008,0035) | Curve Time | REMOVE | - |
+| (0008,0050) | Accession Number | BLANK | - |
+| (0008,0054) | Retrieve AE Title | REMOVE | - |
+| (0008,0055) | Station AE Title | REMOVE | - |
+| (0008,0058) | Failed SOP Instance UID List | REPLACE | func:generate_hmacuid |
+| (0008,0080) | Institution Name | REPLACE | ANONYMIZED |
+| (0008,0081) | Institution Address | REMOVE | - |
+| (0008,0082) | Institution Code Sequence | REMOVE | - |
+| (0008,0090) | Referring Physician's Name | BLANK | - |
+| (0008,0092) | Referring Physician's Address | REMOVE | - |
+| (0008,0094) | Referring Physician's Telephone Numbers | REMOVE | - |
+| (0008,0096) | Referring Physician Identification Sequence | REMOVE | - |
+| (0008,009C) | Consulting Physician's Name | BLANK | - |
+| (0008,009D) | Consulting Physician Identification Sequence | REMOVE | - |
+| (0008,0106) | Context Group Version | REPLACE | func:set_fixed_datetime |
+| (0008,0107) | Context Group Local Version | REPLACE | func:set_fixed_datetime |
+| (0008,0201) | Timezone Offset From UTC | REMOVE | - |
+| (0008,1000) | Network ID | REMOVE | - |
+| (0008,1010) | Station Name | REPLACE | ANONYMIZED |
+| (0008,1030) | Study Description | REMOVE | - |
+| (0008,103E) | Series Description | REMOVE | - |
+| (0008,1040) | Institutional Department Name | REMOVE | - |
+| (0008,1041) | Institutional Department Type Code Sequence | REMOVE | - |
+| (0008,1048) | Physician(s) of Record | REMOVE | - |
+| (0008,1049) | Physician(s) of Record Identification Sequence | REMOVE | - |
+| (0008,1050) | Performing Physician's Name | REMOVE | - |
+| (0008,1052) | Performing Physician Identification Sequence | REMOVE | - |
+| (0008,1060) | Name of Physician(s) Reading Study | REMOVE | - |
+| (0008,1062) | Physician(s) Reading Study Identification Sequence | REMOVE | - |
+| (0008,1070) | Operators' Name | REPLACE | Anonymized^Anonymized |
+| (0008,1072) | Operator Identification Sequence | REMOVE | - |
+| (0008,1080) | Admitting Diagnoses Description | REMOVE | - |
+| (0008,1084) | Admitting Diagnoses Code Sequence | REMOVE | - |
+| (0008,1088) | Pyramid Description | REMOVE | - |
+| (0008,1110) | Referenced Study Sequence | BLANK | - |
+| (0008,1120) | Referenced Patient Sequence | REMOVE | - |
+| (0008,1140) | Referenced Image Sequence | BLANK | - |
+| (0008,1155) | Referenced SOP Instance UID | REPLACE | func:generate_hmacuid |
+| (0008,1195) | Transaction UID | REPLACE | func:generate_hmacuid |
+| (0008,1301) | Principal Diagnosis Code Sequence | REMOVE | - |
+| (0008,1302) | Primary Diagnosis Code Sequence | REMOVE | - |
+| (0008,1303) | Secondary Diagnoses Code Sequence | REMOVE | - |
+| (0008,1304) | Histological Diagnoses Code Sequence | REMOVE | - |
+| (0008,2111) | Derivation Description | REMOVE | - |
+| (0008,2112) | Source Image Sequence | BLANK | - |
+| (0008,3010) | Irradiation Event UID | REPLACE | func:generate_hmacuid |
+| (0008,4000) | Identifying Comments | REMOVE | - |
+| (0010,0010) | Patient's Name | REPLACE | func:generate_patient_id |
+| (0010,0011) | Person Names to Use Sequence | REMOVE | - |
+| (0010,0012) | Name to Use | REMOVE | - |
+| (0010,0013) | Name to Use Comment | REMOVE | - |
+| (0010,0014) | Third Person Pronouns Sequence | REMOVE | - |
+| (0010,0015) | Pronoun Code Sequence | REMOVE | - |
+| (0010,0016) | Pronoun Comment | REMOVE | - |
+| (0010,0020) | Patient ID | REPLACE | func:generate_patient_id |
+| (0010,0021) | Issuer of Patient ID | REMOVE | - |
+| (0010,0030) | Patient's Birth Date | REPLACE | func:set_fixed_datetime |
+| (0010,0032) | Patient's Birth Time | REMOVE | - |
+| (0010,0040) | Patient's Sex | BLANK | - |
+| (0010,0041) | Gender Identity Sequence | REMOVE | - |
+| (0010,0042) | Sex Parameters for Clinical Use Category Comment | REMOVE | - |
+| (0010,0043) | Sex Parameters for Clinical Use Category Sequence | REMOVE | - |
+| (0010,0044) | Gender Identity Code Sequence | REMOVE | - |
+| (0010,0045) | Gender Identity Comment | REMOVE | - |
+| (0010,0046) | Sex Parameters for Clinical Use Category Code Sequence | REMOVE | - |
+| (0010,0047) | Sex Parameters for Clinical Use Category Reference | REMOVE | - |
+| (0010,0050) | Patient's Insurance Plan Code Sequence | REMOVE | - |
+| (0010,0101) | Patient's Primary Language Code Sequence | REMOVE | - |
+| (0010,0102) | Patient's Primary Language Modifier Code Sequence | REMOVE | - |
+| (0010,1000) | Other Patient IDs | REMOVE | - |
+| (0010,1001) | Other Patient Names | REMOVE | - |
+| (0010,1002) | Other Patient IDs Sequence | REMOVE | - |
+| (0010,1005) | Patient's Birth Name | REMOVE | - |
+| (0010,1010) | Patient's Age | REMOVE | - |
+| (0010,1020) | Patient's Size | REMOVE | - |
+| (0010,1030) | Patient's Weight | REMOVE | - |
+| (0010,1040) | Patient's Address | REMOVE | - |
+| (0010,1050) | Insurance Plan Identification | REMOVE | - |
+| (0010,1060) | Patient's Mother's Birth Name | REMOVE | - |
+| (0010,1080) | Military Rank | REMOVE | - |
+| (0010,1081) | Branch of Service | REMOVE | - |
+| (0010,1090) | Medical Record Locator | REMOVE | - |
+| (0010,1100) | Referenced Patient Photo Sequence | REMOVE | - |
+| (0010,2000) | Medical Alerts | REMOVE | - |
+| (0010,2110) | Allergies | REMOVE | - |
+| (0010,2150) | Country of Residence | REMOVE | - |
+| (0010,2152) | Region of Residence | REMOVE | - |
+| (0010,2154) | Patient's Telephone Numbers | REMOVE | - |
+| (0010,2155) | Patient's Telecom Information | REMOVE | - |
+| (0010,2160) | Ethnic Group | REMOVE | - |
+| (0010,2161) | Ethnic Group Code Sequence | REMOVE | - |
+| (0010,2162) | Ethnic Groups | REMOVE | - |
+| (0010,2180) | Occupation | REMOVE | - |
+| (0010,21A0) | Smoking Status | REMOVE | - |
+| (0010,21B0) | Additional Patient History | REMOVE | - |
+| (0010,21C0) | Pregnancy Status | REMOVE | - |
+| (0010,21D0) | Last Menstrual Date | REMOVE | - |
+| (0010,21F0) | Patient's Religious Preference | REMOVE | - |
+| (0010,2203) | Patient's Sex Neutered | BLANK | - |
+| (0010,2297) | Responsible Person | REMOVE | - |
+| (0010,2299) | Responsible Organization | REMOVE | - |
+| (0010,4000) | Patient Comments | REMOVE | - |
+| (0012,0010) | Clinical Trial Sponsor Name | REPLACE | ANONYMIZED |
+| (0012,0020) | Clinical Trial Protocol ID | REPLACE | ANONYMIZED |
+| (0012,0021) | Clinical Trial Protocol Name | BLANK | - |
+| (0012,0022) | Issuer of Clinical Trial Protocol ID | REMOVE | - |
+| (0012,0023) | Other Clinical Trial Protocol IDs Sequence | REMOVE | - |
+| (0012,0030) | Clinical Trial Site ID | BLANK | - |
+| (0012,0031) | Clinical Trial Site Name | BLANK | - |
+| (0012,0032) | Issuer of Clinical Trial Site ID | REMOVE | - |
+| (0012,0040) | Clinical Trial Subject ID | REPLACE | ANONYMIZED |
+| (0012,0041) | Issuer of Clinical Trial Subject ID | REMOVE | - |
+| (0012,0042) | Clinical Trial Subject Reading ID | REPLACE | ANONYMIZED |
+| (0012,0043) | Issuer of Clinical Trial Subject Reading ID | REMOVE | - |
+| (0012,0050) | Clinical Trial Time Point ID | BLANK | - |
+| (0012,0051) | Clinical Trial Time Point Description | REMOVE | - |
+| (0012,0055) | Issuer of Clinical Trial Time Point ID | REMOVE | - |
+| (0012,0060) | Clinical Trial Coordinating Center Name | BLANK | - |
+| (0012,0071) | Clinical Trial Series ID | REMOVE | - |
+| (0012,0072) | Clinical Trial Series Description | REMOVE | - |
+| (0012,0073) | Issuer of Clinical Trial Series ID | REMOVE | - |
+| (0012,0081) | Clinical Trial Protocol Ethics Committee Name | REPLACE | ANONYMIZED |
+| (0012,0082) | Clinical Trial Protocol Ethics Committee Approval Number | REMOVE | - |
+| (0012,0086) | Ethics Committee Approval Effectiveness Start Date | REMOVE | - |
+| (0012,0087) | Ethics Committee Approval Effectiveness End Date | REMOVE | - |
+| (0014,407C) | Calibration Time | REMOVE | - |
+| (0014,407E) | Calibration Date | REMOVE | - |
+| (0016,002B) | Maker Note | REMOVE | - |
+| (0016,004B) | Device Setting Description | REMOVE | - |
+| (0016,004D) | Camera Owner Name | REMOVE | - |
+| (0016,004E) | Lens Specification | REMOVE | - |
+| (0016,004F) | Lens Make | REMOVE | - |
+| (0016,0050) | Lens Model | REMOVE | - |
+| (0016,0051) | Lens Serial Number | REMOVE | - |
+| (0016,0070) | GPS Version ID | REMOVE | - |
+| (0016,0071) | GPS Latitude​ Ref | REMOVE | - |
+| (0016,0072) | GPS Latitude​ | REMOVE | - |
+| (0016,0073) | GPS Longitude Ref | REMOVE | - |
+| (0016,0074) | GPS Longitude | REMOVE | - |
+| (0016,0075) | GPS Altitude​ Ref | REMOVE | - |
+| (0016,0076) | GPS Altitude​ | REMOVE | - |
+| (0016,0077) | GPS Time​ Stamp | REMOVE | - |
+| (0016,0078) | GPS Satellites | REMOVE | - |
+| (0016,0079) | GPS Status | REMOVE | - |
+| (0016,007A) | GPS Measure ​Mode | REMOVE | - |
+| (0016,007B) | GPS DOP | REMOVE | - |
+| (0016,007C) | GPS Speed​ Ref | REMOVE | - |
+| (0016,007D) | GPS Speed​ | REMOVE | - |
+| (0016,007E) | GPS Track ​Ref | REMOVE | - |
+| (0016,007F) | GPS Track | REMOVE | - |
+| (0016,0080) | GPS Img​ Direction Ref | REMOVE | - |
+| (0016,0081) | GPS Img ​Direction | REMOVE | - |
+| (0016,0082) | GPS Map​ Datum | REMOVE | - |
+| (0016,0083) | GPS Dest​ Latitude Ref | REMOVE | - |
+| (0016,0084) | GPS Dest​ Latitude | REMOVE | - |
+| (0016,0085) | GPS Dest ​Longitude Ref | REMOVE | - |
+| (0016,0086) | GPS Dest ​Longitude | REMOVE | - |
+| (0016,0087) | GPS Dest​ Bearing Ref | REMOVE | - |
+| (0016,0088) | GPS Dest ​Bearing | REMOVE | - |
+| (0016,0089) | GPS Dest ​Distance Ref | REMOVE | - |
+| (0016,008A) | GPS Dest ​Distance | REMOVE | - |
+| (0016,008B) | GPS Processing​ Method | REMOVE | - |
+| (0016,008C) | GPS Area ​Information | REMOVE | - |
+| (0016,008D) | GPS Date​ Stamp | REMOVE | - |
+| (0016,008E) | GPS Differential | REMOVE | - |
+| (0018,0010) | Contrast/Bolus Agent | REPLACE | ANONYMIZED |
+| (0018,0027) | Intervention Drug Stop Time | REMOVE | - |
+| (0018,0035) | Intervention Drug Start Time | REMOVE | - |
+| (0018,1000) | Device Serial Number | REPLACE | ANONYMIZED |
+| (0018,1002) | Device UID | REPLACE | func:generate_hmacuid |
+| (0018,1004) | Plate ID | REMOVE | - |
+| (0018,1005) | Generator ID | REMOVE | - |
+| (0018,1007) | Cassette ID | REMOVE | - |
+| (0018,1008) | Gantry ID | REMOVE | - |
+| (0018,1009) | Unique Device Identifier | REMOVE | - |
+| (0018,100A) | UDI Sequence | REMOVE | - |
+| (0018,100B) | Manufacturer's Device Class UID | REPLACE | func:generate_hmacuid |
+| (0018,1010) | Secondary Capture Device ID | REMOVE | - |
+| (0018,1011) | Hardcopy Creation Device ID | REMOVE | - |
+| (0018,1012) | Date of Secondary Capture | REMOVE | - |
+| (0018,1014) | Time of Secondary Capture | REMOVE | - |
+| (0018,1030) | Protocol Name | REPLACE | ANONYMIZED |
+| (0018,1042) | Contrast/Bolus Start Time | REMOVE | - |
+| (0018,1043) | Contrast/Bolus Stop Time | REMOVE | - |
+| (0018,1072) | Radiopharmaceutical Start Time | REMOVE | - |
+| (0018,1073) | Radiopharmaceutical Stop Time | REMOVE | - |
+| (0018,1078) | Radiopharmaceutical Start DateTime | REMOVE | - |
+| (0018,1079) | Radiopharmaceutical Stop DateTime | REMOVE | - |
+| (0018,11BB) | Acquisition Field Of View Label | REPLACE | ANONYMIZED |
+| (0018,1200) | Date of Last Calibration | REMOVE | - |
+| (0018,1201) | Time of Last Calibration | REMOVE | - |
+| (0018,1202) | DateTime of Last Calibration | REMOVE | - |
+| (0018,1203) | Calibration DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,1204) | Date of Manufacture | REMOVE | - |
+| (0018,1205) | Date of Installation | REMOVE | - |
+| (0018,1400) | Acquisition Device Processing Description | REPLACE | ANONYMIZED |
+| (0018,2042) | Target UID | REPLACE | func:generate_hmacuid |
+| (0018,4000) | Acquisition Comments | REMOVE | - |
+| (0018,5011) | Transducer Identification Sequence | REMOVE | - |
+| (0018,700A) | Detector ID | REPLACE | ANONYMIZED |
+| (0018,700C) | Date of Last Detector Calibration | REPLACE | func:set_fixed_datetime |
+| (0018,700E) | Time of Last Detector Calibration | REPLACE | func:set_fixed_datetime |
+| (0018,9074) | Frame Acquisition DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,9151) | Frame Reference DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,9185) | Respiratory Motion Compensation Technique Description | REMOVE | - |
+| (0018,9367) | X-Ray Source ID | REPLACE | ANONYMIZED |
+| (0018,9369) | Source Start DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,936A) | Source End DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,9371) | X-Ray Detector ID | REPLACE | ANONYMIZED |
+| (0018,9373) | X-Ray Detector Label | REMOVE | - |
+| (0018,937B) | Multi-energy Acquisition Description | REMOVE | - |
+| (0018,937F) | Decomposition Description | REMOVE | - |
+| (0018,9424) | Acquisition Protocol Description | REMOVE | - |
+| (0018,9516) | Start Acquisition DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,9517) | End Acquisition DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,9623) | Functional Sync Pulse | REPLACE | func:set_fixed_datetime |
+| (0018,9701) | Decay Correction DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,9804) | Exclusion Start DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,9919) | Instruction Performed DateTime | REPLACE | func:set_fixed_datetime |
+| (0018,9937) | Requested Series Description | REMOVE | - |
+| (0018,A002) | Contribution DateTime | REMOVE | - |
+| (0018,A003) | Contribution Description | REMOVE | - |
+| (0020,000D) | Study Instance UID | REPLACE | func:generate_hmacuid |
+| (0020,000E) | Series Instance UID | REPLACE | func:generate_hmacuid |
+| (0020,0010) | Study ID | BLANK | - |
+| (0020,0027) | Pyramid Label | REMOVE | - |
+| (0020,0052) | Frame of Reference UID | REPLACE | func:generate_hmacuid |
+| (0020,0200) | Synchronization Frame of Reference UID | REPLACE | func:generate_hmacuid |
+| (0020,3401) | Modifying Device ID | REMOVE | - |
+| (0020,3403) | Modified Image Date | REMOVE | - |
+| (0020,3405) | Modified Image Time | REMOVE | - |
+| (0020,3406) | Modified Image Description | REMOVE | - |
+| (0020,4000) | Image Comments | REMOVE | - |
+| (0020,9158) | Frame Comments | REMOVE | - |
+| (0020,9161) | Concatenation UID | REPLACE | func:generate_hmacuid |
+| (0020,9164) | Dimension Organization UID | REPLACE | func:generate_hmacuid |
+| (0028,1199) | Palette Color Lookup Table UID | REPLACE | func:generate_hmacuid |
+| (0028,1214) | Large Palette Color Lookup Table UID | REPLACE | func:generate_hmacuid |
+| (0028,4000) | Image Presentation Comments | REMOVE | - |
+| (0032,0012) | Study ID Issuer | REMOVE | - |
+| (0032,0032) | Study Verified Date | REMOVE | - |
+| (0032,0033) | Study Verified Time | REMOVE | - |
+| (0032,0034) | Study Read Date | REMOVE | - |
+| (0032,0035) | Study Read Time | REMOVE | - |
+| (0032,1000) | Scheduled Study Start Date | REMOVE | - |
+| (0032,1001) | Scheduled Study Start Time | REMOVE | - |
+| (0032,1010) | Scheduled Study Stop Date | REMOVE | - |
+| (0032,1011) | Scheduled Study Stop Time | REMOVE | - |
+| (0032,1020) | Scheduled Study Location | REMOVE | - |
+| (0032,1021) | Scheduled Study Location AE Title | REMOVE | - |
+| (0032,1030) | Reason for Study | REMOVE | - |
+| (0032,1032) | Requesting Physician | REMOVE | - |
+| (0032,1033) | Requesting Service | REMOVE | - |
+| (0032,1040) | Study Arrival Date | REMOVE | - |
+| (0032,1041) | Study Arrival Time | REMOVE | - |
+| (0032,1050) | Study Completion Date | REMOVE | - |
+| (0032,1051) | Study Completion Time | REMOVE | - |
+| (0032,1060) | Requested Procedure Description | BLANK | - |
+| (0032,1066) | Reason for Visit | REMOVE | - |
+| (0032,1067) | Reason for Visit Code Sequence | REMOVE | - |
+| (0032,1070) | Requested Contrast Agent | REMOVE | - |
+| (0032,4000) | Study Comments | REMOVE | - |
+| (0034,0002) | Flow Identifier | REMOVE | - |
+| (0034,0005) | Source Identifier | REMOVE | - |
+| (0034,0007) | Frame Origin Timestamp | REMOVE | - |
+| (0038,0004) | Referenced Patient Alias Sequence | REMOVE | - |
+| (0038,0010) | Admission ID | REMOVE | - |
+| (0038,0011) | Issuer of Admission ID | REMOVE | - |
+| (0038,0014) | Issuer of Admission ID Sequence | REMOVE | - |
+| (0038,001A) | Scheduled Admission Date | REMOVE | - |
+| (0038,001B) | Scheduled Admission Time | REMOVE | - |
+| (0038,001C) | Scheduled Discharge Date | REMOVE | - |
+| (0038,001D) | Scheduled Discharge Time | REMOVE | - |
+| (0038,001E) | Scheduled Patient Institution Residence | REMOVE | - |
+| (0038,0020) | Admitting Date | REMOVE | - |
+| (0038,0021) | Admitting Time | REMOVE | - |
+| (0038,0030) | Discharge Date | REMOVE | - |
+| (0038,0032) | Discharge Time | REMOVE | - |
+| (0038,0040) | Discharge Diagnosis Description | REMOVE | - |
+| (0038,0050) | Special Needs | REMOVE | - |
+| (0038,0060) | Service Episode ID | REMOVE | - |
+| (0038,0061) | Issuer of Service Episode ID | REMOVE | - |
+| (0038,0062) | Service Episode Description | REMOVE | - |
+| (0038,0064) | Issuer of Service Episode ID Sequence | REMOVE | - |
+| (0038,0300) | Current Patient Location | REMOVE | - |
+| (0038,0400) | Patient's Institution Residence | REMOVE | - |
+| (0038,0500) | Patient State | REMOVE | - |
+| (0038,4000) | Visit Comments | REMOVE | - |
+| (003A,0020) | Multiplex Group Label | REMOVE | - |
+| (003A,0203) | Channel Label | REMOVE | - |
+| (003A,020C) | Channel Derivation Description | REMOVE | - |
+| (003A,0310) | Multiplex Group UID | REPLACE | func:generate_hmacuid |
+| (003A,0314) | Impedance Measurement DateTime | REPLACE | func:set_fixed_datetime |
+| (003A,0329) | ​Waveform Filter Description | REMOVE | - |
+| (003A,032B) | Filter Lookup Table Description | REMOVE | - |
+| (0040,0001) | Scheduled Station AE Title | REMOVE | - |
+| (0040,0002) | Scheduled Procedure Step Start Date | REMOVE | - |
+| (0040,0003) | Scheduled Procedure Step Start Time | REMOVE | - |
+| (0040,0004) | Scheduled Procedure Step End Date | REMOVE | - |
+| (0040,0005) | Scheduled Procedure Step End Time | REMOVE | - |
+| (0040,0006) | Scheduled Performing Physician's Name | REMOVE | - |
+| (0040,0007) | Scheduled Procedure Step Description | REMOVE | - |
+| (0040,0009) | Scheduled Procedure Step ID | REMOVE | - |
+| (0040,000B) | Scheduled Performing Physician Identification Sequence | REMOVE | - |
+| (0040,0010) | Scheduled Station Name | REMOVE | - |
+| (0040,0011) | Scheduled Procedure Step Location | REMOVE | - |
+| (0040,0012) | Pre-Medication | REMOVE | - |
+| (0040,0241) | Performed Station AE Title | REMOVE | - |
+| (0040,0242) | Performed Station Name | REMOVE | - |
+| (0040,0243) | Performed Location | REMOVE | - |
+| (0040,0244) | Performed Procedure Step Start Date | REMOVE | - |
+| (0040,0245) | Performed Procedure Step Start Time | REMOVE | - |
+| (0040,0250) | Performed Procedure Step End Date | REMOVE | - |
+| (0040,0251) | Performed Procedure Step End Time | REMOVE | - |
+| (0040,0253) | Performed Procedure Step ID | REMOVE | - |
+| (0040,0254) | Performed Procedure Step Description | REMOVE | - |
+| (0040,0275) | Request Attributes Sequence | REMOVE | - |
+| (0040,0280) | Comments on the Performed Procedure Step | REMOVE | - |
+| (0040,0310) | Comments on Radiation Dose | REMOVE | - |
+| (0040,050A) | Specimen Accession Number | REMOVE | - |
+| (0040,0512) | Container Identifier | REPLACE | ANONYMIZED |
+| (0040,0513) | Issuer of the Container Identifier Sequence | BLANK | - |
+| (0040,051A) | Container Description | REMOVE | - |
+| (0040,0551) | Specimen Identifier | REPLACE | ANONYMIZED |
+| (0040,0554) | Specimen UID | REPLACE | func:generate_hmacuid |
+| (0040,0555) | Acquisition Context Sequence | BLANK | - |
+| (0040,0556) | Acquisition Context Description | REMOVE | - |
+| (0040,0562) | Issuer of the Specimen Identifier Sequence | BLANK | - |
+| (0040,0600) | Specimen Short Description | REMOVE | - |
+| (0040,0602) | Specimen Detailed Description | REMOVE | - |
+| (0040,0610) | Specimen Preparation Sequence | BLANK | - |
+| (0040,06FA) | Slide Identifier | REMOVE | - |
+| (0040,1001) | Requested Procedure ID | REMOVE | - |
+| (0040,1002) | Reason for the Requested Procedure | REMOVE | - |
+| (0040,1004) | Patient Transport Arrangements | REMOVE | - |
+| (0040,1005) | Requested Procedure Location | REMOVE | - |
+| (0040,100A) | Reason for Requested Procedure Code Sequence | REMOVE | - |
+| (0040,1010) | Names of Intended Recipients of Results | REMOVE | - |
+| (0040,1011) | Intended Recipients of Results Identification Sequence | REMOVE | - |
+| (0040,1101) | Person Identification Code Sequence | REMOVE | - |
+| (0040,1102) | Person's Address | REMOVE | - |
+| (0040,1103) | Person's Telephone Numbers | REMOVE | - |
+| (0040,1104) | Person's Telecom Information | REMOVE | - |
+| (0040,1400) | Requested Procedure Comments | REMOVE | - |
+| (0040,2001) | Reason for the Imaging Service Request | REMOVE | - |
+| (0040,2004) | Issue Date of Imaging Service Request | REMOVE | - |
+| (0040,2005) | Issue Time of Imaging Service Request | REMOVE | - |
+| (0040,2008) | Order Entered By | REMOVE | - |
+| (0040,2009) | Order Enterer's Location | REMOVE | - |
+| (0040,2010) | Order Callback Phone Number | REMOVE | - |
+| (0040,2011) | Order Callback Telecom Information | REMOVE | - |
+| (0040,2016) | Placer Order Number / Imaging Service Request | BLANK | - |
+| (0040,2017) | Filler Order Number / Imaging Service Request | BLANK | - |
+| (0040,2400) | Imaging Service Request Comments | REMOVE | - |
+| (0040,3001) | Confidentiality Constraint on Patient Data Description | REMOVE | - |
+| (0040,4005) | Scheduled Procedure Step Start DateTime | REMOVE | - |
+| (0040,4008) | Scheduled Procedure Step Expiration DateTime | REMOVE | - |
+| (0040,4010) | Scheduled Procedure Step Modification DateTime | REMOVE | - |
+| (0040,4011) | Expected Completion DateTime | REMOVE | - |
+| (0040,4023) | Referenced General Purpose Scheduled Procedure Step Transaction UID | REPLACE | func:generate_hmacuid |
+| (0040,4025) | Scheduled Station Name Code Sequence | REMOVE | - |
+| (0040,4027) | Scheduled Station Geographic Location Code Sequence | REMOVE | - |
+| (0040,4028) | Performed Station Name Code Sequence | REMOVE | - |
+| (0040,4030) | Performed Station Geographic Location Code Sequence | REMOVE | - |
+| (0040,4034) | Scheduled Human Performers Sequence | REMOVE | - |
+| (0040,4035) | Actual Human Performers Sequence | REMOVE | - |
+| (0040,4036) | Human Performer's Organization | REMOVE | - |
+| (0040,4037) | Human Performer's Name | REMOVE | - |
+| (0040,4050) | Performed Procedure Step Start DateTime | REMOVE | - |
+| (0040,4051) | Performed Procedure Step End DateTime | REMOVE | - |
+| (0040,4052) | Procedure Step Cancellation DateTime | REMOVE | - |
+| (0040,A023) | Findings Group Recording Date (Trial) | REMOVE | - |
+| (0040,A024) | Findings Group Recording Time (Trial) | REMOVE | - |
+| (0040,A027) | Verifying Organization | REPLACE | ANONYMIZED |
+| (0040,A030) | Verification DateTime | REPLACE | func:set_fixed_datetime |
+| (0040,A032) | Observation DateTime | REPLACE | func:set_fixed_datetime |
+| (0040,A033) | Observation Start DateTime | REMOVE | - |
+| (0040,A034) | Effective Start DateTime | REMOVE | - |
+| (0040,A035) | Effective Stop DateTime | REMOVE | - |
+| (0040,A075) | Verifying Observer Name | REPLACE | Anonymized^Anonymized |
+| (0040,A078) | Author Observer Sequence | REMOVE | - |
+| (0040,A07A) | Participant Sequence | REMOVE | - |
+| (0040,A07C) | Custodial Organization Sequence | REMOVE | - |
+| (0040,A082) | Participation DateTime | REPLACE | func:set_fixed_datetime |
+| (0040,A088) | Verifying Observer Identification Code Sequence | BLANK | - |
+| (0040,A110) | Date of Document or Verbal Transaction (Trial) | REMOVE | - |
+| (0040,A112) | Time of Document Creation or Verbal Transaction (Trial) | REMOVE | - |
+| (0040,A120) | DateTime | REPLACE | func:set_fixed_datetime |
+| (0040,A121) | Date | REPLACE | func:set_fixed_datetime |
+| (0040,A122) | Time | REPLACE | func:set_fixed_datetime |
+| (0040,A123) | Person Name | REPLACE | Anonymized^Anonymized |
+| (0040,A124) | UID | REPLACE | func:generate_hmacuid |
+| (0040,A13A) | Referenced DateTime | REPLACE | func:set_fixed_datetime |
+| (0040,A171) | Observation UID | REPLACE | func:generate_hmacuid |
+| (0040,A172) | Referenced Observation UID (Trial) | REPLACE | func:generate_hmacuid |
+| (0040,A192) | Observation Date (Trial) | REMOVE | - |
+| (0040,A193) | Observation Time (Trial) | REMOVE | - |
+| (0040,A307) | Current Observer (Trial) | REMOVE | - |
+| (0040,A352) | Verbal Source (Trial) | REMOVE | - |
+| (0040,A353) | Address (Trial) | REMOVE | - |
+| (0040,A354) | Telephone Number (Trial) | REMOVE | - |
+| (0040,A358) | Verbal Source Identifier Code Sequence (Trial) | REMOVE | - |
+| (0040,A402) | Observation Subject UID (Trial) | REPLACE | func:generate_hmacuid |
+| (0040,B034) | Annotation DateTime | REMOVE | - |
+| (0040,B036) | Segment Definition DateTime | REMOVE | - |
+| (0040,B03B) | Montage Name | REMOVE | - |
+| (0040,B03F) | Montage Channel Label | REMOVE | - |
+| (0040,DB06) | Template Version | REMOVE | - |
+| (0040,DB07) | Template Local Version | REMOVE | - |
+| (0040,DB0C) | Template Extension Organization UID | REPLACE | func:generate_hmacuid |
+| (0040,DB0D) | Template Extension Creator UID | REPLACE | func:generate_hmacuid |
+| (0040,E004) | HL7 Document Effective Time | REMOVE | - |
+| (0042,0011) | Encapsulated Document | REMOVE | - |
+| (0044,0004) | Approval Status DateTime | REMOVE | - |
+| (0044,000B) | Product Expiration DateTime | REMOVE | - |
+| (0044,0010) | Substance Administration DateTime | REMOVE | - |
+| (0044,0104) | Assertion DateTime | REPLACE | func:set_fixed_datetime |
+| (0044,0105) | Assertion Expiration DateTime | REMOVE | - |
+| (0050,001B) | Container Component ID | REMOVE | - |
+| (0050,0020) | Device Description | REMOVE | - |
+| (0050,0021) | Long Device Description | REMOVE | - |
+| (0062,0021) | Tracking UID | REPLACE | func:generate_hmacuid |
+| (0064,0003) | Source Frame of Reference UID | REPLACE | func:generate_hmacuid |
+| (0068,6226) | Effective DateTime | REPLACE | func:set_fixed_datetime |
+| (0068,6270) | Information Issue DateTime | REPLACE | func:set_fixed_datetime |
+| (006A,0003) | Annotation Group UID | REPLACE | func:generate_hmacuid |
+| (006A,0005) | Annotation Group Label | REPLACE | ANONYMIZED |
+| (006A,0006) | Annotation Group Description | REMOVE | - |
+| (0070,0001) | Graphic Annotation Sequence | REMOVE | - |
+| (0070,0006) | Unformatted Text Value | REPLACE | ANONYMIZED |
+| (0070,0082) | Presentation Creation Date | REMOVE | - |
+| (0070,0083) | Presentation Creation Time | REMOVE | - |
+| (0070,0084) | Content Creator's Name | REPLACE | Anonymized^Anonymized |
+| (0070,0086) | Content Creator's Identification Code Sequence | REMOVE | - |
+| (0070,031A) | Fiducial UID | REPLACE | func:generate_hmacuid |
+| (0070,1101) | Presentation Display Collection UID | REPLACE | func:generate_hmacuid |
+| (0070,1102) | Presentation Sequence Collection UID | REPLACE | func:generate_hmacuid |
+| (0072,000A) | Hanging Protocol Creation DateTime | REPLACE | func:set_fixed_datetime |
+| (0072,005E) | Selector AE Value | REPLACE | ANONYMIZED |
+| (0072,005F) | Selector AS Value | REPLACE | 000D |
+| (0072,0061) | Selector DA Value | REPLACE | func:set_fixed_datetime |
+| (0072,0063) | Selector DT Value | REPLACE | func:set_fixed_datetime |
+| (0072,0065) | Selector OB Value | REMOVE | - |
+| (0072,0066) | Selector LO Value | REPLACE | ANONYMIZED |
+| (0072,0068) | Selector LT Value | REPLACE | ANONYMIZED |
+| (0072,006A) | Selector PN Value | REPLACE | Anonymized^Anonymized |
+| (0072,006B) | Selector TM Value | REPLACE | func:set_fixed_datetime |
+| (0072,006C) | Selector SH Value | REPLACE | ANONYMIZED |
+| (0072,006D) | Selector UN Value | REMOVE | - |
+| (0072,006E) | Selector ST Value | REPLACE | ANONYMIZED |
+| (0072,0070) | Selector UT Value | REPLACE | ANONYMIZED |
+| (0072,0071) | Selector UR Value | REPLACE | ANONYMIZED |
+| (0074,1234) | Receiving AE | REMOVE | - |
+| (0074,1236) | Requesting AE | REMOVE | - |
+| (0088,0140) | Storage Media File-set UID | REPLACE | func:generate_hmacuid |
+| (0088,0200) | Icon Image Sequence(see Note 11) | REMOVE | - |
+| (0088,0904) | Topic Title | REMOVE | - |
+| (0088,0906) | Topic Subject | REMOVE | - |
+| (0088,0910) | Topic Author | REMOVE | - |
+| (0088,0912) | Topic Keywords | REMOVE | - |
+| (0100,0420) | SOP Authorization DateTime | REMOVE | - |
+| (0400,0100) | Digital Signature UID | REPLACE | func:generate_hmacuid |
+| (0400,0105) | Digital Signature DateTime | REPLACE | func:set_fixed_datetime |
+| (0400,0115) | Certificate of Signer | REMOVE | - |
+| (0400,0310) | Certified Timestamp | REMOVE | - |
+| (0400,0402) | Referenced Digital Signature Sequence | REMOVE | - |
+| (0400,0403) | Referenced SOP Instance MAC Sequence | REMOVE | - |
+| (0400,0404) | MAC | REMOVE | - |
+| (0400,0550) | Modified Attributes Sequence | REMOVE | - |
+| (0400,0551) | Nonconforming Modified Attributes Sequence | REMOVE | - |
+| (0400,0552) | Nonconforming Data Element Value | REMOVE | - |
+| (0400,0561) | Original Attributes Sequence | REMOVE | - |
+| (0400,0562) | Attribute Modification DateTime | REPLACE | func:set_fixed_datetime |
+| (0400,0563) | Modifying System | REPLACE | ANONYMIZED |
+| (0400,0564) | Source of Previous Values | BLANK | - |
+| (0400,0565) | Reason for the Attribute Modification | REPLACE | ANONYMIZED |
+| (0400,0600) | Instance Origin Status | REMOVE | - |
+| (2030,0020) | Text String | REMOVE | - |
+| (2100,0040) | Creation Date | REMOVE | - |
+| (2100,0050) | Creation Time | REMOVE | - |
+| (2100,0070) | Originator | REMOVE | - |
+| (2100,0140) | Destination AE | REPLACE | ANONYMIZED |
+| (2200,0002) | Label Text | BLANK | - |
+| (2200,0005) | Barcode Value | BLANK | - |
+| (3002,0121) | Position Acquisition Template Name | REMOVE | - |
+| (3002,0123) | Position Acquisition Template Description | REMOVE | - |
+| (3006,0002) | Structure Set Label | REPLACE | ANONYMIZED |
+| (3006,0004) | Structure Set Name | REMOVE | - |
+| (3006,0006) | Structure Set Description | REMOVE | - |
+| (3006,0008) | Structure Set Date | REPLACE | func:set_fixed_datetime |
+| (3006,0009) | Structure Set Time | REPLACE | func:set_fixed_datetime |
+| (3006,0024) | Referenced Frame of Reference UID | REPLACE | func:generate_hmacuid |
+| (3006,0026) | ROI Name | BLANK | - |
+| (3006,0028) | ROI Description | REMOVE | - |
+| (3006,002D) | ROI DateTime | REMOVE | - |
+| (3006,002E) | ROI Observation DateTime | REMOVE | - |
+| (3006,0038) | ROI Generation Description | REMOVE | - |
+| (3006,004D) | ROI Creator Sequence | REMOVE | - |
+| (3006,004E) | ROI Interpreter Sequence | REMOVE | - |
+| (3006,0085) | ROI Observation Label | REMOVE | - |
+| (3006,0088) | ROI Observation Description | REMOVE | - |
+| (3006,00A6) | ROI Interpreter | BLANK | - |
+| (3006,00C2) | Related Frame of Reference UID | REPLACE | func:generate_hmacuid |
+| (3008,0024) | Treatment Control Point Date | REPLACE | func:set_fixed_datetime |
+| (3008,0025) | Treatment Control Point Time | REPLACE | func:set_fixed_datetime |
+| (3008,0054) | First Treatment Date | REPLACE | func:set_fixed_datetime |
+| (3008,0056) | Most Recent Treatment Date | REPLACE | func:set_fixed_datetime |
+| (3008,0105) | Source Serial Number | BLANK | - |
+| (3008,0162) | Safe Position Exit Date | REPLACE | func:set_fixed_datetime |
+| (3008,0164) | Safe Position Exit Time | REPLACE | func:set_fixed_datetime |
+| (3008,0166) | Safe Position Return Date | REPLACE | func:set_fixed_datetime |
+| (3008,0168) | Safe Position Return Time | REPLACE | func:set_fixed_datetime |
+| (3008,0250) | Treatment Date | REPLACE | func:set_fixed_datetime |
+| (3008,0251) | Treatment Time | REPLACE | func:set_fixed_datetime |
+| (300A,0002) | RT Plan Label | REPLACE | ANONYMIZED |
+| (300A,0003) | RT Plan Name | REMOVE | - |
+| (300A,0004) | RT Plan Description | REMOVE | - |
+| (300A,0006) | RT Plan Date | REPLACE | func:set_fixed_datetime |
+| (300A,0007) | RT Plan Time | REPLACE | func:set_fixed_datetime |
+| (300A,000B) | Treatment Sites | REMOVE | - |
+| (300A,000E) | Prescription Description | REMOVE | - |
+| (300A,0013) | Dose Reference UID | REPLACE | func:generate_hmacuid |
+| (300A,0016) | Dose Reference Description | REMOVE | - |
+| (300A,0054) | Table Top Position Alignment UID | REPLACE | func:generate_hmacuid |
+| (300A,0072) | Fraction Group Description | REMOVE | - |
+| (300A,0083) | Referenced Dose Reference UID | REPLACE | func:generate_hmacuid |
+| (300A,00B2) | Treatment Machine Name | BLANK | - |
+| (300A,00C3) | Beam Description | REMOVE | - |
+| (300A,00DD) | Bolus Description | REMOVE | - |
+| (300A,0196) | Fixation Device Description | REMOVE | - |
+| (300A,01A6) | Shielding Device Description | REMOVE | - |
+| (300A,01B2) | Setup Technique Description | REMOVE | - |
+| (300A,0216) | Source Manufacturer | REMOVE | - |
+| (300A,022C) | Source Strength Reference Date | REPLACE | func:set_fixed_datetime |
+| (300A,022E) | Source Strength Reference Time | REPLACE | func:set_fixed_datetime |
+| (300A,02EB) | Compensator Description | REMOVE | - |
+| (300A,0608) | Treatment Position Group Label | REPLACE | ANONYMIZED |
+| (300A,0609) | Treatment Position Group UID | REPLACE | func:generate_hmacuid |
+| (300A,0611) | RT Accessory Holder Slot ID | BLANK | - |
+| (300A,0615) | RT Accessory Device Slot ID | BLANK | - |
+| (300A,0619) | Radiation Dose Identification Label | REPLACE | ANONYMIZED |
+| (300A,0623) | Radiation Dose In-Vivo Measurement Label | REPLACE | ANONYMIZED |
+| (300A,062A) | RT Tolerance Set Label | REPLACE | ANONYMIZED |
+| (300A,0650) | Patient Setup UID | REPLACE | func:generate_hmacuid |
+| (300A,0676) | Equipment Frame of Reference Description | REMOVE | - |
+| (300A,067C) | Radiation Generation Mode Label | REPLACE | ANONYMIZED |
+| (300A,067D) | Radiation Generation Mode Description | BLANK | - |
+| (300A,0700) | Treatment Session UID | REPLACE | func:generate_hmacuid |
+| (300A,0734) | Treatment Tolerance Violation Description | REPLACE | ANONYMIZED |
+| (300A,0736) | Treatment Tolerance Violation DateTime | REPLACE | func:set_fixed_datetime |
+| (300A,073A) | Recorded RT Control Point DateTime | REPLACE | func:set_fixed_datetime |
+| (300A,0741) | Interlock DateTime | REPLACE | func:set_fixed_datetime |
+| (300A,0742) | Interlock Description | REPLACE | ANONYMIZED |
+| (300A,0760) | Override DateTime | REPLACE | func:set_fixed_datetime |
+| (300A,0783) | Interlock Origin Description | REPLACE | ANONYMIZED |
+| (300A,0785) | Referenced Treatment Position Group UID | REPLACE | func:generate_hmacuid |
+| (300A,078E) | Patient Treatment Preparation Procedure Parameter Description | REMOVE | - |
+| (300A,0792) | Patient Treatment Preparation Method Description | REMOVE | - |
+| (300A,0794) | Patient Setup Photo Description | REMOVE | - |
+| (300A,079A) | Displacement Reference Label | REMOVE | - |
+| (300C,0113) | Reason for Omission Description | REMOVE | - |
+| (300C,0127) | Beam Hold Transition DateTime | REPLACE | func:set_fixed_datetime |
+| (300E,0004) | Review Date | REPLACE | func:set_fixed_datetime |
+| (300E,0005) | Review Time | REPLACE | func:set_fixed_datetime |
+| (300E,0008) | Reviewer Name | BLANK | - |
+| (3010,0006) | Conceptual Volume UID | REPLACE | func:generate_hmacuid |
+| (3010,000B) | Referenced Conceptual Volume UID | REPLACE | func:generate_hmacuid |
+| (3010,000F) | Conceptual Volume Combination Description | BLANK | - |
+| (3010,0013) | Constituent Conceptual Volume UID | REPLACE | func:generate_hmacuid |
+| (3010,0015) | Source Conceptual Volume UID | REPLACE | func:generate_hmacuid |
+| (3010,0017) | Conceptual Volume Description | BLANK | - |
+| (3010,001B) | Device Alternate Identifier | BLANK | - |
+| (3010,002D) | Device Label | REPLACE | ANONYMIZED |
+| (3010,0031) | Referenced Fiducials UID | REPLACE | func:generate_hmacuid |
+| (3010,0033) | User Content Label | REPLACE | ANONYMIZED |
+| (3010,0034) | User Content Long Label | REPLACE | ANONYMIZED |
+| (3010,0035) | Entity Label | REPLACE | ANONYMIZED |
+| (3010,0036) | Entity Name | REMOVE | - |
+| (3010,0037) | Entity Description | REMOVE | - |
+| (3010,0038) | Entity Long Label | REPLACE | ANONYMIZED |
+| (3010,003B) | RT Treatment Phase UID | REPLACE | func:generate_hmacuid |
+| (3010,0043) | Manufacturer's Device Identifier | BLANK | - |
+| (3010,004C) | Intended Phase Start Date | REPLACE | func:set_fixed_datetime |
+| (3010,004D) | Intended Phase End Date | REPLACE | func:set_fixed_datetime |
+| (3010,0054) | RT Prescription Label | REPLACE | ANONYMIZED |
+| (3010,0056) | RT Treatment Approach Label | REPLACE | ANONYMIZED |
+| (3010,005A) | RT Physician Intent Narrative | BLANK | - |
+| (3010,005C) | Reason for Superseding | BLANK | - |
+| (3010,0061) | Prior Treatment Dose Description | REMOVE | - |
+| (3010,006E) | Dosimetric Objective UID | REPLACE | func:generate_hmacuid |
+| (3010,006F) | Referenced Dosimetric Objective UID | REPLACE | func:generate_hmacuid |
+| (3010,0077) | Treatment Site | REPLACE | ANONYMIZED |
+| (3010,007A) | Treatment Technique Notes | BLANK | - |
+| (3010,007B) | Prescription Notes | BLANK | - |
+| (3010,007F) | Fractionation Notes | BLANK | - |
+| (3010,0081) | Prescription Notes Sequence | BLANK | - |
+| (3010,0085) | Intended Fraction Start Time | REMOVE | - |
+| (4000,0010) | Arbitrary | REMOVE | - |
+| (4000,4000) | Text Comments | REMOVE | - |
+| (4008,0040) | Results ID | REMOVE | - |
+| (4008,0042) | Results ID Issuer | REMOVE | - |
+| (4008,0100) | Interpretation Recorded Date | REMOVE | - |
+| (4008,0101) | Interpretation Recorded Time | REMOVE | - |
+| (4008,0102) | Interpretation Recorder | REMOVE | - |
+| (4008,0108) | Interpretation Transcription Date | REMOVE | - |
+| (4008,0109) | Interpretation Transcription Time | REMOVE | - |
+| (4008,010A) | Interpretation Transcriber | REMOVE | - |
+| (4008,010B) | Interpretation Text | REMOVE | - |
+| (4008,010C) | Interpretation Author | REMOVE | - |
+| (4008,0111) | Interpretation Approver Sequence | REMOVE | - |
+| (4008,0112) | Interpretation Approval Date | REMOVE | - |
+| (4008,0113) | Interpretation Approval Time | REMOVE | - |
+| (4008,0114) | Physician Approving Interpretation | REMOVE | - |
+| (4008,0115) | Interpretation Diagnosis Description | REMOVE | - |
+| (4008,0118) | Results Distribution List Sequence | REMOVE | - |
+| (4008,0119) | Distribution Name | REMOVE | - |
+| (4008,011A) | Distribution Address | REMOVE | - |
+| (4008,0200) | Interpretation ID | REMOVE | - |
+| (4008,0202) | Interpretation ID Issuer | REMOVE | - |
+| (4008,0300) | Impressions | REMOVE | - |
+| (4008,4000) | Results Comments | REMOVE | - |
+| (50XX,XXXX) | Curve Data | REMOVE with func:is_curve_or_overlay_tag| - |
+| (60XX,3000) | Overlay Data | REMOVE with func:is_curve_or_overlay_tag` | - |
+| (60XX,4000) | Overlay Comments | REMOVE with func:is_curve_or_overlay_tag` | - |
+| (FFFA,FFFA) | Digital Signatures Sequence | REMOVE | - |
+| (FFFC,FFFC) | Data Set Trailing Padding | REMOVE | - |
+
+### C.3 Special Recipe Actions
+
+In addition to the tag-specific actions listed above, the recipe includes these global operations:
+
+| Action | Description |
+|--------|-------------|
+| `REMOVE ALL func:is_tag_private` | Removes all private DICOM tags (odd group numbers) |
+| `REMOVE ALL func:is_curve_or_overlay_tag` | Removes all curve data (group 50xx) and overlay data/comments tags (group 60xx and element 3000 and 4000 respectively) |
+| `ADD PatientIdentityRemoved YES` | Adds tag (0012,0062) with value "YES" |
+| `ADD DeidentificationMethod LUWAK_ANONYMIZER` | Adds tag (0012,0063) with value "LUWAK_ANONYMIZER" |
+| `ADD LongitudinalTemporalInformationModified REMOVED` | Adds tag (0028,0303) with value "REMOVED" |
+
+### C.4 Replacement Value Definitions
+
+| Replacement Value | Description |
+|-------------------|-------------|
+| `func:generate_hmacuid` | HMAC-based deterministic UID generation (see [§5.3.1](#531-uid-generation-generate_hmacuid)) |
+| `func:set_fixed_datetime` | Fixed epoch datetime values (see [§5.3.8](#538-fixed-datetime-funcset_fixed_datetime)) |
+| `func:generate_patient_id` | Deterministic patient ID generation (see [§5.3.2](#532-patient-id-generation-generate_patient_id)) |
+| `ANONYMIZED` | Static replacement string "ANONYMIZED" |
+| `Anonymized^Anonymized` | DICOM Person Name format with "Anonymized" for family and given names |
+| `000D` | Fixed Age String value (13 days) |
+| `YES` | Boolean affirmative value |
+| `-` (blank) | No replacement value (tag is removed or blanked) |
+
+### C.5 Notes
+
+- This table represents the Basic Application Confidentiality Profile without additional retention options
+- When combined with retention options (UIDs, dates, device identity, etc.), some actions may be overridden (see [§5.4](#54-profileoptions-description))
+- Actions marked with `#REPLACE (tag) SEQUENCE NEEDS REVIEW` are commented out in the recipe and require manual review
+- The actual recipe file is generated by `anonymization_recipe_builder.py` (see [§6](#6-deidentification-recipe-creation-pipeline-stage-3---4))
 
