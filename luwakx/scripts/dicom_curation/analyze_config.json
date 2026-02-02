@@ -1,0 +1,32 @@
+{
+  "input_folder": "./input",
+  "output_folder": "./output",
+  "output_file": "included-DICOM-files-analysis.json",
+  "excluded_output_file": "dicom-excluded-series-analysis.json",
+  "excluded_files_list": "excluded_files_log.txt",
+  "log_file": "analyze-graphics-structured-content.log",
+  "plot_pixel_data_file": "plot-pixel-data.log",
+  "min_slices_threshold": 3,
+  "excluded_series_descriptions": [],
+  "excluded_image_types": [],
+  "excluded_extensions": [
+    ".json",
+    ".md",
+    ".nii.gz",
+    ".nrrd",
+    ".pf",
+    ".py"
+  ],
+  "excluded_sop_class_uids": [],
+  "tags_to_check": {
+    "GraphicAnnotationSequence": ["0x0070", "0x0001"],
+    "CurveData": ["0x5000", "0x3000"],
+    "OverlayData": ["0x6000", "0x3000"],
+    "OverlayComments": ["0x6000", "0x4000"],
+    "ContentSequence": ["0x0040", "0xA730"],
+    "AcquisitionContextSequence": ["0x0040", "0x0555"],
+    "SpecimenPreparationSequence": ["0x0040", "0x0610"],
+    "WaveformAnnotationSequence": ["0x0040", "0xB020"],
+    "RadiopharmaceuticalCodeValue": ["0x0054", "0x0016", "RadiopharmaceuticalCodeSequence.CodeValue"]
+  }
+}
