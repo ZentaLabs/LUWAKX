@@ -108,8 +108,23 @@ class MetadataExporter:
         if not mappings:
             return
         
-        # Check if file exists to determine if we need headers
+        # Check if file exists and read existing headers for column alignment
         file_exists = os.path.exists(uid_mappings_file)
+        existing_fieldnames = []
+        existing_rows = []
+        
+        if file_exists:
+            # Read existing CSV to get current fieldnames and data
+            try:
+                with open(uid_mappings_file, 'r', newline='') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    existing_fieldnames = reader.fieldnames or []
+                    # Read all existing rows in case we need to rewrite with new columns
+                    existing_rows = list(reader)
+            except Exception as e:
+                self.logger.warning(f"Could not read existing CSV headers from {uid_mappings_file}: {e}")
+                existing_fieldnames = []
+                existing_rows = []
         
         # Discover all modified fields in this batch
         all_modified_fields = set()
@@ -119,11 +134,28 @@ class MetadataExporter:
         # Sort for consistent column ordering
         sorted_fields = sorted(all_modified_fields)
         
-        # Build CSV structure with dynamic columns
+        # Build CSV structure with dynamic columns for this batch
         patient_columns = ['PatientName_original', 'PatientName_anonymized', 'PatientID_original', 'PatientID_anonymized', 'PatientBirthDate']
-        fieldnames = ['original_file_path', 'anonymized_file_path'] + patient_columns
+        new_fieldnames = ['original_file_path', 'anonymized_file_path'] + patient_columns
         for field in sorted_fields:
-            fieldnames.extend([f'{field}_original', f'{field}_anonymized'])
+            new_fieldnames.extend([f'{field}_original', f'{field}_anonymized'])
+        
+        # Merge existing and new fieldnames, preserving order and adding new columns at end
+        if existing_fieldnames:
+            # Start with existing columns
+            merged_fieldnames = list(existing_fieldnames)
+            # Add any new columns that don't exist yet
+            for field in new_fieldnames:
+                if field not in merged_fieldnames:
+                    merged_fieldnames.append(field)
+            fieldnames = merged_fieldnames
+            
+            # Check if we have new columns - if so, we need to rewrite the file
+            has_new_columns = len(merged_fieldnames) > len(existing_fieldnames)
+        else:
+            # First write - use new fieldnames
+            fieldnames = new_fieldnames
+            has_new_columns = False
         
         # Create a map from input paths to DicomFile objects for quick lookup
         # The mappings dict uses the path that was INPUT to anonymization (defaced or organized)
@@ -138,54 +170,91 @@ class MetadataExporter:
             else:
                 input_path = dicom_file.original_path
             file_map[input_path] = dicom_file
-                
-        # Open in append mode
-        with open(uid_mappings_file, 'a', newline='') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
-            
-            # Write header only on first write
-            if not file_exists:
+        
+        # If we have new columns, rewrite entire file with updated headers
+        if has_new_columns:
+            self.logger.debug(f"Detected new columns in UID mappings, rewriting {uid_mappings_file} with updated headers")
+            # Write everything back with new headers
+            with open(uid_mappings_file, 'w', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
+                # Write existing rows (missing columns will be empty)
+                for row in existing_rows:
+                    writer.writerow(row)
+                # Now append new rows
+                for file_path, file_mappings in mappings.items():
+                    row = self._build_uid_mapping_row(file_path, file_mappings, series, 
+                                                      file_map, input_folder, output_folder)
+                    writer.writerow(row)
+        else:
+            # No new columns - just append
+            with open(uid_mappings_file, 'a', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                
+                # Write header only on first write
+                if not file_exists:
+                    writer.writeheader()
+                
+                # Write one row per file
+                for file_path, file_mappings in mappings.items():
+                    row = self._build_uid_mapping_row(file_path, file_mappings, series, 
+                                                      file_map, input_folder, output_folder)
+                    writer.writerow(row)
+    
+    def _build_uid_mapping_row(self, file_path: str, file_mappings: Dict[str, Any],
+                                series: 'DicomSeries', file_map: Dict[str, Any],
+                                input_folder: str, output_folder: str) -> Dict[str, Any]:
+        """Build a single row for UID mappings CSV.
+        
+        Args:
+            file_path: Path to the file being mapped
+            file_mappings: UID mappings for this file
+            series: DicomSeries object
+            file_map: Map of file paths to DicomFile objects
+            input_folder: Input directory for relative paths
+            output_folder: Output directory for relative paths
             
-            # Write one row per file
-            for file_path, file_mappings in mappings.items():
-                # Get the DicomFile object for this path (file_path is the input path during anonymization)
-                dicom_file = file_map.get(file_path)
-                
-                if dicom_file:
-                    # Use DicomFile methods to get relative paths
-                    original_rel_path = dicom_file.get_relative_original_path(input_folder)
-                    anonymized_rel_path = dicom_file.get_relative_anonymized_path(output_folder)
-                else:
-                    # Fallback if file not found (shouldn't happen)
-                    self.logger.warning(
-                        f"DicomFile not found for mapping key: {file_path}. "
-                        f"Available keys: {list(file_map.keys())[:3]}"
-                    )
-                    original_rel_path = os.path.basename(file_path)
-                    anonymized_rel_path = os.path.basename(file_path)
-                
-                row = {
-                    'original_file_path': original_rel_path,
-                    'anonymized_file_path': anonymized_rel_path
-                }
-                
-                # Try to extract patient info from original file
-                try:
-                    row['PatientName_original'] = series.original_patient_name
-                    row['PatientName_anonymized'] = series.anonymized_patient_id
-                    row['PatientID_original'] = series.original_patient_id
-                    row['PatientID_anonymized'] = series.anonymized_patient_id
-                    row['PatientBirthDate'] = series.original_patient_birthdate
-                except Exception as e:
-                    self.logger.warning(f"Could not read patient info from {file_path}: {e}")
-                
-                # Add UID mappings
-                for field, mapping in file_mappings.items():
-                    row[f'{field}_original'] = mapping.get('original', '')
-                    row[f'{field}_anonymized'] = mapping.get('anonymized', '')
-                
-                writer.writerow(row)
+        Returns:
+            Dictionary representing one row in the CSV
+        """
+        # Get the DicomFile object for this path (file_path is the input path during anonymization)
+        dicom_file = file_map.get(file_path)
+        
+        if dicom_file:
+            # Use DicomFile methods to get relative paths
+            original_rel_path = dicom_file.get_relative_original_path(input_folder)
+            anonymized_rel_path = dicom_file.get_relative_anonymized_path(output_folder)
+        else:
+            # Fallback if file not found (shouldn't happen)
+            self.logger.warning(
+                f"DicomFile not found for mapping key: {file_path}. "
+                f"Available keys: {list(file_map.keys())[:3]}"
+            )
+            original_rel_path = os.path.basename(file_path)
+            anonymized_rel_path = os.path.basename(file_path)
+        
+        row = {
+            'original_file_path': original_rel_path,
+            'anonymized_file_path': anonymized_rel_path
+        }
+        
+        # Try to extract patient info from original file
+        try:
+            row['PatientName_original'] = series.original_patient_name
+            row['PatientName_anonymized'] = series.anonymized_patient_id
+            row['PatientID_original'] = series.original_patient_id
+            row['PatientID_anonymized'] = series.anonymized_patient_id
+            row['PatientBirthDate'] = series.original_patient_birthdate
+        except Exception as e:
+            self.logger.warning(f"Could not read patient info from {file_path}: {e}")
+        
+        # Add UID mappings
+        # Add UID mappings
+        for field, mapping in file_mappings.items():
+            row[f'{field}_original'] = mapping.get('original', '')
+            row[f'{field}_anonymized'] = mapping.get('anonymized', '')
+        
+        return row
     
     def append_series_metadata(self, metadata_file: str, 
                               metadata: List[Dict[str, Any]]) -> None:

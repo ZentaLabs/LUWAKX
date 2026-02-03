@@ -370,11 +370,16 @@ class DicomProcessor:
         if mapping and mapping.get('original') == original_uid:
             return mapping['anonymized']
 
-        # If mapping exists but with a different UID, check for nested sequence origin
-        if mapping and mapping.get('original') != original_uid:
+        # If no exact match found, check if UID is in a nested sequence
+        # This handles cases where the UID appears in a sequence
+        if not mapping or mapping.get('original') != original_uid:
             seq_path = self.find_sequence_path(dicom, original_uid, field_keyword)
-            if seq_path:
+            if seq_path and seq_path != field_keyword:
                 field_keyword = seq_path
+                # Check if mapping exists for the sequence path
+                mapping = self.current_file_mappings[file_path].get(field_keyword)
+                if mapping and mapping.get('original') == original_uid:
+                    return mapping['anonymized']
 
         # Get patient's random token from database to use as HMAC key
         hmac_key = None
