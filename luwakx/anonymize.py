@@ -27,7 +27,7 @@ def setup_deid_repo():
     logger = get_logger('setup_deid_repo')
     
     repo_url = "https://github.com/ZentaLabs/deid.git"
-    branch = "speed-optimization"
+    branch = "master"
     repo_dir = os.path.expanduser("~/deid")  # Set repo_dir to the home directory
 
     # Check if the repository is already cloned
