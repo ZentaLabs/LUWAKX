@@ -29,9 +29,26 @@ def prepare_face_mask(image: SimpleITK.Image | None = None, modality: str | None
     return face_segmentation_image_largest_label
 
 
-def pixelate_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, downsample_factor: int = 4) -> SimpleITK.Image:
-    down_size = [max(1, int(sz / downsample_factor)) for sz in image.GetSize()]
-    down_spacing = tuple(s * downsample_factor for s in image.GetSpacing())
+def pixelate_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, target_block_size_mm: float = 8.5) -> SimpleITK.Image:
+    """
+    Pixelate the face region of an image using physically-consistent block sizes.
+
+    Args:
+        image: The input image to anonymize.
+        face_mask: Binary mask indicating the face region.
+        target_block_size_mm: Target block size in millimeters for pixelation.
+                              Default 8.5mm provides good anonymization across resolutions.
+
+    Returns:
+        The image with the face region pixelated.
+    """
+    spacing = image.GetSpacing()
+    downsample_factors = [max(1, int(target_block_size_mm / s)) for s in spacing]
+
+    down_size = [
+        max(1, int(sz / f)) for sz, f in zip(image.GetSize(), downsample_factors)
+    ]
+    down_spacing = tuple(s * f for s, f in zip(spacing, downsample_factors))
     transform = SimpleITK.Transform()
     interpolator = SimpleITK.sitkNearestNeighbor
 

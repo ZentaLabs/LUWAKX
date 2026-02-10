@@ -55,6 +55,14 @@ def get_parser() -> argparse.ArgumentParser:
                         action="store_true",
                         help="Specify if you want to save the face mask. It will be saved to the output directory.")
 
+    parser.add_argument(
+        "-bs",
+        "--block_size",
+        type=float,
+        default=8.5,
+        help="Target block size in mm for pixelation. Larger values = more anonymization. Default: 8.5",
+    )
+
     return parser
 
 
@@ -98,7 +106,11 @@ def main():
         print(f"Saving face mask to: {face_mask_out_path}")
         SimpleITK.WriteImage(image_face_segmentation, face_mask_out_path)
 
-    image_defaced = image_anonymization.pixelate_face(image, image_face_segmentation)
+    block_size = args.block_size
+    print(f"Pixelating face with block size: {block_size} mm")
+    image_defaced = image_anonymization.pixelate_face(
+        image, image_face_segmentation, target_block_size_mm=block_size
+    )
     image_defaced_path = os.path.join(output_path, f"{input_name}_defaced.nii.gz")
     print(f"Saving defaced image to: {image_defaced_path}")
     SimpleITK.WriteImage(image_defaced, image_defaced_path)
