@@ -117,7 +117,8 @@ class DefaceService:
             # Use GDCM to get properly sorted file names for this specific series
             # This handles ImagePositionPatient sorting correctly
             series_folder = os.path.dirname(organized_files[0])
-            reader.SetFileNames(reader.GetGDCMSeriesFileNames(series_folder, series.original_series_uid))
+            gdcm_sorted_files = reader.GetGDCMSeriesFileNames(series_folder, series.original_series_uid)
+            reader.SetFileNames(gdcm_sorted_files)
             image = reader.Execute()
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
@@ -177,22 +178,24 @@ class DefaceService:
         organized_to_dicom_file = {f.organized_path: f for f in series.files if f.organized_path is not None}
         
         try:
-            for i, original_file_path in enumerate(organized_files):
+            # Iterate using gdcm_sorted_files to match the slice order of defaced_array,
+            # which was produced from the volume loaded in GDCM sort order.
+            for i, original_file_path in enumerate(gdcm_sorted_files):
                 ds = pydicom.dcmread(original_file_path)
-                
+
                 # Get rescale parameters
                 rescale_slope = getattr(ds, 'RescaleSlope', 1.0)
                 rescale_intercept = getattr(ds, 'RescaleIntercept', 0.0)
-                
+
                 # Apply inverse scaling to get back to raw values
                 raw_pixels = ((defaced_array[i] - rescale_intercept) / rescale_slope).round().astype(ds.pixel_array.dtype)
                 ds.PixelData = raw_pixels.tobytes()
-                
+
                 # Save defaced DICOM file
                 defaced_file_path = os.path.join(series_temp_dir, os.path.basename(original_file_path))
                 ds.save_as(defaced_file_path)
                 defaced_dicom_files.append(defaced_file_path)
-                
+
                 # Update DicomFile object with defaced path using direct mapping
                 dicom_file = organized_to_dicom_file.get(original_file_path)
                 if dicom_file:
