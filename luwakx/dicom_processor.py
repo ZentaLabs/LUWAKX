@@ -51,6 +51,7 @@ class DicomProcessor:
         # Isolated state per worker (NOT shared)
         self.current_file_mappings: Dict[str, Any] = {}  # UID mappings
         self.warned_non_modified_tags: set = set()  # Track tags warned about wrong VR types per series which are not modified
+        self.llm_verified_clean_tags: set = set()  # Track tags where LLM found no PHI (requires manual verification)
     
     def process_series(self, series: DicomSeries, recipe) -> None:
         """Process (anonymize) a single DICOM series using deid library.
@@ -75,6 +76,8 @@ class DicomProcessor:
         from deid_logger_handler import DeidProgressHandler
         
         self.series = series
+        # Reset LLM-verified clean tags for this series
+        self.llm_verified_clean_tags = set()
         series_display = f"series:{self.series.anonymized_series_uid}, of study:{self.series.anonymized_study_uid}, for patient:{self.series.anonymized_patient_id}"
         self.logger.info(f"DicomProcessor: Anonymizing series {series_display}")
         
@@ -143,6 +146,19 @@ class DicomProcessor:
             
             # 7. Inject DeidentificationMethodCodeSequence into anonymized files
             self.inject_deidentification_method_code_sequence()
+            
+            # 8. Warn about LLM-verified clean tags that need manual verification
+            if self.llm_verified_clean_tags:
+                tag_list = ', '.join(sorted(self.llm_verified_clean_tags))
+                self.logger.warning(
+                    f"MANUAL VERIFICATION REQUIRED: The following tags were verified by LLM as containing no PHI, "
+                    f"but additional manual checks are recommended to ensure content validity:\n"
+                    f"   Series Information:\n"
+                    f"     - Patient ID: {self.series.anonymized_patient_id}\n"
+                    f"     - Study UID: {self.series.anonymized_study_uid}\n"
+                    f"     - Series UID: {self.series.anonymized_series_uid}\n"
+                    f"   Tags to verify: {tag_list}"
+                )
             
         except Exception as e:
             series_display = os.path.basename(self.series.output_base_path)
@@ -727,10 +743,13 @@ class DicomProcessor:
                 return "ANONYMIZED"
         else:
             # No PHI detected - keep original
+            tag_keyword = getattr(field.element, 'keyword', 'Unknown')
             self.logger.debug(
                 f"Keeping original value for tag {field.element.tag} "
-                f"({getattr(field.element, 'keyword', '')})."
+                f"({tag_keyword})."
             )
+            # Track this tag for manual verification warning
+            self.llm_verified_clean_tags.add(f"{field.element.tag} ({tag_keyword})")
             return original_value
     
     def is_tag_private(self, dicom, value, field, item):
