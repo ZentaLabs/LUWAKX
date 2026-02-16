@@ -75,7 +75,7 @@ Ensure your `analyze_config.json` is configured with all the options you want to
 
 - **`excluded_output_file`**: Filename for the excluded series JSON. Will be saved in `output_folder`. Default: `dicom-excluded-series-analysis.json`
 
-- **`excluded_files_list`**: Filename for the CSV file listing all excluded file paths with structured exclusion reasons. Will be saved in `output_folder`. The CSV contains five columns: `File Path`, `PatientID`, `RationaleClass` (e.g., Localizer, Min Slices, Not DICOM, etc.), `RationaleDetails` (detailed explanation), and `SeriesInstanceUID` (when available). Default: `excluded-files-log.csv`
+- **`excluded_files_list`**: Filename for the CSV file listing all excluded file paths with structured exclusion reasons. Will be saved in `output_folder`. The CSV contains seven columns: `File Path`, `PatientID`, `RationaleClass` (e.g., Reference image, Min Slices, Not DICOM, etc.), `RationaleDetails` (detailed explanation), `SeriesInstanceUID` (when available), `SeriesNumber` (DICOM SeriesNumber tag value), and `StudyDate` (DICOM StudyDate tag value). The CSV is written using a streaming approach (rows are written immediately as files are processed) to minimize memory usage when processing large datasets. Default: `excluded-files-log.csv`
 
 - **`log_file`**: Filename for the detailed processing log from content analysis script. Default: `analyze-graphics-structured-content.log`
 
@@ -109,32 +109,50 @@ Ensure your `analyze_config.json` is configured with all the options you want to
     - "Local Scan"                   → no pattern found (partial word doesn't match)
   ```
 
-- **`excluded_image_types`**: List of strings to match against the DICOM **ImageType** tag using **case-insensitive substring matching with ALL-matching logic**. ImageType is a multi-valued list (e.g., `["ORIGINAL", "PRIMARY", "AXIAL"]`). **ALL patterns from the config must be found** in the ImageType list for the series to be excluded.
+- **`excluded_image_types`**: Patterns to match against the DICOM **ImageType** tag using **case-insensitive substring matching with AND logic within patterns and OR logic between patterns**. Supports both flat lists and nested lists of patterns.
+  
+  **Configuration Formats:**
+  
+  1. **Flat List (Single Pattern, AND Logic):**
+     ```json
+     "excluded_image_types": ["DERIVED", "SECONDARY"]
+     ```
+     Excludes series where ImageType contains BOTH "DERIVED" AND "SECONDARY"
+  
+  2. **List of Lists (Multiple Patterns, OR Logic Between Patterns):**
+     ```json
+     "excluded_image_types": [
+       ["DERIVED", "MIP"],
+       ["DERIVED", "SECONDARY"],
+       ["PRIMARY", "PROJECTION"]
+     ]
+     ```
+     Excludes series where ANY of these conditions is true:
+     - ImageType contains BOTH "DERIVED" AND "MIP", OR
+     - ImageType contains BOTH "DERIVED" AND "SECONDARY", OR
+     - ImageType contains BOTH "PRIMARY" AND "PROJECTION"
   
   **How matching works:**
-  - **ALL patterns required** - every pattern in the config must be found somewhere in ImageType
-  - **Not exact match** - each pattern can appear anywhere in any ImageType element
-  - **Case-insensitive** - "derived", "DERIVED", "Derived" all match
-  - **Order doesn't matter** - patterns can appear in any position
-  - **Extra elements allowed** - ImageType can have additional elements beyond config patterns
+  - **Within each pattern**: ALL items must be found (AND logic)
+  - **Between patterns**: ANY pattern can match (OR logic)
+  - **Case-insensitive**: "derived", "DERIVED", "Derived" all match
+  - **Substring match**: pattern can appear anywhere in ImageType element
+  - **Order doesn't matter**: patterns can appear in any position
   
-  **Examples:**
+  **Examples with `[["DERIVED", "MIP"]]`:**
   ```
-  Config: ["DERIVED", "SECONDARY", "SCREEN SAVE"]
+  ImageType in DICOM file:
   
-  ✓ EXCLUDED (all 3 patterns found):
-    - ["DERIVED", "SECONDARY", "SCREEN SAVE"]              → all 3 patterns match
-    - ["DERIVED", "SECONDARY", "SCREEN SAVE", "AXIAL"]     → all 3 patterns match (extra element OK)
-    - ["SCREEN SAVE", "DERIVED", "SECONDARY"]              → all 3 patterns match (order doesn't matter)
-    - ["derived", "secondary", "screen save"]              → all 3 patterns match (case-insensitive)
-    - ["DERIVED IMAGE", "SECONDARY", "SCREEN SAVE"]        → all 3 patterns match (substring match)
+  ✓ EXCLUDED (contains both DERIVED and MIP):
+    - ["DERIVED", "SECONDARY", "MIP", "AVERAGE"]    → both found
+    - ["ORIGINAL", "DERIVED", "MIP"]                → both found
+    - ["MIP", "DERIVED"]                            → both found (order doesn't matter)
+    - ["derived", "mip"]                            → both found (case-insensitive)
   
-  ✗ NOT EXCLUDED (missing at least one pattern):
-    - ["DERIVED", "PRIMARY", "AXIAL"]                      → missing "SECONDARY" and "SCREEN SAVE"
-    - ["ORIGINAL", "SECONDARY", "RECON"]                   → missing "DERIVED" and "SCREEN SAVE"
-    - ["ORIGINAL", "PRIMARY", "SCREEN SAVE"]               → missing "DERIVED" and "SECONDARY"
-    - ["DERIVED", "SECONDARY"]                             → missing "SCREEN SAVE"
-    - ["ORIGINAL", "PRIMARY", "AXIAL"]                     → missing all patterns
+  ✗ NOT EXCLUDED (missing at least one):
+    - ["DERIVED", "PRIMARY", "AXIAL"]               → missing "MIP"
+    - ["ORIGINAL", "PRIMARY", "MIP"]                → missing "DERIVED"
+    - ["ORIGINAL", "PRIMARY", "AXIAL"]              → missing both
   ```
   
   Empty array `[]` means no exclusion by image type.
@@ -199,10 +217,10 @@ Ensure your `analyze_config.json` is configured with all the options you want to
 3. **Missing Required Tags**: Files missing **SOPClassUID** or **SeriesInstanceUID** are excluded even if pydicom can partially read them
 4. **Missing ImageOrientationPatient Tag**: Files that do not have the **ImageOrientationPatient** tag are automatically excluded and logged with reason: `"Missing ImageOrientationPatient tag"`
 5. **Enhanced CT Image Storage**: Series with SOP Class UID `1.2.840.10008.5.1.4.1.1.2.1` are automatically skipped and logged as errors (not supported for analysis)
-6. **Localizer Detection within Series**: For series that pass other exclusion criteria, the script detects and excludes localizer/scout images that have different orientations from the main acquisition:
-   - **ImageOrientationPatient-based detection**: If a series contains files with different ImageOrientationPatient values, the script identifies the most common orientation (considered the main series) and excludes all files with different orientations as localizers. Excluded files are logged with reason: `"Localizer: Different ImageOrientationPatient in series <SeriesInstanceUID>"`
-   - **Why this matters**: Localizers/scouts are positioning images taken in different planes (sagittal, coronal, axial) before the main acquisition. They are typically mixed into the same series but have different spatial orientations. This automatic detection removes them without requiring manual configuration.
-   - **Important Note**: This detection method is a practical heuristic but not perfect. In DICOM, localizer sequences can have parallel slices (all with the same ImageOrientationPatient), and valid volumetric acquisitions may contain non-parallel slices (e.g., curved reformats or multi-angle acquisitions). However, checking for different ImageOrientationPatient values within a series remains a simple and effective way to identify most localizer images that are intermixed with the main acquisition.
+6. **Reference image Detection within Series**: For series that pass other exclusion criteria, the script detects and excludes reference images that have different orientations from the main acquisition:
+   - **ImageOrientationPatient-based detection**: If a series contains files with different ImageOrientationPatient values (difference larger than 1e-5), the script identifies the most common orientation (considered the main series). Files with different orientations are excluded as Reference images **only if there is exactly one file with a different orientation**. If multiple files have different orientations, they are kept (considered part of a valid multi-orientation acquisition). Excluded files are logged with RationaleClass: `"Refernce image: Different ImageOrientationPatient"` and RationaleDetails: `"only 1 file with different orientation"`
+   - **Why this matters**: Reference images are typically single positioning images taken in different planes (sagittal, coronal, axial) before the main acquisition. They are often mixed into the same series but have different spatial orientations. This automatic detection removes them without requiring manual configuration.
+   - **Important Note**: This detection method is a practical heuristic but not perfect. In DICOM, localizer sequences can have parallel slices (all with the same ImageOrientationPatient), and valid volumetric acquisitions may contain non-parallel slices (e.g., curved reformats or multi-angle acquisitions). However, checking for different ImageOrientationPatient values within a series, and excluding only when there's a single outlier file, remains a simple and effective way to identify most localizer images that are intermixed with the main acquisition.
 
 All excluded files are logged in the `excluded_files_list` output file with their specific exclusion reasons.
 
@@ -221,7 +239,8 @@ The `analyze_graphics_structured_content.py` script generates several output fil
 {
   "global_summary": {
     "total_patients": <int>,
-    "total_studies": <int>,
+    "total_studies": <int>,  // Total number of unique Study Instance UIDs encountered during processing (all studies)
+    "final_kept_patient_studies": <int>,  // Number of studies that contain at least one kept series after all exclusions
     "total_series_checked": <int>,  // Total number of series that passed all exclusion criteria
     "total_instances": <int>,  // Total number of DICOM files in kept series (files_examined - excluded_instances_count)
     "<TagName>_occurrences": <int>,  // Number of series (not files) where this specific tag was found
@@ -333,24 +352,26 @@ The `analyze_graphics_structured_content.py` script generates several output fil
 
 **Purpose**: CSV file listing every excluded file with structured exclusion reasons (used by `remove_excluded_files.py`).
 
-**Format**: CSV with five columns:
+**Format**: CSV with seven columns:
 - `File Path`: Relative path to the excluded file
 - `PatientID`: Patient ID from DICOM header (empty if not available)
-- `RationaleClass`: High-level category of exclusion (e.g., Localizer, Min Slices, Not DICOM, Missing Tag, Excluded Description, Excluded Image Type, Excluded SOP Class, Extension, Other)
+- `RationaleClass`: High-level category of exclusion (e.g., Reference image, Min Slices, Not DICOM, Missing Tag, Excluded Description, Excluded Image Type, Excluded SOP Class, Extension, Other)
 - `RationaleDetails`: Detailed explanation of why the file was excluded
 - `SeriesInstanceUID`: Series Instance UID (when available, empty otherwise)
+- `SeriesNumber`: DICOM SeriesNumber tag value (when available, empty otherwise)
+- `StudyDate`: DICOM StudyDate tag value (when available, empty otherwise)
 
 **Important:** File paths in this log are **relative to the `input_folder`** specified in your config file. For example, if `input_folder` is `/data/dicoms` and a file at `/data/dicoms/patient123/image001.dcm` is excluded, the log will contain `patient123/image001.dcm`.
 
 **Example CSV Content**:
 ```csv
-File Path,PatientID,RationaleClass,RationaleDetails,SeriesInstanceUID
-patient123/image001.dcm,,Extension,.nii.gz,
-patient456/image002.dcm,PAT456,Not DICOM,Missing SOPClassUID,
-patient789/image003.dcm,PAT789,Min Slices,Series has 2 slices (below minimum threshold of 3),1.2.840.113619.2.55.3.123456
-patient101/image004.dcm,PAT101,Excluded Description,Series description matches excluded pattern: 'LOCALIZER',1.2.840.113619.2.55.3.789012
-patient202/image005.dcm,PAT202,Localizer,Different ImageOrientationPatient,1.2.840.113619.2.55.3.345678
-patient303/image006.dcm,PAT303,Missing Tag,ImageOrientationPatient tag not found,
+File Path,PatientID,RationaleClass,RationaleDetails,SeriesInstanceUID,SeriesNumber,StudyDate
+patient123/image001.dcm,,Extension,.nii.gz,,,
+patient456/image002.dcm,PAT456,Not DICOM,Missing SOPClassUID,,,
+patient789/image003.dcm,PAT789,Min Slices,Series has 2 slices (below minimum threshold of 3),1.2.840.113619.2.55.3.123456,3,20240115
+patient101/image004.dcm,PAT101,Excluded Description,Series description matches excluded pattern: 'LOCALIZER',1.2.840.113619.2.55.3.789012,1,20240115
+patient202/image005.dcm,PAT202,Reference image: Different ImageOrientationPatient,only 1 file with different orientation,1.2.840.113619.2.55.3.345678,2,20240115
+patient303/image006.dcm,PAT303,Missing Tag,ImageOrientationPatient tag not found,,5,20240116
 ```
 
 **Key Information**:
@@ -358,7 +379,7 @@ patient303/image006.dcm,PAT303,Missing Tag,ImageOrientationPatient tag not found
 - Patient ID for tracking which files belong to which patient
 - Structured categorization of exclusion reasons for easy filtering and analysis
 - Series Instance UID allows tracking which files belong to the same series
-- All files in an excluded series are listed (not just the first file)
+- All files in an excluded series are listed
 
 #### **4. `log_file` (Default: `analyze-graphics-structured-content.log`)**
 
@@ -416,12 +437,17 @@ python analyze_graphics_structured_content.py analyze_config.json
 **What this script does:**
 - Recursively scans all DICOM files in `input_folder`
 - Groups files by Patient → Study → Series
-- Detects localizers (scout images with different orientations)
+- Detects reference images (with different orientations, excluding only single-file outliers)
 - Checks for DICOM tags specified in `tags_to_check` config (e.g., OverlayData, BurnedInAnnotation, ContentSequence, etc.)
 - Excludes series based on:
   - Series description patterns from `excluded_descriptions` config
   - Minimum slice count from `min_slices_threshold` config (default: < 3 slices)
   - Non-DICOM files with extensions in `excluded_extensions` config
+
+**Memory Optimization:**
+- **Streaming CSV writes**: Excluded files are written to CSV immediately as they are encountered (not accumulated in memory), drastically reducing memory usage for large-scale processing
+- **Per-patient cleanup**: After processing each patient, internal data structures (series_by_patient, series_orientation_map, series_sop_class_map) are explicitly deleted to free memory before moving to the next patient
+- **Expected memory usage**: With these optimizations, the script can process millions of files with hundreds of series using moderate memory (typically several GB depending on dataset structure)
 
 **Outputs:**
 Output filenames are configurable in `analyze_config.json`:
@@ -522,43 +548,65 @@ python plot_pixel_data.py analyze_config.json
 **What this script does:**
 - Scans remaining DICOM files in `input_folder`
 - Groups files by Patient → Study → Series
-- For each series, computes projection images:
+- **Dimension-based splitting**: If a series contains files with different image dimensions (Rows × Columns), it is split into separate sub-series, each with consistent dimensions. Each dimension group gets its own projection plots. This handles cases where a series incorrectly contains images of different sizes.
+- For each series (or dimension group within a series), computes projection images:
   - **MIP** (Maximum Intensity Projection) - shows brightest pixels
   - **MinIP** (Minimum Intensity Projection) - shows darkest pixels
   - **AIP** (Average Intensity Projection) - for XA modality
   - **First/Mean** - for SC/OT modalities
 - Detects overlay data and checks for tags specified in `tags_to_check` config
-- Organizes plots by: SOP Class UID → Photometric Interpretation → Tag Type
-- Creates `metadata.json` in each folder with series information and file paths
+- **Conditional folder creation**: Creates separate folders for CurveData/OverlayData only if those specific tags are present in `tags_to_check` config. All other tags (like ContentSequence, etc.) are grouped together in a RegularData folder.
+- Organizes plots by: SOP Class UID → Photometric Interpretation → Tag Type (OverlayData, CurveData, or RegularData)
+- Creates `metadata.json` in each folder with series information (including series_number) and file paths
 
 **Outputs:**
 ```
 plot_output/
 ├── 1_2_840_10008_5_1_4_1_1_2/          # SOP Class UID
 │   ├── MONOCHROME2/                     # Photometric Interpretation
-│   │   ├── OverlayData/                 # Has overlay tags
+│   │   ├── OverlayData/                 # Has overlay tags (only if OverlayData in tags_to_check)
 │   │   │   ├── overlay_0000.png
 │   │   │   ├── overlay_0001.png
 │   │   │   └── metadata.json
-│   │   ├── ContentSequence/             # Has ContentSequence tag
+│   │   ├── CurveData/                   # Has CurveData tag (only if in tags_to_check)
 │   │   │   ├── projection_0000.png
 │   │   │   ├── projection_0001.png
 │   │   │   └── metadata.json
-│   │   └── RegularData/                 # No special tags
+│   │   └── RegularData/                 # All other series (including those with ContentSequence, etc.)
 │   │       ├── projection_0000.png
 │   │       └── metadata.json
 ```
 
+**Note:** Folders for specific tags are only created as follows:
+1. **OverlayData folder**: Created only if OverlayData tag is in `tags_to_check` config AND series with overlay data are found
+2. **CurveData folder**: Created only if CurveData tag is in `tags_to_check` config AND series with curve data are found
+3. **RegularData folder**: Contains all other series, including those with other tags from config (BurnedInAnnotation, ContentSequence, etc.)
+
 **Expected runtime:** Minutes to hours depending on remaining dataset size
 
 **What each plot shows:**
-- **Projection plots** (2 panels): 
-  - Left: MIP (most modalities) or First image (SC/OT modalities)
-  - Right: MinIP (most modalities), AIP (XA only), or Mean (SC/OT only)
-- **Overlay plots** (4 panels): 
-  - First two panels: Overlay data alone (grayscale)
-  - Last two panels: Overlay data combined with underlying image using maximum intensity blend (grayscale)
-  - Each pair shows two different projections (e.g., MIP/MinIP or First/Mean)
+**Projection plots:**
+  - For all modalities, the mean projection is always computed and plotted.
+  - **SC/OT modalities** (2 panels in 1x2 layout - square aspect):
+    - Left: First image
+    - Right: Mean (computed for all cases)
+  - **CT/PET/MR/XA modalities** (3 panels in 2x2 layout - square aspect, one empty):
+    - Top-left: MIP (Maximum Intensity Projection)
+    - Top-right: MinIP (Minimum Intensity) or AIP (Average Intensity for XA)
+    - Bottom-left: Mean (computed for all cases)
+    - Bottom-right: Empty (hidden)
+**Overlay plots:**
+  - For all modalities, the mean overlay projection is always computed and plotted.
+  - **SC/OT modalities** (4 panels in 2x2 layout - square aspect):
+    - Top row: Overlay data alone (First, Mean)
+    - Bottom row: Combined images (First, Mean)
+  - **CT/PET/MR/XA modalities** (2x3 layout):
+    - Overlay MIP, Overlay MinIP/AIP, Overlay Mean (top row)
+    - Combined MIP, Combined MinIP/AIP, Combined Mean (bottom row)
+  - **CT/PET/MR/XA modalities** (6 panels in 2x3 layout - balanced 18x12 figsize): 
+    - Top row: Overlay data alone (MIP, MinIP/AIP, Mean)
+    - Bottom row: Combined images (MIP, MinIP/AIP, Mean)
+  - Combined images use maximum intensity blend (grayscale)
 - **Metadata storage**: Plot images do NOT contain titles. All metadata (Patient ID, Series Description, Series UID, Modality, Image Type, SOP Class UID, Overlay Groups, file paths) is stored in `metadata.json` files within each folder. Each entry uses the plot filename as key (e.g., `projection_0000.jpg` or `overlay_0001.jpg`).
 
 **What each metadata.json includes:**
@@ -578,6 +626,7 @@ Each `metadata.json` file contains a dictionary with two types of content:
 - **`keep_series`**: Boolean flag indicating whether to keep (`true`) or delete (`false`) this series. **Default: `true`**. Change to `false` during manual review to mark series for deletion.
 - **`patient_id`**: DICOM Patient ID from the series
 - **`series_uid`**: DICOM Series Instance UID - unique identifier for the series
+- **`series_number`**: DICOM SeriesNumber tag value (integer, when available)
 - **`series_description`**: Human-readable series description (e.g., `"T1 MPRAGE"`, `"CT Abdomen Contrast"`)
 - **`modality`**: DICOM modality code (e.g., `"CT"`, `"MR"`, `"PT"`, `"XA"`)
 - **`image_type`**: DICOM Image Type array as a list (e.g., `["ORIGINAL", "PRIMARY", "AXIAL"]`)
@@ -595,6 +644,7 @@ Each `metadata.json` file contains a dictionary with two types of content:
     "keep_series": true,
     "patient_id": "ANON12345",
     "series_uid": "1.2.840.113619.2.55.3.123456789.123",
+    "series_number": 3,
     "series_description": "T1 MPRAGE Axial",
     "modality": "MR",
     "image_type": ["ORIGINAL", "PRIMARY", "M", "ND", "NORM"],
@@ -611,6 +661,7 @@ Each `metadata.json` file contains a dictionary with two types of content:
     "keep_series": true,
     "patient_id": "ANON12345",
     "series_uid": "1.2.840.113619.2.55.3.123456789.456",
+    "series_number": 1,
     "series_description": "XA Run 1",
     "modality": "XA",
     "image_type": ["ORIGINAL", "PRIMARY"],

@@ -15,6 +15,25 @@ pydicom.config.convert_wrong_length_to_UN = True
 TAGS_TO_CHECK = {}
 
 
+def orientations_equal(orient1, orient2, tolerance=1e-5):
+    """
+    Compare two ImageOrientationPatient values with tolerance.
+    
+    Args:
+        orient1: First orientation tuple (6 values)
+        orient2: Second orientation tuple (6 values)
+        tolerance: Maximum allowed difference per component (default: 1e-5)
+    
+    Returns:
+        bool: True if orientations are equal within tolerance
+    """
+    if orient1 is None or orient2 is None:
+        return orient1 == orient2
+    if len(orient1) != len(orient2):
+        return False
+    return all(abs(a - b) < tolerance for a, b in zip(orient1, orient2))
+
+
 def load_config(config_path='analyze_config.json'):
     """
     Load configuration from JSON file.
@@ -74,7 +93,7 @@ def load_config(config_path='analyze_config.json'):
 
 class SeriesData:
     """Container for a DICOM series."""
-    def __init__(self, patient_id, study_uid, series_uid, series_description, dicom_files, sop_class_uid=None, image_type=None, modality=None, photometric_interpretation=None, study_date=None):
+    def __init__(self, patient_id, study_uid, series_uid, series_description, dicom_files, sop_class_uid=None, image_type=None, modality=None, photometric_interpretation=None, study_date=None, series_number=None):
         self.patient_id = patient_id
         self.study_uid = study_uid
         self.series_uid = series_uid
@@ -85,11 +104,14 @@ class SeriesData:
         self.modality = modality or "Unknown"
         self.photometric_interpretation = photometric_interpretation or "Unknown"
         self.study_date = study_date or "Unknown"
+        self.series_number = series_number or "Unknown"
         self.projections = None
         self.has_overlay = False
         self.has_tags = {}  # Dictionary mapping tag names to boolean
         self.overlay_projections = {}  # Dictionary mapping overlay groups to their projections
         self.original_series_uid = None  # Track original UID if series was split
+        self.split_reason = None  # Track reason for split: 'orientation' or 'dimension'
+        self.split_details = None  # Store split details (orientations or dimensions)
     
     def __repr__(self):
         return f"Series({self.patient_id}/{self.series_description}/{len(self.dicom_files)} files)"
@@ -137,6 +159,7 @@ def scan_all_dicom_files(base_folder):
             image_type = getattr(ds, 'ImageType', [])
             photometric = getattr(ds, 'PhotometricInterpretation', 'Unknown')
             study_date = getattr(ds, 'StudyDate', 'Unknown')
+            series_number = getattr(ds, 'SeriesNumber', 'Unknown')
             
             # Initialize series entry if not exists
             if series_uid not in series_map[patient_id][study_uid]:
@@ -148,6 +171,7 @@ def scan_all_dicom_files(base_folder):
                     'photometric': photometric,
                     'image_type': list(image_type) if hasattr(image_type, '__iter__') and not isinstance(image_type, str) else [str(image_type)],
                     'study_date': study_date,
+                    'series_number': str(series_number) if series_number != 'Unknown' else 'Unknown',
                     'has_tags': {tag_name: False for tag_name in TAGS_TO_CHECK.keys()}
                 }
             
@@ -202,7 +226,8 @@ def scan_all_dicom_files(base_folder):
                     image_type=series_info['image_type'],
                     modality=modality,
                     photometric_interpretation=series_info['photometric'],
-                    study_date=series_info['study_date']
+                    study_date=series_info['study_date'],
+                    series_number=series_info['series_number']
                 )
                 series_data.has_tags = series_info['has_tags']
                 series_list.append(series_data)
@@ -212,10 +237,10 @@ def scan_all_dicom_files(base_folder):
     
     return patient_series_map
 
-def split_series_by_orientation_or_spacing(series_data):
+def split_series_by_orientation_and_dimension(series_data):
     """
-    Split series by ImageOrientationPatient or PixelSpacing if they differ.
-    This detects localizers/scouts mixed in the series.
+    Split series by ImageOrientationPatient and/or image dimensions in a single pass.
+    This efficiently detects mixed orientations and dimensions.
     
     Args:
         series_data: SeriesData object to potentially split
@@ -223,141 +248,114 @@ def split_series_by_orientation_or_spacing(series_data):
     Returns:
         list: List of SeriesData objects (original if uniform, split if different)
     """
-    # Group files by orientation first, then pixel spacing
-    orientation_map = {}  # orientation tuple -> list of file paths
-    spacing_map = {}  # spacing tuple -> list of file paths
-    no_orientation_files = []  # Files without ImageOrientationPatient
+    # Group files by (orientation, dimension) tuple in a single pass
+    composite_map = {}  # (orientation_key, dimension) -> list of file paths
     
     for dcm_file in series_data.dicom_files:
         try:
             ds_temp = pydicom.dcmread(dcm_file, stop_before_pixels=True)
             
-            # Try to get ImageOrientationPatient
+            # Get orientation
+            orientation = None
             if hasattr(ds_temp, 'ImageOrientationPatient'):
                 orientation = tuple(ds_temp.ImageOrientationPatient)
-                if orientation not in orientation_map:
-                    orientation_map[orientation] = []
-                orientation_map[orientation].append(dcm_file)
-            else:
-                no_orientation_files.append(dcm_file)
-        except:
-            continue
-    
-    # If we have different orientations, split by orientation
-    if len(orientation_map) > 1:
-        split_series = []
-        for orient_idx, (orientation, files) in enumerate(sorted(orientation_map.items())):
-            new_desc = f"{series_data.series_description}_orient{orient_idx}"
-            new_series = SeriesData(
-                patient_id=series_data.patient_id,
-                study_uid=series_data.study_uid,
-                series_uid=f"{series_data.series_uid}_orient{orient_idx}",
-                series_description=new_desc,
-                dicom_files=files,
-                sop_class_uid=series_data.sop_class_uid,
-                image_type=series_data.image_type,
-                modality=series_data.modality,
-                photometric_interpretation=series_data.photometric_interpretation,
-                study_date=series_data.study_date
-            )
-            new_series.has_tags = series_data.has_tags.copy()
-            new_series.original_series_uid = series_data.series_uid  # Track original
-            split_series.append(new_series)
-        return split_series
-    
-    # If no orientation data or uniform orientation, check PixelSpacing for no_orientation_files
-    files_to_check = no_orientation_files if no_orientation_files else series_data.dicom_files
-    
-    if files_to_check:
-        for dcm_file in files_to_check:
-            try:
-                ds_temp = pydicom.dcmread(dcm_file, stop_before_pixels=True)
-                if hasattr(ds_temp, 'PixelSpacing'):
-                    # Round to 2 decimal places to avoid floating point issues
-                    spacing = tuple(round(x, 2) for x in ds_temp.PixelSpacing)
-                    if spacing not in spacing_map:
-                        spacing_map[spacing] = []
-                    spacing_map[spacing].append(dcm_file)
-            except:
-                continue
-        
-        # If we have different pixel spacings, split by spacing
-        if len(spacing_map) > 1:
-            split_series = []
-            for spacing_idx, (spacing, files) in enumerate(sorted(spacing_map.items())):
-                new_desc = f"{series_data.series_description}_spacing{spacing[0]}x{spacing[1]}"
-                new_series = SeriesData(
-                    patient_id=series_data.patient_id,
-                    study_uid=series_data.study_uid,
-                    series_uid=f"{series_data.series_uid}_spacing{spacing_idx}",
-                    series_description=new_desc,
-                    dicom_files=files,
-                    sop_class_uid=series_data.sop_class_uid,
-                    image_type=series_data.image_type,
-                    modality=series_data.modality,
-                    photometric_interpretation=series_data.photometric_interpretation,
-                    study_date=series_data.study_date
-                )
-                new_series.has_tags = series_data.has_tags.copy()
-                new_series.original_series_uid = series_data.series_uid  # Track original
-                split_series.append(new_series)
-            return split_series
-    
-    # No split needed
-    return [series_data]
-
-def split_series_by_dimension(series_data):
-    """
-    For SC/OT series with multiple image dimensions, split into separate SeriesData objects.
-    Each dimension gets its own SeriesData with appropriate files.
-    
-    Args:
-        series_data: SeriesData object to potentially split
-    
-    Returns:
-        list: List of SeriesData objects (original if single dimension, split if multiple)
-    """
-    if series_data.modality not in ['SC', 'OT']:
-        return [series_data]
-    
-    # Group files by dimension
-    dimension_map = {}  # (rows, cols) -> list of file paths
-    
-    for dcm_file in series_data.dicom_files:
-        try:
-            ds_temp = pydicom.dcmread(dcm_file, stop_before_pixels=True)
+                # Find matching orientation with tolerance
+                matched_key = None
+                for existing_key in [k[0] for k in composite_map.keys() if k[0] is not None]:
+                    if orientations_equal(orientation, existing_key):
+                        matched_key = existing_key
+                        break
+                if matched_key is None:
+                    matched_key = orientation
+                orientation = matched_key
+            
+            # Get dimension
             rows = getattr(ds_temp, 'Rows', None)
             cols = getattr(ds_temp, 'Columns', None)
-            if rows and cols:
-                dim = (rows, cols)
-                if dim not in dimension_map:
-                    dimension_map[dim] = []
-                dimension_map[dim].append(dcm_file)
+            dimension = (rows, cols) if (rows and cols) else None
+            
+            # Composite key
+            composite_key = (orientation, dimension)
+            if composite_key not in composite_map:
+                composite_map[composite_key] = []
+            composite_map[composite_key].append(dcm_file)
         except:
             continue
     
-    # If only one dimension, return original series
-    if len(dimension_map) <= 1:
+    # If only one group, no split needed
+    if len(composite_map) <= 1:
         return [series_data]
     
-    # Create separate SeriesData for each dimension
+    # Determine what caused the split: orientation, dimension, or both
+    unique_orientations = set(k[0] for k in composite_map.keys())
+    unique_dimensions = set(k[1] for k in composite_map.keys())
+    
+    has_multiple_orientations = len(unique_orientations) > 1
+    has_multiple_dimensions = len(unique_dimensions) > 1
+    
+    # Build split details for logging
+    split_details_parts = []
+    if has_multiple_orientations:
+        orientation_details = []
+        for orient in sorted(unique_orientations, key=lambda x: str(x)):
+            if orient is not None:
+                orient_str = f"[{', '.join([f'{v:.6f}' for v in orient])}]"
+                count = sum(len(files) for (o, d), files in composite_map.items() if o == orient)
+                orientation_details.append(f"{orient_str} ({count} files)")
+        if orientation_details:
+            split_details_parts.append("Orientations: " + ", ".join(orientation_details))
+    
+    if has_multiple_dimensions:
+        dimension_details = []
+        for dim in sorted(unique_dimensions, key=lambda x: str(x)):
+            if dim is not None:
+                count = sum(len(files) for (o, d), files in composite_map.items() if d == dim)
+                dimension_details.append(f"{dim[0]}x{dim[1]} ({count} files)")
+        if dimension_details:
+            split_details_parts.append("Dimensions: " + ", ".join(dimension_details))
+    
+    split_details_str = "; ".join(split_details_parts)
+    
+    # Determine split reason
+    if has_multiple_orientations and has_multiple_dimensions:
+        split_reason = 'orientation+dimension'
+    elif has_multiple_orientations:
+        split_reason = 'orientation'
+    else:
+        split_reason = 'dimension'
+    
+    # Create subseries for each unique (orientation, dimension) combination
     split_series = []
-    for dim_idx, (dimension, files) in enumerate(sorted(dimension_map.items())):
-        # Create new SeriesData with dimension suffix
-        new_desc = f"{series_data.series_description}_dim{dimension[0]}x{dimension[1]}"
+    for idx, ((orientation, dimension), files) in enumerate(sorted(composite_map.items(), key=lambda x: (str(x[0][0]), str(x[0][1])))):
+        # Build descriptive suffix
+        suffix_parts = []
+        if has_multiple_orientations and orientation is not None:
+            # Find the index of this orientation among unique orientations
+            orient_idx = sorted(unique_orientations, key=lambda x: str(x)).index(orientation)
+            suffix_parts.append(f"orient{orient_idx}")
+        if has_multiple_dimensions and dimension is not None:
+            suffix_parts.append(f"dim{dimension[0]}x{dimension[1]}")
+        
+        suffix = "_" + "_".join(suffix_parts) if suffix_parts else f"_sub{idx}"
+        new_desc = f"{series_data.series_description}{suffix}"
+        
         new_series = SeriesData(
             patient_id=series_data.patient_id,
             study_uid=series_data.study_uid,
-            series_uid=f"{series_data.series_uid}_dim{dim_idx}",
+            series_uid=f"{series_data.series_uid}{suffix}",
             series_description=new_desc,
             dicom_files=files,
             sop_class_uid=series_data.sop_class_uid,
             image_type=series_data.image_type,
             modality=series_data.modality,
             photometric_interpretation=series_data.photometric_interpretation,
-            study_date=series_data.study_date
+            study_date=series_data.study_date,
+            series_number=series_data.series_number
         )
         new_series.has_tags = series_data.has_tags.copy()
+        new_series.original_series_uid = series_data.series_uid
+        new_series.split_reason = split_reason
+        new_series.split_details = split_details_str
         split_series.append(new_series)
     
     return split_series
@@ -454,7 +452,7 @@ def load_series_volume(series_data, extract_overlays=False, log_callback=None):
                     f"Inconsistent slice dimensions: expected {expected_shape}, "
                     f"got {pixel_array.shape} at slice {i} of {num_slices} total slices. "
                     f"SeriesInstanceUID: {series_data.series_uid}. "
-                    f"This is likely a localizer/scout image, not a volume."
+                    f"This is likely not a volume."
                 )
             
             volume[i] = pixel_array
@@ -659,6 +657,7 @@ def save_series_metadata(folder_path, series_list, base_folder, plot_prefix='pro
             'patient_id': series.patient_id,
             'study_date': series.study_date,
             'series_uid': series.series_uid,
+            'series_number': series.series_number,
             'series_description': series.series_description or 'No Description',
             'modality': series.modality,
             'image_type': series.image_type,
@@ -693,6 +692,72 @@ def save_series_metadata(folder_path, series_list, base_folder, plot_prefix='pro
     
     return json_path
 
+def log_split_series(series_list, output_folder):
+    """
+    Log warnings for series that were split, with plot locations.
+    Logs once per original series, not per subvolume.
+    
+    Args:
+        series_list: List of SeriesData objects with plot information
+        output_folder: Base output folder for plot locations
+    """
+    # Group by original series UID
+    split_groups = {}  # original_series_uid -> list of subseries
+    
+    for series in series_list:
+        if series.split_reason and series.original_series_uid:
+            if series.original_series_uid not in split_groups:
+                split_groups[series.original_series_uid] = []
+            split_groups[series.original_series_uid].append(series)
+    
+    # Log once per original series
+    for series_instance_uid, subseries_list in split_groups.items():
+        if not subseries_list:
+            continue
+        
+        # Get info from first subseries (all share same original metadata)
+        first = subseries_list[0]
+        split_reason = first.split_reason
+        split_details = first.split_details
+        
+        # Build plot names list
+        plot_names = []
+        for series in subseries_list:
+            if hasattr(series, 'plot_name'):
+                plot_names.append(series.plot_name)
+        
+        # Determine split type message
+        if split_reason == 'orientation':
+            reason_msg = f"different ImageOrientationPatient values: {split_details}"
+        elif split_reason == 'dimension':
+            reason_msg = f"different image dimensions: {split_details}"
+        elif split_reason == 'orientation+dimension':
+            reason_msg = f"different orientations and dimensions: {split_details}"
+        else:
+            reason_msg = f"unknown reason"
+        
+        # Build log message
+        log_msg = (
+            f"SERIES SPLIT DETECTED - Manual review recommended\n"
+            f"  Patient: {first.patient_id}\n"
+            f"  Series: {first.series_description}\n"
+            f"  SeriesNumber: {first.series_number}\n"
+            f"  StudyDate: {first.study_date}\n"
+            f"  SeriesInstanceUID: {series_instance_uid}\n"
+            f"  Split Reason: {reason_msg}\n"
+            f"  Number of subvolumes: {len(subseries_list)}\n"
+        )
+        
+        if plot_names:
+            log_msg += f"  Plot files: {', '.join(plot_names)}\n"
+            # Get plot folder from first series
+            if hasattr(first, 'plot_folder'):
+                log_msg += f"  Plot location: {first.plot_folder}\n"
+        
+        log_msg += f"  ACTION: Please manually inspect these plots to decide if subvolumes should be kept or removed."
+        
+        logging.warning(log_msg)
+
 def create_structured_plots(series_list, output_folder, base_folder):
     """
     Create plots organized by: SOP Class UID / Photometric Interpretation / Tag Type.
@@ -723,18 +788,18 @@ def create_structured_plots(series_list, output_folder, base_folder):
         photometric = series.photometric_interpretation
         
         # Determine which tag folders this series belongs to
+        # Only create separate folders for tags that are in TAGS_TO_CHECK config
         tag_folders = []
         
-        # Check for overlay
-        if series.has_overlay and series.overlay_projections:
+        # Check for overlay (only if OverlayData is in config)
+        if 'OverlayData' in TAGS_TO_CHECK and series.has_overlay and series.overlay_projections:
             tag_folders.append('OverlayData')
         
-        # Check for other tags
-        for tag_name, has_tag in series.has_tags.items():
-            if has_tag and tag_name != 'OverlayData':  # OverlayData handled separately
-                tag_folders.append(tag_name)
+        # Check for CurveData (only if in config)
+        if 'CurveData' in TAGS_TO_CHECK and series.has_tags.get('CurveData', False):
+            tag_folders.append('CurveData')
         
-        # If no tags, goes to RegularData
+        # For other tags or if no special tags, goes to RegularData
         if not tag_folders:
             tag_folders = ['RegularData']
         
@@ -768,21 +833,32 @@ def create_structured_plots(series_list, output_folder, base_folder):
                 # Create plots (one plot per series)
                 for i, series in enumerate(series_group):
                         idx = start_idx + i
+                        # Store plot info for later logging
                         if tag_name == 'OverlayData':
+                            plot_name = f"overlay_{idx:04d}.jpg"
+                            series.plot_name = plot_name
+                            series.plot_folder = str(folder_path.relative_to(output_path))
                             # Create overlay plot
                             plot_path = create_single_overlay_plot(series, folder_path, idx)
                         else:
+                            plot_name = f"projection_{idx:04d}.jpg"
+                            series.plot_name = plot_name
+                            series.plot_folder = str(folder_path.relative_to(output_path))
                             # Create regular projection plot
                             plot_path = create_single_projection_plot(series, folder_path, idx)
                         
                         if plot_path:
                             print(f"  Saved plot: {plot_path.relative_to(output_path)}")
     
+    # Log warnings for split series after all plots are created
+    log_split_series(series_list, output_folder)
+    
     print(f"\n✓ All plots saved to {output_folder}")
 
 def create_single_projection_plot(series, folder_path, index):
     """Create a single projection plot for a series."""
     proj = series.projections
+    num_frames = len(series.dicom_files)
     
     # For SC/OT modalities, use 1x2 layout with square aspect
     if series.modality in ['SC', 'OT']:
@@ -795,7 +871,7 @@ def create_single_projection_plot(series, folder_path, index):
         
         img_second = normalize_image(proj['mean'])
         axes[1].imshow(img_second, cmap='gray')
-        axes[1].set_title('Mean', fontsize=10)
+        axes[1].set_title(f'Mean ({num_frames} frames)', fontsize=10)
         axes[1].axis('off')
     else:
         # For CT/PET/MR/XA: use 2x2 layout (with one empty subplot) for square aspect
@@ -804,25 +880,25 @@ def create_single_projection_plot(series, folder_path, index):
         # Top-left: MIP
         img_mip = normalize_image(proj['mip'])
         axes[0, 0].imshow(img_mip, cmap='gray')
-        axes[0, 0].set_title('MIP (Maximum Intensity)', fontsize=10)
+        axes[0, 0].set_title(f'MIP ({num_frames} frames)', fontsize=10)
         axes[0, 0].axis('off')
         
         # Top-right: MinIP or AIP
         if 'minip' in proj:
             img_minip = normalize_image(proj['minip'])
             axes[0, 1].imshow(img_minip, cmap='gray')
-            axes[0, 1].set_title('MinIP (Minimum Intensity)', fontsize=10)
+            axes[0, 1].set_title(f'MinIP ({num_frames} frames)', fontsize=10)
         else:
             # Fallback for XA which doesn't have minip
             img_minip = normalize_image(proj.get('aip', proj['mean']))
             axes[0, 1].imshow(img_minip, cmap='gray')
-            axes[0, 1].set_title('AIP (Average Intensity)', fontsize=10)
+            axes[0, 1].set_title(f'AIP ({num_frames} frames)', fontsize=10)
         axes[0, 1].axis('off')
         
         # Bottom-left: Mean
         img_mean = normalize_image(proj['mean'])
         axes[1, 0].imshow(img_mean, cmap='gray')
-        axes[1, 0].set_title('Mean', fontsize=10)
+        axes[1, 0].set_title(f'Mean ({num_frames} frames)', fontsize=10)
         axes[1, 0].axis('off')
         
         # Bottom-right: Empty (hide)
@@ -837,62 +913,102 @@ def create_single_projection_plot(series, folder_path, index):
     return output_file
 
 def create_single_overlay_plot(series, folder_path, index):
-    """Create a single overlay plot for a series with 2x2 layout."""
-    # Use consistent figure size with projection plots based on modality
-    if series.modality in ['SC', 'OT']:
-        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
-    else:
-        fig, axes = plt.subplots(2, 2, figsize=(12, 12))
-    
+    """Create a single overlay plot for a series with 2x3 layout showing all projections."""
     proj = series.projections
     overlay_groups = list(series.overlay_projections.keys())
     if not overlay_groups:
-        plt.close()
         return None
     
     overlay_proj = series.overlay_projections[overlay_groups[0]]
+    num_frames = len(series.dicom_files)
     
     # Prepare images and titles based on modality
     if series.modality in ['SC', 'OT']:
+        # For SC/OT: use 2x2 layout (First and Mean only)
+        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+        
         img_first = normalize_image(proj.get('first', proj.get('mean', list(proj.values())[0])))
         img_second = normalize_image(proj.get('mean', proj.get('first', list(proj.values())[0])))
         overlay_first = normalize_image(overlay_proj.get('first', overlay_proj.get('mean', list(overlay_proj.values())[0])))
         overlay_second = normalize_image(overlay_proj.get('mean', overlay_proj.get('first', list(overlay_proj.values())[0])))
-        title_first = 'First'
-        title_second = 'Mean'
+        
+        # Top-left: Overlay First
+        axes[0, 0].imshow(overlay_first, cmap='gray')
+        axes[0, 0].set_title('Overlay First', fontsize=10)
+        axes[0, 0].axis('off')
+        
+        # Top-right: Overlay Mean
+        axes[0, 1].imshow(overlay_second, cmap='gray')
+        axes[0, 1].set_title(f'Overlay Mean ({num_frames} frames)', fontsize=10)
+        axes[0, 1].axis('off')
+        
+        # Bottom-left: Combined First
+        if overlay_first.shape != img_first.shape:
+            overlay_first = cv2.resize(overlay_first, (img_first.shape[1], img_first.shape[0]), interpolation=cv2.INTER_NEAREST)
+        combined_first = np.maximum(img_first, overlay_first)
+        axes[1, 0].imshow(combined_first, cmap='gray')
+        axes[1, 0].set_title('Combined First', fontsize=10)
+        axes[1, 0].axis('off')
+        
+        # Bottom-right: Combined Mean
+        if overlay_second.shape != img_second.shape:
+            overlay_second = cv2.resize(overlay_second, (img_second.shape[1], img_second.shape[0]), interpolation=cv2.INTER_NEAREST)
+        combined_second = np.maximum(img_second, overlay_second)
+        axes[1, 1].imshow(combined_second, cmap='gray')
+        axes[1, 1].set_title('Combined Mean', fontsize=10)
+        axes[1, 1].axis('off')
     else:
-        img_first = normalize_image(proj['mip'])
-        img_second = normalize_image(proj.get('minip', proj['mip']))
-        overlay_first = normalize_image(overlay_proj.get('mip', list(overlay_proj.values())[0]))
-        overlay_second = normalize_image(overlay_proj.get('minip', overlay_first))
-        title_first = 'MIP'
-        title_second = 'MinIP'
-    
-    # Top-left: Overlay only (first)
-    axes[0, 0].imshow(overlay_first, cmap='gray')
-    axes[0, 0].set_title(f'Overlay {title_first}', fontsize=10)
-    axes[0, 0].axis('off')
-    
-    # Top-right: Overlay only (second)
-    axes[0, 1].imshow(overlay_second, cmap='gray')
-    axes[0, 1].set_title(f'Overlay {title_second}', fontsize=10)
-    axes[0, 1].axis('off')
-    
-    # Bottom-left: Combined (first) - grayscale blend
-    if overlay_first.shape != img_first.shape:
-        overlay_first = cv2.resize(overlay_first, (img_first.shape[1], img_first.shape[0]), interpolation=cv2.INTER_NEAREST)
-    combined_first = np.maximum(img_first, overlay_first)
-    axes[1, 0].imshow(combined_first, cmap='gray')
-    axes[1, 0].set_title(f'Combined {title_first}', fontsize=10)
-    axes[1, 0].axis('off')
-    
-    # Bottom-right: Combined (second) - grayscale blend
-    if overlay_second.shape != img_second.shape:
-        overlay_second = cv2.resize(overlay_second, (img_second.shape[1], img_second.shape[0]), interpolation=cv2.INTER_NEAREST)
-    combined_second = np.maximum(img_second, overlay_second)
-    axes[1, 1].imshow(combined_second, cmap='gray')
-    axes[1, 1].set_title(f'Combined {title_second}', fontsize=10)
-    axes[1, 1].axis('off')
+        # For CT/PET/MR/XA: use 2x3 layout (MIP, MinIP/AIP, Mean) - square aspect
+        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        
+        # Extract all three projections
+        img_mip = normalize_image(proj['mip'])
+        img_second = normalize_image(proj.get('minip', proj.get('aip', proj['mip'])))
+        img_mean = normalize_image(proj['mean'])
+        
+        overlay_mip = normalize_image(overlay_proj.get('mip', list(overlay_proj.values())[0]))
+        overlay_second = normalize_image(overlay_proj.get('minip', overlay_proj.get('aip', overlay_mip)))
+        overlay_mean = normalize_image(overlay_proj.get('mean', overlay_mip))
+        
+        # Determine titles
+        second_title = 'MinIP' if 'minip' in proj else 'AIP'
+        
+        # Top row: Overlay only
+        axes[0, 0].imshow(overlay_mip, cmap='gray')
+        axes[0, 0].set_title(f'Overlay MIP ({num_frames} frames)', fontsize=10)
+        axes[0, 0].axis('off')
+        
+        axes[0, 1].imshow(overlay_second, cmap='gray')
+        axes[0, 1].set_title(f'Overlay {second_title} ({num_frames} frames)', fontsize=10)
+        axes[0, 1].axis('off')
+        
+        axes[0, 2].imshow(overlay_mean, cmap='gray')
+        axes[0, 2].set_title(f'Overlay Mean ({num_frames} frames)', fontsize=10)
+        axes[0, 2].axis('off')
+        
+        # Bottom row: Combined
+        # Resize overlays if needed
+        if overlay_mip.shape != img_mip.shape:
+            overlay_mip = cv2.resize(overlay_mip, (img_mip.shape[1], img_mip.shape[0]), interpolation=cv2.INTER_NEAREST)
+        if overlay_second.shape != img_second.shape:
+            overlay_second = cv2.resize(overlay_second, (img_second.shape[1], img_second.shape[0]), interpolation=cv2.INTER_NEAREST)
+        if overlay_mean.shape != img_mean.shape:
+            overlay_mean = cv2.resize(overlay_mean, (img_mean.shape[1], img_mean.shape[0]), interpolation=cv2.INTER_NEAREST)
+        
+        combined_mip = np.maximum(img_mip, overlay_mip)
+        axes[1, 0].imshow(combined_mip, cmap='gray')
+        axes[1, 0].set_title(f'Combined MIP ({num_frames} frames)', fontsize=10)
+        axes[1, 0].axis('off')
+        
+        combined_second = np.maximum(img_second, overlay_second)
+        axes[1, 1].imshow(combined_second, cmap='gray')
+        axes[1, 1].set_title(f'Combined {second_title} ({num_frames} frames)', fontsize=10)
+        axes[1, 1].axis('off')
+        
+        combined_mean = np.maximum(img_mean, overlay_mean)
+        axes[1, 2].imshow(combined_mean, cmap='gray')
+        axes[1, 2].set_title(f'Combined Mean ({num_frames} frames)', fontsize=10)
+        axes[1, 2].axis('off')
     
     plt.tight_layout()
     
@@ -912,13 +1028,22 @@ def main(config_path='analyze_config.json'):
     Args:
         config_path: Path to configuration JSON file
     """
-    # Load configuration
+    # Read original config to get paths as written
+    config_path_obj = Path(config_path).resolve()
+    with open(config_path_obj, 'r') as f:
+        original_config = json.load(f)
+    
+    # Load configuration (with resolved absolute paths)
     config = load_config(config_path)
     
-    # Get configuration values
+    # Get configuration values (absolute paths for operations)
     base_folder = config.get('input_folder')
     output_folder = config.get('output_folder')
     log_file = Path(config.get('output_folder')) / config.get('plot_pixel_data_file', 'plot-pixel-data.log')
+    
+    # Get original relative paths for logging
+    base_folder_display = original_config.get('input_folder', base_folder)
+    output_folder_display = original_config.get('output_folder', output_folder)
     
     # Set up logging
     output_path = Path(output_folder)
@@ -938,8 +1063,8 @@ def main(config_path='analyze_config.json'):
     
     logging.info("=" * 80)
     logging.info("Starting plot_pixel_data processing")
-    logging.info(f"Base folder: {base_folder}")
-    logging.info(f"Output folder: {output_folder}")
+    logging.info(f"Input folder: {base_folder_display}")
+    logging.info(f"Output folder: {output_folder_display}")
     logging.info("=" * 80)
     
     # Track errors and warnings per series to avoid duplicates
@@ -981,21 +1106,20 @@ def main(config_path='analyze_config.json'):
         print(f"PROCESSING PATIENT {patient_idx}/{len(patient_series_map)}: {patient_id}")
         print("=" * 80)
         
-        # First split by orientation or pixel spacing (for scout/localizer detection)
-        expanded_series_list = []
-        for series in series_list:
-            split = split_series_by_orientation_or_spacing(series)
-            if len(split) > 1:
-                print(f"  ℹ Split series '{series.series_description}' into {len(split)} groups (same series, different orientation/spacing)")
-            expanded_series_list.extend(split)
-        
-        # Then split SC/OT series by dimension if they have multiple dimensions
+        # Split by orientation and/or dimension in a single pass
         final_series_list = []
-        for series in expanded_series_list:
-            split = split_series_by_dimension(series)
-            final_series_list.extend(split)
+        for series in series_list:
+            split = split_series_by_orientation_and_dimension(series)
             if len(split) > 1:
-                print(f"  ℹ Split {series.modality} series '{series.series_description}' into {len(split)} dimension groups")
+                # Determine what caused the split for better user feedback
+                first = split[0]
+                if first.split_reason == 'orientation':
+                    print(f"  ℹ Split series '{series.series_description}' into {len(split)} groups by orientation")
+                elif first.split_reason == 'dimension':
+                    print(f"  ℹ Split series '{series.series_description}' into {len(split)} groups by dimension")
+                else:
+                    print(f"  ℹ Split series '{series.series_description}' into {len(split)} groups by orientation and dimension")
+            final_series_list.extend(split)
         
         series_list = final_series_list
         

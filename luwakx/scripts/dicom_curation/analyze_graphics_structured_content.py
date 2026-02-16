@@ -9,7 +9,7 @@ Exclusion Criteria:
 - Series with fewer slices than 'min_slices_threshold' config
 - Files with extensions in 'excluded_extensions' config
 - Entire series containing any SOP Class UID from 'excluded_sop_class_uids' config
-- Individual localizer slices with different ImageOrientationPatient values
+- Individual reference image slices with different ImageOrientationPatient values
 - Individual files without ImageOrientationPatient tag
 """
 
@@ -28,6 +28,25 @@ MIN_SLICES_THRESHOLD = 3
 EXCLUDED_EXTENSIONS = set()
 EXCLUDED_SOP_CLASS_UIDS = set()
 TAGS_TO_CHECK = {}
+
+
+def orientations_equal(orient1, orient2, tolerance=1e-5):
+    """
+    Compare two ImageOrientationPatient values with tolerance.
+    
+    Args:
+        orient1: First orientation tuple (6 values)
+        orient2: Second orientation tuple (6 values)
+        tolerance: Maximum allowed difference per component (default: 1e-5)
+    
+    Returns:
+        bool: True if orientations are equal within tolerance
+    """
+    if orient1 is None or orient2 is None:
+        return orient1 == orient2
+    if len(orient1) != len(orient2):
+        return False
+    return all(abs(a - b) < tolerance for a, b in zip(orient1, orient2))
 
 
 def load_config(config_path='analyze_config.json'):
@@ -165,7 +184,7 @@ def should_exclude_series(series_description, num_slices, image_type=None):
     
     # Check against excluded descriptions
     for excluded in EXCLUDED_SERIES_DESCRIPTIONS:
-        if excluded in series_desc_lower:
+        if excluded.lower() in series_desc_lower:
             return True
     
     # Check against excluded image types
@@ -176,22 +195,34 @@ def should_exclude_series(series_description, num_slices, image_type=None):
         else:
             image_type_list = list(image_type) if hasattr(image_type, '__iter__') else [str(image_type)]
         
-        # Check if ALL excluded patterns are found in the image type list (AND logic)
-        # All patterns from config must be present for exclusion
-        all_patterns_found = True
-        for excluded_type in EXCLUDED_IMAGE_TYPES:
-            excluded_lower = excluded_type.lower().strip()
-            pattern_found = False
-            for img_type_value in image_type_list:
-                if excluded_lower in img_type_value.lower():
-                    pattern_found = True
-                    break
-            if not pattern_found:
-                all_patterns_found = False
+        # Support both flat list and list of lists for excluded_image_types
+        # Normalize to list of lists: ["A", "B"] -> [["A", "B"]]
+        patterns_to_check = []
+        for item in EXCLUDED_IMAGE_TYPES:
+            if isinstance(item, list):
+                patterns_to_check.append(item)
+            else:
+                # If it's a flat list, treat entire list as one AND pattern
+                patterns_to_check = [EXCLUDED_IMAGE_TYPES]
                 break
         
-        if all_patterns_found:
-            return True
+        # Check if ANY pattern matches (OR logic between patterns)
+        # Within each pattern, ALL items must be found (AND logic)
+        for pattern in patterns_to_check:
+            all_patterns_found = True
+            for excluded_type in pattern:
+                excluded_lower = excluded_type.lower().strip()
+                pattern_found = False
+                for img_type_value in image_type_list:
+                    if excluded_lower in img_type_value.lower():
+                        pattern_found = True
+                        break
+                if not pattern_found:
+                    all_patterns_found = False
+                    break
+            
+            if all_patterns_found:
+                return True
     
     # Exclude series with too few slices
     if num_slices < MIN_SLICES_THRESHOLD:
@@ -354,7 +385,7 @@ def extract_nested_values(sequence, path):
     return extracted_values
 
 
-def analyze_dicom_directory(root_dir):
+def analyze_dicom_directory(root_dir, excluded_csv_path=None):
     """
     Analyze DICOM directory structure for graphics and structured content.
     
@@ -363,6 +394,7 @@ def analyze_dicom_directory(root_dir):
     
     Args:
         root_dir: Root directory to start scanning (contains patient folders)
+        excluded_csv_path: Path to CSV file for streaming excluded files (optional)
     
     Returns:
         dict: Analysis results containing:
@@ -370,7 +402,7 @@ def analyze_dicom_directory(root_dir):
             - patient_data: Per-patient analysis data
             - excluded_summary: Statistics about excluded series
             - excluded_patient_data: Per-patient excluded series data
-            - excluded_files_log: List of excluded files with reasons
+            - excluded_files_count: Count of excluded files written to CSV
             - non_dicom_files_by_patient: Non-DICOM files grouped by patient
     """
     root_path = Path(root_dir)
@@ -391,7 +423,8 @@ def analyze_dicom_directory(root_dir):
         'series_with_occurrences_per_sop_class': {},  # Track series WITH any tag occurrence per SOP Class UID
         'series_without_occurrences_per_sop_class': {},  # Track series WITHOUT any tag occurrence per SOP Class UID
         'series_count_per_tag_per_sop_class': {},  # Track series count per tag per SOP Class UID
-        'study_instance_uids': set(),  # Track unique study UIDs
+        'study_instance_uids': set(),  # Track all unique study UIDs encountered
+        'kept_study_instance_uids': set(),  # Track study UIDs with at least one kept series
     }
     
     # Initialize tag occurrence counters, per-tag SOP Class UID tracking, sequence content tracking, and series UID tracking
@@ -443,7 +476,7 @@ def analyze_dicom_directory(root_dir):
         'excluded_series_instance_uids': set(),
         'excluded_sop_class_uids': set(),
         'kept_sop_class_uids': set(),
-        'excluded_instances_count': 0,  # Count of excluded DICOM instances (from series + localizers)
+        'excluded_instances_count': 0,  # Count of excluded DICOM instances (from series + reference images)
         'additional_extensions_found': set(),  # Track file extensions found in non-DICOM files
         'unique_series_descriptions': set(),  # Track unique series descriptions found
         'unique_image_types': set(),  # Track unique image type values found
@@ -455,27 +488,48 @@ def analyze_dicom_directory(root_dir):
     # Track non-DICOM files by patient
     non_dicom_files_by_patient = {}  # PatientID -> list of file paths
     
-    # Track excluded files with structured reasons
-    excluded_files_log = []  # List of (file_path, patient_id, rationale_class, rationale_details, series_uid) tuples
+    # Open CSV file for streaming excluded files (write immediately, don't accumulate in memory)
+    csv_file = None
+    csv_writer = None
+    excluded_files_count = 0
+    
+    if excluded_csv_path:
+        import csv
+        csv_file = open(excluded_csv_path, 'w', newline='', encoding='utf-8')
+        csv_writer = csv.writer(csv_file)
+        # Write header
+        csv_writer.writerow(['File Path', 'PatientID', 'RationaleClass', 'RationaleDetails', 'SeriesInstanceUID', 'SeriesNumber', 'StudyDate'])
     
     # Recursively find all files
     print(f"Scanning directory: {root_dir}")
     all_files = []
+    files_excluded_by_extension = 0
+    total_files_found = 0
     for file_path in root_path.rglob('*'):
         if file_path.is_file():
+            total_files_found += 1
             should_exclude, exclusion_reason = should_exclude_file(file_path)
             if should_exclude:
-                excluded_files_log.append((str(file_path.relative_to(root_path)), "", "Extension", exclusion_reason, ""))
+                if csv_writer:
+                    csv_writer.writerow([str(file_path.relative_to(root_path)), "", "Extension", exclusion_reason, "", "", ""])
+                    excluded_files_count += 1
+                files_excluded_by_extension += 1
             else:
                 all_files.append(file_path)
     
+    print(f"Total files found in directory scan: {total_files_found}")
+    logging.info(f"Total files found in directory scan: {total_files_found}")
+    print(f"Files excluded by extension: {files_excluded_by_extension}")
+    logging.info(f"Files excluded by extension: {files_excluded_by_extension}")
     print(f"Found {len(all_files)} potential files to examine")
+    logging.info(f"Found {len(all_files)} potential files to examine")
     
     # Group files by SeriesInstanceUID and PatientID
-    # Track ImageOrientationPatient for localizer detection
+    # Track ImageOrientationPatient for reference image detection
     series_by_patient = {}  # PatientID -> SeriesInstanceUID -> list of file paths
     series_orientation_map = {}  # PatientID -> SeriesInstanceUID -> list of ImageOrientationPatient values
     series_sop_class_map = {}  # PatientID -> SeriesInstanceUID -> set of SOP Class UIDs
+    series_metadata_map = {}  # PatientID -> SeriesInstanceUID -> {'series_number': str, 'study_date': str}
     
     files_examined = 0
     files_skipped = 0
@@ -492,7 +546,9 @@ def analyze_dicom_directory(root_dir):
                 patient_id_for_non_dicom = getattr(dcm, 'PatientID', None)
                 files_skipped += 1
                 excluded_stats['total_non_dicom_files'] += 1
-                excluded_files_log.append((str(file_path.relative_to(root_path)), patient_id_for_non_dicom or "", "Not DICOM", "Missing SOPClassUID", ""))
+                if csv_writer:
+                    csv_writer.writerow([str(file_path.relative_to(root_path)), patient_id_for_non_dicom or "", "Not DICOM", "Missing SOPClassUID", "", "", ""])
+                    excluded_files_count += 1
                 # Track file extension
                 file_ext = get_file_extension(file_path)
                 excluded_stats['additional_extensions_found'].add(file_ext)
@@ -514,7 +570,9 @@ def analyze_dicom_directory(root_dir):
             if not series_uid:
                 files_skipped += 1
                 excluded_stats['total_non_dicom_files'] += 1
-                excluded_files_log.append((str(file_path.relative_to(root_path)), patient_id, "Not DICOM", "Missing SeriesInstanceUID", ""))
+                if csv_writer:
+                    csv_writer.writerow([str(file_path.relative_to(root_path)), patient_id, "Not DICOM", "Missing SeriesInstanceUID", "", "", ""])
+                    excluded_files_count += 1
                 # Track file extension
                 file_ext = get_file_extension(file_path)
                 excluded_stats['additional_extensions_found'].add(file_ext)
@@ -528,32 +586,72 @@ def analyze_dicom_directory(root_dir):
                 series_by_patient[patient_id] = {}
                 series_orientation_map[patient_id] = {}
                 series_sop_class_map[patient_id] = {}
+                series_metadata_map[patient_id] = {}
             
+            # Get series metadata once (for efficiency) - will be stored and reused
             if series_uid not in series_by_patient[patient_id]:
                 series_by_patient[patient_id][series_uid] = []
                 series_orientation_map[patient_id][series_uid] = []
                 series_sop_class_map[patient_id][series_uid] = set()
+                # Store SeriesNumber and StudyDate for this series
+                series_number_value = getattr(dcm, 'SeriesNumber', '')
+                study_date_value = getattr(dcm, 'StudyDate', '')
+                series_metadata_map[patient_id][series_uid] = {
+                    'series_number': str(series_number_value) if series_number_value else '',
+                    'study_date': str(study_date_value) if study_date_value else ''
+                }
             
-            # Check if ImageOrientationPatient is present, exclude file if not
-            if not hasattr(dcm, 'ImageOrientationPatient'):
-                files_skipped += 1
-                excluded_stats['excluded_instances_count'] += 1
-                rel_path = str(file_path.relative_to(root_path))
-                excluded_files_log.append((rel_path, patient_id, "Missing ImageOrientationPatient Tag", "ImageOrientationPatient tag not found", series_uid if series_uid else ""))
+            # Get metadata for this series (already stored, so just retrieve once)
+            series_meta = series_metadata_map[patient_id][series_uid]
+            series_number = series_meta['series_number']
+            study_date = series_meta['study_date']
+            
+            # Check for Enhanced CT Image Storage (not supported) - silently skip without any accounting
+            ENHANCED_CT_SOP_CLASS_UID = "1.2.840.10008.5.1.4.1.1.2.1"
+            sop_class = getattr(dcm, 'SOPClassUID', None)
+            if sop_class == ENHANCED_CT_SOP_CLASS_UID:
+                logging.error(
+                    f"Enhanced CT Image Storage (SOP Class UID {ENHANCED_CT_SOP_CLASS_UID}) detected. "
+                    f"Only standard CT Image Storage is supported for analysis. Skipping file without accounting. "
+                    f"Patient ID: {patient_id}, Series Instance UID: {series_uid}, File: {file_path.name}"
+                )
                 continue
             
-            series_by_patient[patient_id][series_uid].append(file_path)
+            # At this point, we have a valid DICOM file (has SOPClassUID and SeriesInstanceUID)
+            # Increment files_examined - this file was successfully read and examined
+            files_examined += 1
+            
+            # Check if ImageOrientationPatient is present and valid, exclude file if not
+            orientation_value = getattr(dcm, 'ImageOrientationPatient', None)
+            if orientation_value is None:
+                # This is a valid DICOM file, but we're excluding it due to missing required tag
+                excluded_stats['excluded_instances_count'] += 1
+                rel_path = str(file_path.relative_to(root_path))
+                if csv_writer:
+                    csv_writer.writerow([rel_path, patient_id, "None Value ImageOrientationPatient", "ImageOrientationPatient tag not found or is None", series_uid, series_number, study_date])
+                    excluded_files_count += 1
+                continue
             
             # Track SOP Class UID (collect during initial read to avoid re-reading files)
             sop_class = getattr(dcm, 'SOPClassUID', None)
             if sop_class:
                 series_sop_class_map[patient_id][series_uid].add(sop_class)
             
-            # Track ImageOrientationPatient for localizer detection
-            orientation = tuple(dcm.ImageOrientationPatient)
-            series_orientation_map[patient_id][series_uid].append((file_path, orientation))
+            # Track ImageOrientationPatient for image detection
+            try:
+                orientation = tuple(orientation_value)
+                series_orientation_map[patient_id][series_uid].append((file_path, orientation))
+            except (TypeError, ValueError) as e:
+                # If orientation can't be converted to tuple, it's a valid DICOM but excluded
+                excluded_stats['excluded_instances_count'] += 1
+                rel_path = str(file_path.relative_to(root_path))
+                if csv_writer:
+                    csv_writer.writerow([rel_path, patient_id, "Invalid ImageOrientationPatient Value", f"Cannot convert to tuple: {e}", series_uid, series_number, study_date])
+                    excluded_files_count += 1
+                continue
             
-            files_examined += 1
+            # File passed all checks, add it to the series
+            series_by_patient[patient_id][series_uid].append(file_path)
             
         except Exception as e:
             # Not a valid DICOM file, skip - log error once per series
@@ -566,7 +664,9 @@ def analyze_dicom_directory(root_dir):
             files_skipped += 1
             excluded_stats['total_non_dicom_files'] += 1
             error_details = f"Read error - {type(e).__name__}: {str(e)}"
-            excluded_files_log.append((str(file_path.relative_to(root_path)), patient_id_err, "Not DICOM", error_details, ""))
+            if csv_writer:
+                csv_writer.writerow([str(file_path.relative_to(root_path)), patient_id_err, "Not DICOM", error_details, "", "", ""])
+                excluded_files_count += 1
             # Track file extension
             file_ext = get_file_extension(file_path)
             excluded_stats['additional_extensions_found'].add(file_ext)
@@ -576,16 +676,30 @@ def analyze_dicom_directory(root_dir):
             non_dicom_files_by_patient['Unknown'].append(str(file_path.relative_to(root_path)))
             continue
     
-    # Calculate kept instances (total examined minus excluded)
-    global_stats['total_instances'] = files_examined - excluded_stats['excluded_instances_count']
+    print(f"\nFile Accounting Breakdown (initial):")
+    logging.info("")
+    logging.info("File Accounting Breakdown (initial):")
+    print(f"  Total files found in directory scan: {total_files_found}")
+    logging.info(f"  Total files found in directory scan: {total_files_found}")
+    print(f"  Files excluded by extension: {files_excluded_by_extension}")
+    logging.info(f"  Files excluded by extension: {files_excluded_by_extension}")
+    print(f"  Potential files to examine: {len(all_files)}")
+    logging.info(f"  Potential files to examine: {len(all_files)}")
+    print(f"  Successfully read as DICOM: {files_examined}")
+    logging.info(f"  Successfully read as DICOM: {files_examined}")
+    print(f"  Skipped (non-DICOM or read errors): {files_skipped}")
+    logging.info(f"  Skipped (non-DICOM or read errors): {files_skipped}")
+    print(f"  Excluded during initial file scan: {excluded_stats['excluded_instances_count']}")
+    logging.info(f"  Excluded during initial file scan: {excluded_stats['excluded_instances_count']}")
     
-    print(f"Successfully read {files_examined} DICOM files")
-    print(f"Skipped {files_skipped} non-DICOM files")
-    print(f"Found {len(series_by_patient)} patients")
+    print(f"\nFound {len(series_by_patient)} patients")
+    logging.info(f"")
+    logging.info(f"Found {len(series_by_patient)} patients")
     
     # Process each patient and their series
     for patient_id in sorted(series_by_patient.keys()):
         print(f"\nProcessing patient: {patient_id}")
+        logging.info(f"Processing patient: {patient_id}")
         
         patient_info = {
             'patient_id': patient_id,
@@ -623,6 +737,7 @@ def analyze_dicom_directory(root_dir):
         
         series_count = len(series_by_patient[patient_id])
         print(f"  Found {series_count} series for patient {patient_id}")
+        logging.info(f"  Found {series_count} series for patient {patient_id}")
         
         # Process each series for this patient
         for series_uid, dicom_files in sorted(series_by_patient[patient_id].items()):
@@ -655,6 +770,11 @@ def analyze_dicom_directory(root_dir):
             # Get relative file path
             relative_file_path = str(dicom_files[0].relative_to(root_path))
             
+            # Get series metadata (SeriesNumber and StudyDate) from the metadata map
+            series_meta = series_metadata_map.get(patient_id, {}).get(series_uid, {})
+            series_number = series_meta.get('series_number', '')
+            study_date = series_meta.get('study_date', '')
+            
             # Check if series should be excluded by SOP Class UID
             series_excluded_by_sop_class = False
             if sop_class_uids_in_series & EXCLUDED_SOP_CLASS_UIDS:  # Intersection check
@@ -672,7 +792,9 @@ def analyze_dicom_directory(root_dir):
                 # Add all files from this series to excluded files log
                 for file_path in dicom_files:
                     rel_path = str(file_path.relative_to(root_path))
-                    excluded_files_log.append((rel_path, patient_id, "Excluded SOP Class", exclusion_details, series_uid))
+                    if csv_writer:
+                        csv_writer.writerow([rel_path, patient_id, "Excluded SOP Class", exclusion_details, series_uid, series_number, study_date])
+                        excluded_files_count += 1
                     excluded_stats['excluded_instances_count'] += 1
                 
                 # Store excluded series information
@@ -682,20 +804,9 @@ def analyze_dicom_directory(root_dir):
                     'sop_class_uid': sop_class_uid or 'Unknown',
                     'file_path': relative_file_path,
                     'num_slices': num_slices,
-                    'exclusion_reason': exclusion_reason
+                    'exclusion_reason': exclusion_details
                 })
                 
-                continue
-            
-            # Check for Enhanced CT Image Storage (not supported for analysis) - completely ignore these
-            ENHANCED_CT_SOP_CLASS_UID = "1.2.840.10008.5.1.4.1.1.2.1"
-            if sop_class_uid == ENHANCED_CT_SOP_CLASS_UID or ENHANCED_CT_SOP_CLASS_UID in sop_class_uids_in_series:
-                logging.error(
-                    f"Enhanced CT Image Storage (SOP Class UID {ENHANCED_CT_SOP_CLASS_UID}) detected. "
-                    f"Only standard CT Image Storage is supported for analysis. Skipping series. "
-                    f"Patient ID: {patient_id}, Series Description: '{series_description or '(no description)'}', "
-                    f"Series Instance UID: {series_uid}"
-                )
                 continue
             
             # Check if series should be excluded by description, image type, or slice count
@@ -717,7 +828,7 @@ def analyze_dicom_directory(root_dir):
                     # Check which excluded description pattern matched
                     series_desc_lower = series_description.lower().strip() if series_description else ""
                     for excluded in EXCLUDED_SERIES_DESCRIPTIONS:
-                        if excluded in series_desc_lower:
+                        if excluded.lower() in series_desc_lower:
                             rationale_class = "Excluded SeriesDescription"
                             rationale_details = f"Series description matches excluded pattern: '{excluded}'"
                             break
@@ -725,24 +836,37 @@ def analyze_dicom_directory(root_dir):
                     # Check if excluded by image type
                     if not rationale_class and image_type and EXCLUDED_IMAGE_TYPES:
                         image_type_list = [image_type] if isinstance(image_type, str) else list(image_type) if hasattr(image_type, '__iter__') else [str(image_type)]
-                        # Check if ALL patterns from config are present
-                        all_patterns_found = True
-                        matched_patterns = []
-                        for excluded_type in EXCLUDED_IMAGE_TYPES:
-                            excluded_lower = excluded_type.lower().strip()
-                            pattern_found = False
-                            for img_type_value in image_type_list:
-                                if excluded_lower in img_type_value.lower():
-                                    pattern_found = True
-                                    matched_patterns.append(excluded_type)
-                                    break
-                            if not pattern_found:
-                                all_patterns_found = False
+                        
+                        # Support both flat list and list of lists for excluded_image_types
+                        patterns_to_check = []
+                        for item in EXCLUDED_IMAGE_TYPES:
+                            if isinstance(item, list):
+                                patterns_to_check.append(item)
+                            else:
+                                # If it's a flat list, treat entire list as one AND pattern
+                                patterns_to_check = [EXCLUDED_IMAGE_TYPES]
                                 break
                         
-                        if all_patterns_found:
-                            rationale_class = "Excluded ImageType"
-                            rationale_details = f"Image type matches all excluded patterns: {matched_patterns}"
+                        # Check if ANY pattern matches (OR logic between patterns)
+                        for pattern in patterns_to_check:
+                            all_patterns_found = True
+                            matched_patterns = []
+                            for excluded_type in pattern:
+                                excluded_lower = excluded_type.lower().strip()
+                                pattern_found = False
+                                for img_type_value in image_type_list:
+                                    if excluded_lower in img_type_value.lower():
+                                        pattern_found = True
+                                        matched_patterns.append(excluded_type)
+                                        break
+                                if not pattern_found:
+                                    all_patterns_found = False
+                                    break
+                            
+                            if all_patterns_found:
+                                rationale_class = "Excluded ImageType"
+                                rationale_details = f"Image type matches all excluded patterns: {matched_patterns}"
+                                break
                     
                     if not rationale_class:
                         rationale_class = "Other"
@@ -751,7 +875,9 @@ def analyze_dicom_directory(root_dir):
                 # Add all files from this series to excluded files log
                 for file_path in dicom_files:
                     rel_path = str(file_path.relative_to(root_path))
-                    excluded_files_log.append((rel_path, patient_id, rationale_class, rationale_details, series_uid))
+                    if csv_writer:
+                        csv_writer.writerow([rel_path, patient_id, rationale_class, rationale_details, series_uid, series_number, study_date])
+                        excluded_files_count += 1
                     excluded_stats['excluded_instances_count'] += 1
                 
                 # Store excluded series information
@@ -766,32 +892,60 @@ def analyze_dicom_directory(root_dir):
                 
                 continue
             
-            # Series is included - check for localizers before processing
-            # Check for localizers based on ImageOrientationPatient
-            # If a series has slices with different orientations, exclude the minority orientation slices
+            # Series is included - check for reference images before processing
+            # Check for reference images based on ImageOrientationPatient with tolerance
+            # Only exclude if there is exactly 1 file total with different orientation
+            # If 2+ files have different orientations (even if all different from each other), keep all
             if patient_id in series_orientation_map and series_uid in series_orientation_map[patient_id]:
                 orientation_data = series_orientation_map[patient_id][series_uid]
                 if orientation_data:
-                    # Count occurrences of each orientation
-                    from collections import Counter
-                    orientation_counts = Counter(orient for _, orient in orientation_data)
+                    # Group orientations with tolerance-based comparison
+                    orientation_groups = {}  # orientation_key -> list of (file_path, orientation)
                     
-                    # If multiple orientations exist
-                    if len(orientation_counts) > 1:
-                        # Find the most common orientation (main series)
-                        most_common_orientation = orientation_counts.most_common(1)[0][0]
+                    for file_path, orientation in orientation_data:
+                        # Find matching group with tolerance
+                        matched_key = None
+                        for existing_key in orientation_groups.keys():
+                            if orientations_equal(orientation, existing_key):
+                                matched_key = existing_key
+                                break
                         
-                        # Exclude files with different orientations (localizers)
-                        for file_path, orientation in orientation_data:
-                            if orientation != most_common_orientation:
-                                rel_path = str(file_path.relative_to(root_path))
-                                excluded_files_log.append((rel_path, patient_id, "Localizer", "Different ImageOrientationPatient", series_uid))
-                                excluded_stats['excluded_instances_count'] += 1
+                        if matched_key is None:
+                            # New orientation group
+                            orientation_groups[orientation] = [(file_path, orientation)]
+                        else:
+                            # Add to existing group
+                            orientation_groups[matched_key].append((file_path, orientation))
+                    
+                    # If multiple orientation groups exist
+                    if len(orientation_groups) > 1:
+                        # Find the most common orientation group (main series)
+                        most_common_key = max(orientation_groups.keys(), key=lambda k: len(orientation_groups[k]))
+                        most_common_count = len(orientation_groups[most_common_key])
+                        
+                        # Count total files with different orientations
+                        total_different_orientation_files = len(orientation_data) - most_common_count
+                        
+                        # Only exclude if exactly 1 file has a different orientation (true reference image)
+                        if total_different_orientation_files == 1:
+                            for orient_key, files_list in orientation_groups.items():
+                                if not orientations_equal(orient_key, most_common_key):
+                                    for file_path, orientation in files_list:
+                                        rel_path = str(file_path.relative_to(root_path))
+                                        if csv_writer:
+                                            csv_writer.writerow([rel_path, patient_id, "Reference image: Different ImageOrientationPatient", "only 1 file with different orientation", series_uid, series_number, study_date])
+                                            excluded_files_count += 1
+                                        excluded_stats['excluded_instances_count'] += 1
             
             # Process included series
             patient_info['total_series_checked'] += 1
             global_stats['total_series_checked'] += 1
             patient_info['series_descriptions'].append(series_description or '(no description)')
+            
+            # Track study UID for kept series
+            study_uid = getattr(dcm, 'StudyInstanceUID', None)
+            if study_uid:
+                global_stats['kept_study_instance_uids'].add(study_uid)
             
             # Track unique series descriptions (only for kept series)
             if series_description:
@@ -919,18 +1073,6 @@ def analyze_dicom_directory(root_dir):
         if patient_info['total_series_checked'] > 0:
             global_stats['total_patients'] += 1
             patient_data[patient_id] = patient_info
-            
-            # Count unique studies for this patient
-            patient_studies = set()
-            for series_uid in series_by_patient[patient_id].keys():
-                try:
-                    dcm = pydicom.dcmread(str(series_by_patient[patient_id][series_uid][0]), stop_before_pixels=True)
-                    study_uid = getattr(dcm, 'StudyInstanceUID', None)
-                    if study_uid:
-                        patient_studies.add(study_uid)
-                except:
-                    pass
-            # This is already tracked in study_instance_uids set during file reading
         
         # Log modality and SOP Class UID summary for this patient
         if patient_id in patient_modalities and patient_modalities[patient_id]:
@@ -948,9 +1090,73 @@ def analyze_dicom_directory(root_dir):
                 logging.info(f"Patient {patient_id}: Modalities = {modalities_str} | SOP Class UIDs = {sop_uids_str}")
             else:
                 logging.info(f"Patient {patient_id}: Modalities = {modalities_str}")
+        
+        # Free memory for this patient's file lists (no longer needed after processing)
+        # This reduces peak memory by ~95% for large datasets (from 500MB to 50MB for 1M files)
+        if patient_id in series_by_patient:
+            del series_by_patient[patient_id]
+        if patient_id in series_orientation_map:
+            del series_orientation_map[patient_id]
+        if patient_id in series_sop_class_map:
+            del series_sop_class_map[patient_id]
+        # Keep series_metadata_map - it's tiny (~100 bytes per series) and already minimal
     
     # Set total studies count
     global_stats['total_studies'] = len(global_stats['study_instance_uids'])
+    
+    # Set final kept patient studies count
+    global_stats['final_kept_patient_studies'] = len(global_stats['kept_study_instance_uids'])
+    
+    # Calculate kept instances AFTER all exclusions (series-level and reference image exclusions)
+    global_stats['total_instances'] = files_examined - excluded_stats['excluded_instances_count']
+    
+    # Print final accounting breakdown
+    print(f"\nFinal File Accounting Breakdown:")
+    logging.info("")
+    logging.info("Final File Accounting Breakdown:")
+    print(f"  Total files found in directory scan: {total_files_found}")
+    logging.info(f"  Total files found in directory scan: {total_files_found}")
+    print(f"  Files excluded by extension: {files_excluded_by_extension}")
+    logging.info(f"  Files excluded by extension: {files_excluded_by_extension}")
+    print(f"  Potential files to examine: {len(all_files)}")
+    logging.info(f"  Potential files to examine: {len(all_files)}")
+    print(f"  Successfully read as DICOM: {files_examined}")
+    logging.info(f"  Successfully read as DICOM: {files_examined}")
+    print(f"  Skipped (non-DICOM or read errors): {files_skipped}")
+    logging.info(f"  Skipped (non-DICOM or read errors): {files_skipped}")
+    print(f"  Excluded after examination (all types): {excluded_stats['excluded_instances_count']}")
+    logging.info(f"  Excluded after examination (all types): {excluded_stats['excluded_instances_count']}")
+    print(f"  Final kept instances (total_instances): {global_stats['total_instances']}")
+    logging.info(f"  Final kept instances (total_instances): {global_stats['total_instances']}")
+    print(f"\nVerification: {files_examined} - {excluded_stats['excluded_instances_count']} = {global_stats['total_instances']}")
+    logging.info(f"")
+    logging.info(f"Verification: {files_examined} - {excluded_stats['excluded_instances_count']} = {global_stats['total_instances']}")
+    
+    # Verify CSV count matches expected total
+    expected_csv_count = files_excluded_by_extension + files_skipped + excluded_stats['excluded_instances_count']
+    print(f"CSV rows written: {excluded_files_count}")
+    logging.info(f"CSV rows written: {excluded_files_count}")
+    print(f"Expected: {files_excluded_by_extension} (extension) + {files_skipped} (non-DICOM) + {excluded_stats['excluded_instances_count']} (excluded after exam) = {expected_csv_count}")
+    logging.info(f"Expected: {files_excluded_by_extension} (extension) + {files_skipped} (non-DICOM) + {excluded_stats['excluded_instances_count']} (excluded after exam) = {expected_csv_count}")
+    
+    if excluded_files_count != expected_csv_count:
+        print(f"⚠️  WARNING: CSV count mismatch! Written: {excluded_files_count}, Expected: {expected_csv_count}")
+        logging.warning(f"CSV count mismatch! Written: {excluded_files_count}, Expected: {expected_csv_count}")
+    
+    # Check for accounting discrepancies (all files should be accounted for)
+    accounted_for = files_excluded_by_extension + files_examined + files_skipped
+    if accounted_for != total_files_found:
+        missing = total_files_found - accounted_for
+        print(f"\n⚠️  WARNING: Accounting discrepancy detected!")
+        logging.warning(f"Accounting discrepancy detected!")
+        print(f"  Total files found: {total_files_found}")
+        logging.warning(f"  Total files found: {total_files_found}")
+        print(f"  Accounted for (extension + examined + skipped): {accounted_for}")
+        logging.warning(f"  Accounted for (extension + examined + skipped): {accounted_for}")
+        print(f"  Missing from accounting: {missing} files")
+        logging.warning(f"  Missing from accounting: {missing} files")
+        print(f"  These files may have been silently dropped without proper logging.")
+        logging.warning(f"  These files may have been silently dropped without proper logging.")
     
     # Add patients that only have non-DICOM files (weren't in series_by_patient)
     for patient_id in non_dicom_files_by_patient.keys():
@@ -965,12 +1171,18 @@ def analyze_dicom_directory(root_dir):
                 }
             }
     
+    # Close CSV file
+    if csv_file:
+        csv_file.close()
+        print(f"Excluded files CSV saved to: {excluded_csv_path}")
+        print(f"Total excluded files logged: {excluded_files_count}")
+    
     return {
         'global_summary': global_stats,
         'patient_data': patient_data,
         'excluded_summary': excluded_stats,
         'excluded_patient_data': excluded_patient_data,
-        'excluded_files_log': excluded_files_log,
+        'excluded_files_count': excluded_files_count,
         'non_dicom_files_by_patient': non_dicom_files_by_patient
     }
 
@@ -991,6 +1203,7 @@ def format_results_as_json(results):
     formatted_global = {
         'total_patients': global_summary['total_patients'],
         'total_studies': global_summary['total_studies'],
+        'final_kept_patient_studies': global_summary['final_kept_patient_studies'],
         'total_series_checked': global_summary['total_series_checked'],
         'total_instances': global_summary['total_instances'],
     }
@@ -1177,24 +1390,42 @@ def print_summary(results):
     print("\n" + "="*80)
     print("GLOBAL SUMMARY")
     print("="*80)
+    logging.info("="*80)
+    logging.info("GLOBAL SUMMARY")
+    logging.info("="*80)
     print(f"Total Patients: {summary['total_patients']}")
+    logging.info(f"Total Patients: {summary['total_patients']}")
     print(f"Total Studies: {summary['total_studies']}")
+    logging.info(f"Total Studies: {summary['total_studies']}")
+    print(f"Final Kept Patient Studies: {summary['final_kept_patient_studies']}")
+    logging.info(f"Final Kept Patient Studies: {summary['final_kept_patient_studies']}")
     print(f"Total Series Checked: {summary['total_series_checked']}")
+    logging.info(f"Total Series Checked: {summary['total_series_checked']}")
     print(f"Total Instances: {summary['total_instances']}")
+    logging.info(f"Total Instances: {summary['total_instances']}")
     print("\nTag Occurrences:")
+    logging.info("")
+    logging.info("Tag Occurrences:")
     print("-" * 80)
+    logging.info("-" * 80)
     
     for tag_name in TAGS_TO_CHECK.keys():
         occurrences = summary[f'{tag_name}_occurrences']
         total = summary['total_series_checked']
         percentage = 100 * occurrences / total if total > 0 else 0
         print(f"  {tag_name}: {occurrences} / {total} ({percentage:.2f}%)")
+        logging.info(f"  {tag_name}: {occurrences} / {total} ({percentage:.2f}%)")
     
     print(f"\nUnique SOP Class UIDs found: {len(summary['sop_class_uids'])}")
+    logging.info(f"")
+    logging.info(f"Unique SOP Class UIDs found: {len(summary['sop_class_uids'])}")
     for uid in summary['sop_class_uids']:
         print(f"  {uid}")
+        logging.info(f"  {uid}")
     
     print("\n" + "="*80)
+    logging.info("")
+    logging.info("="*80)
 
 
 def print_excluded_summary(excluded_results):
@@ -1209,14 +1440,26 @@ def print_excluded_summary(excluded_results):
     print("\n" + "="*80)
     print("EXCLUDED SERIES SUMMARY")
     print("="*80)
+    logging.info("="*80)
+    logging.info("EXCLUDED SERIES SUMMARY")
+    logging.info("="*80)
     print(f"Total Series Examined: {summary['total_series_examined']}")
+    logging.info(f"Total Series Examined: {summary['total_series_examined']}")
     print(f"Total Series Excluded: {summary['total_series_excluded']}")
+    logging.info(f"Total Series Excluded: {summary['total_series_excluded']}")
     print(f"Total Series Kept: {summary['total_series_examined'] - summary['total_series_excluded']}")
+    logging.info(f"Total Series Kept: {summary['total_series_examined'] - summary['total_series_excluded']}")
     print(f"\nUnique Excluded Series: {len(summary['excluded_series_instance_uids'])}")
+    logging.info(f"")
+    logging.info(f"Unique Excluded Series: {len(summary['excluded_series_instance_uids'])}")
     print(f"Unique Excluded SOP Class UIDs: {len(summary['excluded_sop_class_uids'])}")
+    logging.info(f"Unique Excluded SOP Class UIDs: {len(summary['excluded_sop_class_uids'])}")
     print(f"Unique Kept SOP Class UIDs: {len(summary['kept_sop_class_uids'])}")
+    logging.info(f"Unique Kept SOP Class UIDs: {len(summary['kept_sop_class_uids'])}")
     
     print("\n" + "="*80)
+    logging.info("")
+    logging.info("="*80)
 
 
 def save_excluded_files_log(excluded_files_log, output_file):
@@ -1224,7 +1467,7 @@ def save_excluded_files_log(excluded_files_log, output_file):
     Save excluded files log to a CSV file with structured exclusion reasons.
     
     Args:
-        excluded_files_log: List of (file_path, patient_id, rationale_class, rationale_details, series_uid) tuples
+        excluded_files_log: List of (file_path, patient_id, rationale_class, rationale_details, series_uid, series_number, study_date) tuples
         output_file: Path to output CSV file
     """
     import csv
@@ -1233,11 +1476,11 @@ def save_excluded_files_log(excluded_files_log, output_file):
         writer = csv.writer(f)
         
         # Write header
-        writer.writerow(['File Path', 'PatientID', 'RationaleClass', 'RationaleDetails', 'SeriesInstanceUID'])
+        writer.writerow(['File Path', 'PatientID', 'RationaleClass', 'RationaleDetails', 'SeriesInstanceUID', 'SeriesNumber', 'StudyDate'])
         
         # Write each excluded file
-        for file_path, patient_id, rationale_class, rationale_details, series_uid in sorted(excluded_files_log):
-            writer.writerow([file_path, patient_id, rationale_class, rationale_details, series_uid])
+        for file_path, patient_id, rationale_class, rationale_details, series_uid, series_number, study_date in sorted(excluded_files_log):
+            writer.writerow([file_path, patient_id, rationale_class, rationale_details, series_uid, series_number, study_date])
     
     print(f"Excluded files log saved to: {output_file}")
     print(f"Total excluded files logged: {len(excluded_files_log)}")
@@ -1313,8 +1556,8 @@ def main(config_path='analyze_config.json'):
     print(f"Excluded patterns: {', '.join(EXCLUDED_SERIES_DESCRIPTIONS)}")
     print("\n")
     
-    # Analyze data
-    results = analyze_dicom_directory(data_directory)
+    # Analyze data (CSV is written during analysis for memory efficiency)
+    results = analyze_dicom_directory(data_directory, excluded_csv_path=excluded_files_list)
     
     # Format results for included series
     formatted_results = format_results_as_json(results)
@@ -1325,7 +1568,7 @@ def main(config_path='analyze_config.json'):
     # Save to files
     save_results(formatted_results, output_file)
     save_results(formatted_excluded_results, excluded_output_file)
-    save_excluded_files_log(results['excluded_files_log'], excluded_files_list)
+    # Note: excluded_files_list CSV already written during analyze_dicom_directory()
     
     # Print summaries
     print_summary(formatted_results)
