@@ -7,6 +7,10 @@ import json
 import jsonschema
 import logging
 import traceback
+import tempfile
+import zipfile
+import urllib.request
+import shutil
 # Import the centralized logger
 from luwak_logger import get_logger, setup_logger, log_project_stacktrace, shutdown_logging
 # Import custom exceptions
@@ -25,38 +29,117 @@ from utils import cleanup_gpu_memory
 
 def setup_deid_repo():
     logger = get_logger('setup_deid_repo')
-    
-    repo_url = "https://github.com/ZentaLabs/deid.git"
-    branch = "master"
-    repo_dir = os.path.expanduser("~/deid")  # Set repo_dir to the home directory
-
-    # Check if the repository is already cloned
-    if not os.path.exists(repo_dir):
-        logger.info("Cloning deid repository...")
-        subprocess.check_call(["git", "clone", "--branch", branch, repo_url, repo_dir])
+    # Set environment variable for deid's internal verbosity control
+    # deid library reads MESSAGELEVEL environment variable (1=INFO, 5=DEBUG)
+    if "MESSAGELEVEL" not in os.environ:
+        os.environ["MESSAGELEVEL"] = "1"
+        logger.debug("MESSAGELEVEL not set, defaulting to 1 (INFO)")
     else:
-        # Check if the repository is already up-to-date
-        logger.info("Checking for updates in deid repository...")
-        subprocess.check_call(["git", "-C", repo_dir, "fetch"])
-        status = subprocess.check_output(["git", "-C", repo_dir, "status", "--porcelain", "-b"])
-        if b"behind" in status:
-            logger.info("Updating deid repository...")
-            subprocess.check_call(["git", "-C", repo_dir, "pull"])
+        logger.debug(f"MESSAGELEVEL already set to {os.environ['MESSAGELEVEL']}")
 
-    if repo_dir not in sys.path:
-        sys.path.insert(0, repo_dir)
-    # Check if the repository is installed
+    # Use system temp directory with a specific subdirectory name
+    temp_base = tempfile.gettempdir()
+    repo_dir = os.path.join(temp_base, "luwak_deid_repo")
+    
+    # First, try to import deid to check if it's already available
     try:
         import deid
+        # Check where deid is installed from
+        deid_location = os.path.dirname(os.path.abspath(deid.__file__))
+        logger.info(f"deid package found at: {deid_location}")
+        
+        # If deid is from our temp directory, verify the directory still exists
+        if repo_dir in deid_location:
+            if os.path.exists(repo_dir):
+                logger.info("Using existing deid installation from temp directory")
+                return
+            else:
+                logger.warning("deid imported from temp directory that no longer exists, will reinstall")
+                # Remove from sys.modules to force reimport after installation
+                if 'deid' in sys.modules:
+                    del sys.modules['deid']
+        else:
+            # deid is installed elsewhere (system/user installation)
+            # We won't remove it, just install to temp directory and use sys.path priority
+            logger.info(f"deid found in system/user location: {deid_location}")
+            logger.info("Will install deid to temp directory and use that version (system installation will not be removed)")
+            # Remove from sys.modules to allow reimport after we set up temp directory version
+            if 'deid' in sys.modules:
+                del sys.modules['deid']
     except ImportError:
+        logger.info("deid package not found, will download and install...")
+    
+    zip_url = "https://github.com/ZentaLabs/deid/archive/refs/heads/master.zip"
+    zip_path = os.path.join(temp_base, "deid_master.zip")
+    
+    try:
+        # Download the zip file
+        logger.info(f"Downloading deid repository from {zip_url}...")
+        urllib.request.urlretrieve(zip_url, zip_path)
+        logger.info(f"Downloaded to {zip_path}")
+        
+        # Remove existing repo_dir if it exists to ensure clean installation
+        if os.path.exists(repo_dir):
+            logger.info(f"Removing existing directory: {repo_dir}")
+            shutil.rmtree(repo_dir)
+        
+        # Extract the zip file
+        logger.info(f"Extracting repository to temporary location...")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_base)
+        
+        # The extracted folder will be named "deid-master", rename it to our target
+        extracted_dir = os.path.join(temp_base, "deid-master")
+        if os.path.exists(extracted_dir):
+            os.rename(extracted_dir, repo_dir)
+            logger.info(f"Repository extracted to {repo_dir}")
+        else:
+            logger.error(f"Expected extracted directory not found: {extracted_dir}")
+            raise FileNotFoundError(f"Extracted directory not found: {extracted_dir}")
+        
+        # Clean up the zip file
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+            logger.debug("Cleaned up downloaded zip file")
+        
+        # Add to Python path at highest priority (position 0)
+        # This ensures our temp directory version is used instead of any system installation
+        if repo_dir not in sys.path:
+            sys.path.insert(0, repo_dir)
+        
+        # Install the repository
         logger.info("Installing deid repository...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", repo_dir])
-
-# Call the setup function before importing deid
-setup_deid_repo()
-
-from deid.config import DeidRecipe
-from deid.dicom import get_files, get_identifiers, replace_identifiers
+        logger.info("deid repository installed successfully")
+        
+        # Verify that the correct version will be imported
+        # Clear any cached imports first
+        if 'deid' in sys.modules:
+            del sys.modules['deid']
+        
+        # Now import and verify location
+        import deid
+        actual_location = os.path.dirname(os.path.abspath(deid.__file__))
+        if repo_dir in actual_location:
+            logger.info(f"✓ Verified: deid will be imported from temp directory: {actual_location}")
+        else:
+            logger.warning(f"⚠ Warning: deid imported from unexpected location: {actual_location}")
+            logger.warning(f"   Expected location: {repo_dir}")
+        
+    except Exception as e:
+        logger.error(f"Failed to setup deid repository: {e}")
+        # Clean up on failure
+        if os.path.exists(zip_path):
+            try:
+                os.remove(zip_path)
+            except:
+                pass
+        if os.path.exists(repo_dir):
+            try:
+                shutil.rmtree(repo_dir)
+            except:
+                pass
+        raise
 
 
 class LuwakAnonymizer:
@@ -165,6 +248,10 @@ class LuwakAnonymizer:
             self.logger.warning(f"Failed to initialize patient UID database: {e}")
             self.patient_uid_db = None
             self.persistent_uid_db = False
+        
+        # Setup deid repository before any operations that need it
+        self.logger.info("Setting up deid repository...")
+        setup_deid_repo()
         
         self.logger.info("Registering private tags from CSV...")
         # Register private tags from CSV
@@ -453,6 +540,9 @@ class LuwakAnonymizer:
         See conformance documentation:
         https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-3---4
         """
+        # Import DeidRecipe here, after deid has been set up
+        from deid.config import DeidRecipe
+        
         recipe_paths = []
         recipes_list = self.config.get('recipes')
         recipes_folder = self.config.get('recipesFolder')
