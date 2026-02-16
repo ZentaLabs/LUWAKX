@@ -27,6 +27,7 @@ EXCLUDED_IMAGE_TYPES = []
 MIN_SLICES_THRESHOLD = 3
 EXCLUDED_EXTENSIONS = set()
 EXCLUDED_SOP_CLASS_UIDS = set()
+EXCLUDED_SERIES_INSTANCE_UIDS = set()
 TAGS_TO_CHECK = {}
 
 
@@ -60,7 +61,7 @@ def load_config(config_path='analyze_config.json'):
     Returns:
         dict: Configuration dictionary with resolved absolute paths
     """
-    global EXCLUDED_SERIES_DESCRIPTIONS, EXCLUDED_IMAGE_TYPES, MIN_SLICES_THRESHOLD, EXCLUDED_EXTENSIONS, EXCLUDED_SOP_CLASS_UIDS, TAGS_TO_CHECK
+    global EXCLUDED_SERIES_DESCRIPTIONS, EXCLUDED_IMAGE_TYPES, MIN_SLICES_THRESHOLD, EXCLUDED_EXTENSIONS, EXCLUDED_SOP_CLASS_UIDS, EXCLUDED_SERIES_INSTANCE_UIDS, TAGS_TO_CHECK
     
     try:
         config_path = Path(config_path).resolve()
@@ -75,6 +76,7 @@ def load_config(config_path='analyze_config.json'):
         MIN_SLICES_THRESHOLD = config.get('min_slices_threshold', 3)
         EXCLUDED_EXTENSIONS = set(config.get('excluded_extensions', []))
         EXCLUDED_SOP_CLASS_UIDS = set(config.get('excluded_sop_class_uids', []))
+        EXCLUDED_SERIES_INSTANCE_UIDS = set(config.get('excluded_series_instance_uids', []))
         
         # Convert tags_to_check from list format to tuple format
         # Handle both hex strings (e.g., "0x0070") and integers
@@ -774,6 +776,36 @@ def analyze_dicom_directory(root_dir, excluded_csv_path=None):
             series_meta = series_metadata_map.get(patient_id, {}).get(series_uid, {})
             series_number = series_meta.get('series_number', '')
             study_date = series_meta.get('study_date', '')
+            
+            # Check if series should be excluded by SeriesInstanceUID (most efficient check - no file reading needed)
+            if series_uid in EXCLUDED_SERIES_INSTANCE_UIDS:
+                excluded_stats['total_series_excluded'] += 1
+                excluded_stats['excluded_series_instance_uids'].add(series_uid)
+                
+                if sop_class_uid:
+                    excluded_stats['excluded_sop_class_uids'].add(sop_class_uid)
+                
+                exclusion_details = f"Series Instance UID matches excluded list: {series_uid}"
+                
+                # Add all files from this series to excluded files log
+                for file_path in dicom_files:
+                    rel_path = str(file_path.relative_to(root_path))
+                    if csv_writer:
+                        csv_writer.writerow([rel_path, patient_id, "Excluded Series UID", exclusion_details, series_uid, series_number, study_date])
+                        excluded_files_count += 1
+                    excluded_stats['excluded_instances_count'] += 1
+                
+                # Store excluded series information
+                excluded_patient_data[patient_id]['excluded_series'].append({
+                    'series_instance_uid': series_uid,
+                    'series_description': series_description or '(no description)',
+                    'sop_class_uid': sop_class_uid or 'Unknown',
+                    'file_path': relative_file_path,
+                    'num_slices': num_slices,
+                    'exclusion_reason': exclusion_details
+                })
+                
+                continue
             
             # Check if series should be excluded by SOP Class UID
             series_excluded_by_sop_class = False

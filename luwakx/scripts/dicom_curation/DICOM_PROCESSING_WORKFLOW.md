@@ -50,6 +50,7 @@ Ensure your `analyze_config.json` is configured with all the options you want to
     ".json"
   ],
   "excluded_sop_class_uids": [],
+  "excluded_series_instance_uids": [],
   "min_slices_threshold": 3,
   "tags_to_check": {
     "GraphicAnnotationSequence": ["0x0070", "0x0001"],
@@ -160,6 +161,8 @@ Ensure your `analyze_config.json` is configured with all the options you want to
 - **`excluded_extensions`**: List of file extensions to skip during processing. Files with these extensions are not DICOM medical images and will be excluded. Examples: `.nii.gz` (NIfTI), `.nii` (NIfTI), `.json` (metadata), `.xml`, `.txt`, etc.
 
 - **`excluded_sop_class_uids`**: List of SOP Class UIDs to exclude. When any file in a series has a SOP Class UID matching this list, **all files in that entire series** will be excluded. This allows excluding entire series based on their imaging type (e.g., Secondary Capture, Enhanced CT Image Storage, etc.). Empty array `[]` means no exclusion by SOP Class UID. Example UIDs: `"1.2.840.10008.5.1.4.1.1.7"` (Secondary Capture).
+
+- **`excluded_series_instance_uids`**: List of specific Series Instance UIDs to exclude. When a series' SeriesInstanceUID matches any UID in this list, **all files in that entire series** will be excluded. This allows targeted exclusion of specific problematic series identified during manual review. Empty array `[]` means no exclusion by Series Instance UID.
 
 - **`min_slices_threshold`**: Minimum number of files required in a series for it to be included. The script groups files by **Series Instance UID** and counts how many files share that Series Instance UID. If the count is below this threshold, the entire series is excluded.
   
