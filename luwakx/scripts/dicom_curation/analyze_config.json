@@ -3,12 +3,18 @@
   "output_folder": "./output",
   "output_file": "included-DICOM-files-analysis.json",
   "excluded_output_file": "dicom-excluded-series-analysis.json",
-  "excluded_files_list": "excluded_files_log.txt",
+  "excluded_files_list": "excluded-files-log.csv",
   "log_file": "analyze-graphics-structured-content.log",
   "plot_pixel_data_file": "plot-pixel-data.log",
   "min_slices_threshold": 3,
-  "excluded_series_descriptions": [],
-  "excluded_image_types": [],
+  "excluded_series_descriptions": [
+    {"value": "localizer", "reason": "Non-diagnostic planning series"},
+    {"value": "scout", "reason": "Scout scan"}
+  ],
+  "excluded_image_types": [
+    {"value": ["DERIVED", "SECONDARY"], "reason": "Derived secondary images"},
+    {"value": ["MPR"], "reason": "Multiplanar reconstruction"}
+  ],
   "excluded_extensions": [
     ".json",
     ".md",
@@ -17,7 +23,12 @@
     ".pf",
     ".py"
   ],
-  "excluded_sop_class_uids": [],
+  "excluded_sop_class_uids": [
+    {"value": "1.2.840.10008.5.1.4.1.1.7", "reason": "Secondary Capture Image Storage"}
+  ],
+  "excluded_series_instance_uids": [
+    {"value": "1.2.3.4.5.6.7.8.9.0", "reason": "Test excluded series"}
+  ],
   "tags_to_check": {
     "GraphicAnnotationSequence": ["0x0070", "0x0001"],
     "CurveData": ["0x5000", "0x3000"],

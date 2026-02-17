@@ -39,18 +39,25 @@ Ensure your `analyze_config.json` is configured with all the options you want to
   "log_file": "analyze-graphics-structured-content.log",
   "plot_pixel_data_file": "plot-pixel-data.log",
   "excluded_series_descriptions": [
-    "LOCALIZER",
-    "Scout",
-    "Survey"
+    {"value": "LOCALIZER", "reason": "Positioning image"},
+    {"value": "Scout", "reason": "Positioning image"},
+    {"value": "Survey", "reason": "Positioning image"}
   ],
-  "excluded_image_types": [],
+  "excluded_image_types": [
+    {"value": ["DERIVED", "MIP"], "reason": "MIP reconstruction"},
+    {"value": ["DERIVED", "SECONDARY"], "reason": "Secondary reconstruction"}
+  ],
   "excluded_extensions": [
     ".nii.gz",
     ".nii",
     ".json"
   ],
-  "excluded_sop_class_uids": [],
-  "excluded_series_instance_uids": [],
+  "excluded_sop_class_uids": [
+    {"value": "1.2.840.10008.5.1.4.1.1.7", "reason": "Secondary Capture"}
+  ],
+  "excluded_series_instance_uids": [
+    {"value": "1.2.######", "reason": "Known problematic series"}
+  ],
   "min_slices_threshold": 3,
   "tags_to_check": {
     "GraphicAnnotationSequence": ["0x0070", "0x0001"],
@@ -83,55 +90,58 @@ Ensure your `analyze_config.json` is configured with all the options you want to
 - **`pixel_plot_log_file`**: Filename for the log from burned-in pixel detection script. Default: `plot-pixel-data.log`
 
 
-- **`excluded_series_descriptions`**: List of strings to match against the DICOM **SeriesDescription** tag using **case-insensitive substring matching**. If any excluded pattern appears anywhere in the series description, the entire series is excluded.
+- **`excluded_series_descriptions`**: List of dictionaries to match against the DICOM **SeriesDescription** tag using **case-insensitive exact matching**. The series description must exactly match (after lowercasing and stripping whitespace) one of the excluded values.
+  
+  **Configuration Format:**
+  ```json
+  "excluded_series_descriptions": [
+    {"value": "LOCALIZER", "reason": "Positioning image"},
+    {"value": "3-Plane Localizer", "reason": "Multi-plane positioning image"},
+    {"value": "Scout View Axial", "reason": "Scout image"}
+  ]
+  ```
+  
+  **Fields:**
+  - `value` (required): String to exactly match against SeriesDescription
+  - `reason` (optional): Human-readable explanation for why this series is excluded
   
   **How matching works:**
-  - **Not exact match** - the pattern can appear anywhere in the description
+  - **Exact match only** - the description must match the configured value exactly (after normalization)
   - **Case-insensitive** - "localizer", "LOCALIZER", "Localizer" all match
-  - **Substring match** - if the pattern is found within the description text, it matches
+  - **Whitespace normalized** - leading/trailing whitespace is stripped before comparison
   
   **Examples:**
   ```
-  Config: ["LOCALIZER", "Scout", "Dose Report"]
+  Config: [{"value": "LOCALIZER", "reason": "..."}, {"value": "Scout", "reason": "..."}]
   
-  ✓ EXCLUDED:
-    - "LOCALIZER"                    → matches "LOCALIZER"
-    - "3-Plane Localizer"            → matches "LOCALIZER" (substring)
-    - "Scout View Axial"             → matches "Scout" (substring)
-    - "CT Dose Report Series"        → matches "Dose Report" (substring)
-    - "localizer sagittal"           → matches "LOCALIZER" (case-insensitive)
-    - "LOCALIZER_THORAX"             → matches "LOCALIZER" (substring)
-    - "pre_localizer_scan"           → matches "LOCALIZER" (substring)
+  ✓ EXCLUDED (exact matches):
+    - "LOCALIZER"                    → matches "LOCALIZER" exactly
+    - "localizer"                    → matches "LOCALIZER" (case-insensitive)
+    - "  LOCALIZER  "                → matches "LOCALIZER" (whitespace stripped)
+    - "Scout"                        → matches "Scout" exactly
   
-  ✗ NOT EXCLUDED:
-    - "T1 MPRAGE Axial"              → no pattern found
-    - "CT Abdomen Contrast"          → no pattern found
-    - "LOCA"                         → no pattern found (pattern must be IN description, not vice versa)
-    - "Local Scan"                   → no pattern found (partial word doesn't match)
+  ✗ NOT EXCLUDED (not exact matches):
+    - "3-Plane Localizer"            → no exact match
+    - "Scout View Axial"             → no exact match
+    - "CT Dose Report Series"        → no exact match
+    - "LOCALIZER_THORAX"             → no exact match
+    - "pre_localizer_scan"           → no exact match
+    - "LOCA"                         → no exact match
   ```
 
-- **`excluded_image_types`**: Patterns to match against the DICOM **ImageType** tag using **case-insensitive substring matching with AND logic within patterns and OR logic between patterns**. Supports both flat lists and nested lists of patterns.
+- **`excluded_image_types`**: List of dictionaries to match against the DICOM **ImageType** tag using **case-insensitive substring matching with AND logic within patterns and OR logic between patterns**.
   
-  **Configuration Formats:**
+  **Configuration Format:**
+  ```json
+  "excluded_image_types": [
+    {"value": ["DERIVED", "MIP"], "reason": "MIP reconstruction"},
+    {"value": ["DERIVED", "SECONDARY"], "reason": "Secondary reconstruction"},
+  ]
+  ```
   
-  1. **Flat List (Single Pattern, AND Logic):**
-     ```json
-     "excluded_image_types": ["DERIVED", "SECONDARY"]
-     ```
-     Excludes series where ImageType contains BOTH "DERIVED" AND "SECONDARY"
-  
-  2. **List of Lists (Multiple Patterns, OR Logic Between Patterns):**
-     ```json
-     "excluded_image_types": [
-       ["DERIVED", "MIP"],
-       ["DERIVED", "SECONDARY"],
-       ["PRIMARY", "PROJECTION"]
-     ]
-     ```
-     Excludes series where ANY of these conditions is true:
-     - ImageType contains BOTH "DERIVED" AND "MIP", OR
-     - ImageType contains BOTH "DERIVED" AND "SECONDARY", OR
-     - ImageType contains BOTH "PRIMARY" AND "PROJECTION"
+  **Fields:**
+  - `value` (required): String or list of strings. For lists, ALL items must match (AND logic)
+  - `reason` (optional): Human-readable explanation for why this pattern is excluded
   
   **How matching works:**
   - **Within each pattern**: ALL items must be found (AND logic)
@@ -160,9 +170,37 @@ Ensure your `analyze_config.json` is configured with all the options you want to
 
 - **`excluded_extensions`**: List of file extensions to skip during processing. Files with these extensions are not DICOM medical images and will be excluded. Examples: `.nii.gz` (NIfTI), `.nii` (NIfTI), `.json` (metadata), `.xml`, `.txt`, etc.
 
-- **`excluded_sop_class_uids`**: List of SOP Class UIDs to exclude. When any file in a series has a SOP Class UID matching this list, **all files in that entire series** will be excluded. This allows excluding entire series based on their imaging type (e.g., Secondary Capture, Enhanced CT Image Storage, etc.). Empty array `[]` means no exclusion by SOP Class UID. Example UIDs: `"1.2.840.10008.5.1.4.1.1.7"` (Secondary Capture).
+- **`excluded_sop_class_uids`**: List of dictionaries containing SOP Class UIDs to exclude. When any file in a series has a SOP Class UID matching this list, **all files in that entire series** will be excluded. This allows excluding entire series based on their imaging type (e.g., Secondary Capture, Enhanced CT Image Storage, etc.).
+  
+  **Configuration Format:**
+  ```json
+  "excluded_sop_class_uids": [
+    {"value": "1.2.840.10008.5.1.4.1.1.7", "reason": "Secondary Capture - not original imaging data"},
+    {"value": "1.2.840.10008.5.1.4.1.1.88.11", "reason": "Basic Text SR - structured report"}
+  ]
+  ```
+  
+  **Fields:**
+  - `value` (required): SOP Class UID string
+  - `reason` (optional): Human-readable explanation for why this SOP Class is excluded
+  
+  Empty array `[]` means no exclusion by SOP Class UID.
 
-- **`excluded_series_instance_uids`**: List of specific Series Instance UIDs to exclude. When a series' SeriesInstanceUID matches any UID in this list, **all files in that entire series** will be excluded. This allows targeted exclusion of specific problematic series identified during manual review. Empty array `[]` means no exclusion by Series Instance UID.
+- **`excluded_series_instance_uids`**: List of dictionaries containing specific Series Instance UIDs to exclude. When a series' SeriesInstanceUID matches any UID in this list, **all files in that entire series** will be excluded. This allows targeted exclusion of specific problematic series identified during manual review.
+  
+  **Configuration Format:**
+  ```json
+  "excluded_series_instance_uids": [
+    {"value": "1.2.######", "reason": "Corrupted series identified during QA"},
+    {"value": "1.2.#####3", "reason": "Series with annotation artifacts"}
+  ]
+  ```
+  
+  **Fields:**
+  - `value` (required): Series Instance UID string
+  - `reason` (optional): Human-readable explanation for why this specific series is excluded
+  
+  Empty array `[]` means no exclusion by Series Instance UID.
 
 - **`min_slices_threshold`**: Minimum number of files required in a series for it to be included. The script groups files by **Series Instance UID** and counts how many files share that Series Instance UID. If the count is below this threshold, the entire series is excluded.
   

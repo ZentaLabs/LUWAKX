@@ -22,7 +22,7 @@ import sys
 
 
 # Global configuration variables (loaded from config file)
-EXCLUDED_SERIES_DESCRIPTIONS = []
+EXCLUDED_SERIES_DESCRIPTIONS = set()
 EXCLUDED_IMAGE_TYPES = []
 MIN_SLICES_THRESHOLD = 3
 EXCLUDED_EXTENSIONS = set()
@@ -50,6 +50,27 @@ def orientations_equal(orient1, orient2, tolerance=1e-5):
     return all(abs(a - b) < tolerance for a, b in zip(orient1, orient2))
 
 
+def extract_values(config_list):
+    """Extract values from list of dictionaries with 'value' key.
+    
+    Configuration format: [{"value": "value1", "reason": "..."}, ...]
+    The 'reason' field is optional.
+    
+    Args:
+        config_list: List of dictionaries with 'value' key
+    
+    Returns:
+        list: Extracted values
+    """
+    if not config_list:
+        return []
+    result = []
+    for item in config_list:
+        if isinstance(item, dict) and 'value' in item:
+            result.append(item['value'])
+    return result
+
+
 def load_config(config_path='analyze_config.json'):
     """
     Load configuration from JSON file.
@@ -71,12 +92,16 @@ def load_config(config_path='analyze_config.json'):
             config = json.load(f)
         
         # Load configuration values
-        EXCLUDED_SERIES_DESCRIPTIONS = config.get('excluded_series_descriptions', [])
-        EXCLUDED_IMAGE_TYPES = config.get('excluded_image_types', [])
+        # Each exclusion list must use dictionary format:
+        # [{"value": "value1", "reason": "..."}, ...]
+        # The 'reason' field is optional but 'value' is required.
+        
+        EXCLUDED_SERIES_DESCRIPTIONS = set(val.lower() for val in extract_values(config.get('excluded_series_descriptions', [])))
+        EXCLUDED_IMAGE_TYPES = extract_values(config.get('excluded_image_types', []))
         MIN_SLICES_THRESHOLD = config.get('min_slices_threshold', 3)
         EXCLUDED_EXTENSIONS = set(config.get('excluded_extensions', []))
-        EXCLUDED_SOP_CLASS_UIDS = set(config.get('excluded_sop_class_uids', []))
-        EXCLUDED_SERIES_INSTANCE_UIDS = set(config.get('excluded_series_instance_uids', []))
+        EXCLUDED_SOP_CLASS_UIDS = set(extract_values(config.get('excluded_sop_class_uids', [])))
+        EXCLUDED_SERIES_INSTANCE_UIDS = set(extract_values(config.get('excluded_series_instance_uids', [])))
         
         # Convert tags_to_check from list format to tuple format
         # Handle both hex strings (e.g., "0x0070") and integers
@@ -184,10 +209,9 @@ def should_exclude_series(series_description, num_slices, image_type=None):
     
     series_desc_lower = series_description.lower().strip()
     
-    # Check against excluded descriptions
-    for excluded in EXCLUDED_SERIES_DESCRIPTIONS:
-        if excluded.lower() in series_desc_lower:
-            return True
+    # Check against excluded descriptions (exact match)
+    if series_desc_lower in EXCLUDED_SERIES_DESCRIPTIONS:
+        return True
     
     # Check against excluded image types
     if image_type and EXCLUDED_IMAGE_TYPES:
