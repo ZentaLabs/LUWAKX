@@ -44,6 +44,9 @@ class DefaceService:
         if self.external_mask_paths:
             self.external_mask_paths = [os.path.abspath(m) for m in self.external_mask_paths]
         
+        # Physical block size for pixelation (in mm)
+        self.physical_block_size_mm = config.get('physicalFacePixelationSizeMm', 8.5)
+        
         # Track series counter for external mask indexing
         self._series_counter = 0
     
@@ -150,7 +153,7 @@ class DefaceService:
         
         # Apply pixelation to create defaced volume
         try:
-            image_defaced = defacer.pixelate_face(image, image_face_segmentation)
+            image_defaced = defacer.pixelate_face(image, image_face_segmentation, target_block_size_mm=self.physical_block_size_mm)
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)

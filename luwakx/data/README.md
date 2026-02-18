@@ -195,6 +195,13 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
         }
       },
       "additionalProperties": false
+    },
+    "physicalFacePixelationSizeMm": {
+      "type": "number",
+      "description": "Target block size in millimeters for face pixelation during defacing. Controls the resolution of pixelation blocks, with larger values providing stronger anonymization. Default 8.5mm works well across different resolutions.",
+      "default": 8.5,
+      "minimum": 1.0,
+      "examples": [8.5, 10.0, 5.0]
     }
   },
   "required": ["inputFolder", "outputDeidentifiedFolder", "outputPrivateMappingFolder", "recipesFolder", "recipes"],

@@ -92,6 +92,13 @@
       "description": "Path to folder for analysis cache databases (patient_uid.db and llm_cache.db).\nIf specified and folder exists with databases, they will be loaded and updated; if not, new databases will be created.\nDatabases persist across anonymization runs to ensure consistent mappings.\nIf not specified, temporary databases are created in the private mapping folder and deleted after processing.",
       "examples": ["./analysis_cache", "/var/data/luwak/cache"]
     },
+    "physicalFacePixelationSizeMm": {
+      "type": "number",
+      "description": "Target block size in millimeters for face pixelation during defacing. Controls the resolution of pixelation blocks, with larger values providing stronger anonymization. Default 8.5mm works well across different resolutions.",
+      "default": 8.5,
+      "minimum": 1.0,
+      "examples": [8.5, 10.0, 5.0]
+    },
     "testOptions": {
       "type": "object",
       "description": "Options for testing, including mask defacer paths.",

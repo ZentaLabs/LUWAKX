@@ -214,6 +214,8 @@ The defacing pipeline processes DICOM series through four main stages while main
 
 **Step 3: Pixelation**
 - Applies pixelation algorithm to face-segmented regions using nearest-neighbor downsampling/upsampling
+- Uses configurable physical block size (default 8.5mm, configurable via `physicalFacePixelationSizeMm` in config)
+- Block size determines the resolution of pixelation: larger values provide stronger anonymization
 - All resampling operations use identity transform with explicit preservation of spatial metadata:
   - `outputOrigin=image.GetOrigin()` (preserves Image Position Patient)
   - `outputDirection=image.GetDirection()` (preserves Image Orientation Patient)
@@ -245,6 +247,17 @@ To add the defacing option to the deidentification pipeline the correct recipe m
   "recipes": ["clean_recognizable_visual_features"]
 }
 ```
+
+**Configure Pixelation Block Size:**
+The physical block size for face pixelation can be customized (default: 8.5mm):
+
+```json
+{
+  "physicalFacePixelationSizeMm": 8.5
+}
+```
+
+This parameter controls the resolution of pixelation blocks. Larger values provide stronger anonymization but may affect diagnostic image quality. The default value of 8.5mm works well across different resolutions.
 
 #### 4.1.5 Conditional Processing
 Defacing is only performed when:
