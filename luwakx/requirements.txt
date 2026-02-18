@@ -31,3 +31,4 @@ typing-inspection
 typing_extensions
 tzdata
 moosez
+opencv-python
