@@ -839,7 +839,7 @@ def generate_retain_patient_characteristics_profile(final_df, doc_refs_dict):
     df = final_df.copy()
     
     # Ensure required columns exist
-    required_cols = ['Rtn. Pat. Chars. Opt.', 'Name', 'TCIA element_sig_pattern', 'Group', 'Element']
+    required_cols = ['Rtn. Pat. Chars. Opt.', 'Name', 'TCIA element_sig_pattern', 'Group', 'Element', 'Final CTP Script']
     for col in required_cols:
         if col not in df.columns:
             print(f"Warning: Required column '{col}' not found in DataFrame")
@@ -855,13 +855,26 @@ def generate_retain_patient_characteristics_profile(final_df, doc_refs_dict):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
         
         if profile == DICOMStandardActionCode.K_KEEP.value:
-            # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
-            df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'keep'
-            doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep")
+            # If tag is Patient Age (0010,1010), assign custom function
+            group = str(row['Group'])
+            element = str(row['Element'])
+            if group == '0010' and element == '1010':
+                df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'func:check_patient_age'
+                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#custom-patient-age")
+            else:
+                # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
+                df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'keep'
+                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep")
         elif profile == DICOMStandardActionCode.C_CLEAN.value:
-            # clean_manually action requires manual review - see: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
-            df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'clean_manually'
-            doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action")
+            final_ctp_script = str(row.get('Final CTP Script', '')).strip()
+            if '@remove()' in final_ctp_script:
+                # we perfrom the same action as TCIA
+                df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'remove'
+                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#remove-action-from-final-ctp-script")
+            else:
+                # TCIA keeps these tags, but we check with the LLM for PHI for safety
+                df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'func:clean_descriptors_with_llm'
+                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#clean-descriptors-with-llm")
         elif profile == "":
             continue
         else:
@@ -1005,9 +1018,9 @@ def retain_device_id_option(df, doc_refs_dict):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
         if profile == DICOMStandardActionCode.C_CLEAN.value:
-            # clean_manually action requires manual review - see: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
-            df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'clean_manually'
-            doc_refs_dict[idx].append("Retain Device ID: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action")
+            # Use LLM-based cleaning for device ID
+            df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'func:clean_descriptors_with_llm'
+            doc_refs_dict[idx].append("Retain Device ID: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#clean-descriptors-with-llm")
         elif profile == DICOMStandardActionCode.K_KEEP.value:
             # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
             df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'keep'

@@ -100,7 +100,9 @@ class LuwakAnonymizer:
         # Initialize LLM cache if enabled
         self.llm_cache = None
         self.persistent_llm_cache = False  # Track if LLM cache should persist
-        if 'clean_descriptors' in self.config.get('recipes', []):
+        # These recipes can all trigger func:clean_descriptors_with_llm calls
+        _RECIPES_REQUIRING_LLM = {'clean_descriptors', 'retain_patient_chars', 'retain_device_id'}
+        if set(self.config.get('recipes', [])) & _RECIPES_REQUIRING_LLM:
             try:
                 cache_folder = self.config.get('analysisCacheFolder')
                 if cache_folder:
@@ -128,7 +130,7 @@ class LuwakAnonymizer:
                 self.llm_cache = None
                 self.persistent_llm_cache = False
         else:
-            self.logger.info("LLM caching disabled by configuration or no LLM calls requested")
+            self.logger.info("LLM caching disabled: none of the selected recipes require LLM calls")
         
         # Initialize patient UID database
         self.patient_uid_db = None
@@ -403,7 +405,8 @@ class LuwakAnonymizer:
             self.config['analysisCacheFolder'] = cache_folder
             self.logger.info(f"  Analysis cache folder: {cache_folder}")
             self.logger.info(f"    - Patient UID database: {os.path.join(cache_folder, 'patient_uid.db')}")
-            if 'clean_descriptors' in self.config.get('recipes', []):
+            _recipes_requiring_llm = {'clean_descriptors', 'retain_patient_chars', 'retain_device_id'}
+            if set(self.config.get('recipes', [])) & _recipes_requiring_llm:
                 self.logger.info(f"    - LLM cache database: {os.path.join(cache_folder, 'llm_cache.db')}")
         
         # Resolve customTags paths relative to config file

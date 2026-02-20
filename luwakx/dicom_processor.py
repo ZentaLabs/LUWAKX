@@ -101,6 +101,7 @@ class DicomProcessor:
             items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
             items[item]["is_tag_private"] = self.is_tag_private
             items[item]["is_curve_or_overlay_tag"] = self.is_curve_or_overlay_tag
+            items[item]["check_patient_age"] = self.check_patient_age
         
         # 4. Setup progress handler to redirect deid.bot output to logger
         progress_handler = None
@@ -774,6 +775,56 @@ class DicomProcessor:
                 self.logger.private(f"Removed private tag {field.element.tag} with value: {field.element.value}")
             return True
         return False
+
+    def check_patient_age(self, dicom, value, field, item):
+        """Check Patient Age tag (0010,1010) and return 90 if age > 89, else original value.
+        
+        Args:
+            dicom: PyDicom dataset object containing DICOM data
+            value: Recipe string or value from recipe processing
+            field: DICOM field element containing tag information
+            item: Item identifier from deid processing
+        
+        Returns:
+            str: '90' if Patient Age > 89, else original value
+        
+        See conformance documentation:
+        - https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md
+        """
+        age_value = getattr(field.element, 'value', None)
+        if not age_value:
+            self.logger.debug(f"Patient Age tag {field.element.tag} is empty or not filled.")
+            return ""
+        age_str = str(age_value)
+        # Patient Age is usually formatted as nnnD, nnnW, nnnM, or nnnY
+        if age_str.endswith("Y"):
+            try:
+                age_val = int(age_str[:-1])
+                if age_val > 89:
+                    self.logger.private(f"Patient Age tag {field.element.tag} value {age_str} replaced with '90Y'")
+                    return "090Y"
+                else:
+                    return age_str
+            except Exception:
+                warn_key = "patient_age_format_invalid"
+                if warn_key not in self.warned_non_modified_tags:
+                    self.warned_non_modified_tags.add(warn_key)
+                    series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+                    self.logger.warning(
+                        f"Patient Age tag {field.element.tag} format not recognized. "
+                        f"Please manually check the validity of this tag. Series: {series_info}"
+                    )
+                return age_str
+        else:
+            warn_key = "patient_age_format_invalid"
+            if warn_key not in self.warned_non_modified_tags:
+                self.warned_non_modified_tags.add(warn_key)
+                series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+                self.logger.warning(
+                    f"Patient Age tag {field.element.tag} format not recognized. "
+                    f"Please manually check the validity of this tag. Series: {series_info}"
+                )
+            return age_value
     
     def is_curve_or_overlay_tag(self, dicom, value, field, item):
         """Check if a DICOM tag is Curve Data, Overlay Data, or Overlay Comments.

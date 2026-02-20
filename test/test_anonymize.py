@@ -56,6 +56,11 @@ class TestAnonymizeScript(unittest.TestCase):
             shutil.rmtree(self.test_output_dir)
         os.makedirs(self.test_output_dir, exist_ok=True)
 
+        # Initialize logger
+        log_file_path = os.path.join(self.test_output_dir, 'luwak_test.log')
+        setup_logger(log_level='INFO', log_file=log_file_path, console_output=False)
+        self.logger = get_logger('test_anonymize')
+
         # Remove patient UID database file to avoid stale prefix
         private_mapping_folder = os.path.join(self.test_output_dir, "private")
         uid_db_file = os.path.join(private_mapping_folder, "patient_uid.db")
@@ -138,11 +143,6 @@ class TestAnonymizeScript(unittest.TestCase):
         # Output mapping folder
         output_private_mapping_folder = os.path.join(output_folder, "private")
         
-        # Setup logger with the actual output and recipe paths
-        log_file_path = os.path.join(self.test_output_dir, 'luwak_test.log')
-        os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
-        setup_logger(log_level='INFO', log_file=log_file_path, console_output=False)
-        self.logger = get_logger('test_anonymize')
         self.logger.info(f"Setting up test configuration with output: {output_folder}, recipes: {recipes_folder}")
         
         # Fill in all config keys
@@ -941,7 +941,164 @@ class TestAnonymizeScript(unittest.TestCase):
             os.unlink(config_path)
             self.logger.info("Patient ID generation batch test completed and config cleaned up")
 
-        
+
+    def test_check_patient_age_method(self):
+        """Test the check_patient_age method directly: 60Y and 89Y are kept, 91Y is capped to 90Y."""
+        print("Test check_patient_age method: 60Y kept, 89Y kept, 91Y capped to 90Y")
+
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "File `00000001.dcm` not found.")
+        original_ds = pydicom.dcmread(original_file)
+
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile", "retain_patient_chars"],
+        )
+
+        try:
+            self.logger.info("Starting check_patient_age method test")
+            anonymizer = LuwakAnonymizer(config_path)
+
+            processor = DicomProcessor(
+                config=anonymizer.config,
+                logger=anonymizer.logger,
+                llm_cache=None,
+            )
+
+            # Set a mock series (required by warning logging paths in check_patient_age)
+            mock_series = type('MockSeries', (), {
+                'anonymized_series_uid': 'test_series_uid',
+                'anonymized_study_uid': 'test_study_uid',
+                'anonymized_patient_id': 'test_patient_id',
+            })()
+            processor.series = mock_series
+
+
+            # 60Y: under threshold → keep original
+            mock_field_60 = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'AS',
+                    'tag': pydicom.tag.Tag(0x0010, 0x1010),
+                    'value': "060Y"
+                })()
+            })()
+            result_60 = processor.check_patient_age(original_ds, "func:check_patient_age", mock_field_60, "item1")
+            self.assertEqual(result_60, "060Y", f"60Y should be kept as '060Y', got '{result_60}'")
+            self.logger.info(f"\u2713 PatientAge 060Y \u2192 {result_60} (kept)")
+
+            # 89Y: at threshold boundary → keep original
+            mock_field_89 = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'AS',
+                    'tag': pydicom.tag.Tag(0x0010, 0x1010),
+                    'value': "089Y"
+                })()
+            })()
+            result_89 = processor.check_patient_age(original_ds, "func:check_patient_age", mock_field_89, "item1")
+            self.assertEqual(result_89, "089Y", f"89Y should be kept as '089Y', got '{result_89}'")
+            self.logger.info(f"\u2713 PatientAge 089Y \u2192 {result_89} (kept)")
+
+            # 91Y: over threshold → cap to 90Y
+            mock_field_91 = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'AS',
+                    'tag': pydicom.tag.Tag(0x0010, 0x1010),
+                    'value': "091Y"
+                })()
+            })()
+            result_91 = processor.check_patient_age(original_ds, "func:check_patient_age", mock_field_91, "item1")
+            self.assertEqual(result_91, "090Y", f"91Y should be capped to '90Y', got '{result_91}'")
+            self.logger.info(f"\u2713 PatientAge 091Y \u2192 {result_91} (capped to 90Y)")
+
+            # Empty value → return empty string
+            mock_field_empty = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'AS',
+                    'tag': pydicom.tag.Tag(0x0010, 0x1010),
+                    'value': ""
+                })()
+            })()
+            result_empty = processor.check_patient_age(original_ds, "func:check_patient_age", mock_field_empty, "item1")
+            self.assertEqual(result_empty, "", f"Empty age should return '', got '{result_empty}'")
+            self.logger.info(f"\u2713 PatientAge (empty) \u2192 '{result_empty}'")
+
+            self.logger.info("All check_patient_age method tests passed!")
+            self.logger.info(f"    - 060Y \u2192 '{result_60}' (kept)")
+            self.logger.info(f"    - 089Y \u2192 '{result_89}' (kept)")
+            self.logger.info(f"    - 091Y \u2192 '{result_91}' (capped to 90Y)")
+            self.logger.info(f"    - (empty) \u2192 '{result_empty}'")
+
+        finally:
+            os.unlink(config_path)
+            self.logger.info("check_patient_age method test completed and config cleaned up")
+
+    def test_retain_patient_chars_recipe(self):
+        """Test that basic_profile + retain_patient_chars correctly handles PatientAge and Clean tags:
+        ages <= 89Y are kept unchanged, ages > 89Y are capped to 90Y."""
+        print("Test patient age and clean tags with basic_profile + retain_patient_chars recipe")
+
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "File `00000001.dcm` not found.")
+        original_ds = pydicom.dcmread(original_file)
+
+        # Create a temp input directory with 3 DICOM files, each with a different PatientAge
+        age_input_dir = os.path.join(self.test_output_dir, "age_test_input")
+        os.makedirs(age_input_dir, exist_ok=True)
+
+        # (filename, age set on input file, expected age in output)
+        test_cases = [
+            ("age_60.dcm", "060Y", "060Y"),  # 60Y <= 89 → kept
+            ("age_89.dcm", "089Y", "089Y"),  # 89Y == 89 → kept
+            ("age_91.dcm", "091Y", "090Y"),   # 91Y > 89 → capped to 90Y
+        ]
+
+        for filename, input_age, _ in test_cases:
+            ds = original_ds.copy()
+            ds.PatientAge = input_age
+            ds.PreMedication = "Jonny"  # VR=LO, example value
+            ds.SpecialNeeds = "None"    # VR=LO, example value
+            ds.save_as(os.path.join(age_input_dir, filename))
+            self.logger.info(f"Created test file {filename} with PatientAge={input_age}, PreMedication={ds.PreMedication}, SpecialNeeds={ds.SpecialNeeds}")
+        config_path = self.create_test_config(
+            input_folder=age_input_dir,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile", "retain_patient_chars"],
+            analysisCacheFolder=self.llm_cache_folder
+        )
+
+        try:
+            self.logger.info("Starting patient age integration test")
+            anonymizer = LuwakAnonymizer(config_path)
+            coordinator = anonymizer.anonymize()
+
+            for filename, input_age, expected_age in test_cases:
+                input_file = os.path.join(age_input_dir, filename)
+                output_file = self.get_output_path_for_file(coordinator, input_file)
+
+                self.assertIsNotNone(output_file, f"Anonymized file {filename} not found in output")
+                anon_ds = pydicom.dcmread(output_file)
+
+                actual_age = str(anon_ds.PatientAge) if hasattr(anon_ds, 'PatientAge') and anon_ds.PatientAge else ""
+                self.assertEqual(actual_age, expected_age,
+                    f"PatientAge for {filename}: expected '{expected_age}', got '{actual_age}'")
+                self.logger.info(f"\u2713 PatientAge {input_age} \u2192 {actual_age} (expected: {expected_age})")
+
+                # Check that PreMedication and SpecialNeeds are removed after deidentification using assertNotIn
+                self.assertNotIn(pydicom.tag.Tag(0x00400012), anon_ds,
+                    f"Unexpected tag PreMedication (0040,0012) found in file {filename} after deidentification.")
+                self.assertNotIn(pydicom.tag.Tag(0x00380050), anon_ds,
+                    f"Unexpected tag SpecialNeeds (0038,0050) found in file {filename} after deidentification.")
+
+            self.logger.info("Patient age integration test completed successfully!")
+
+        finally:
+            os.unlink(config_path)
+            if os.path.exists(age_input_dir):
+                shutil.rmtree(age_input_dir)
+            self.logger.info("Patient age integration test completed and config cleaned up")
+
+
 if __name__ == "__main__":
     unittest.main()
 
