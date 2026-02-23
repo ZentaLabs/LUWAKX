@@ -1424,6 +1424,10 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 - All paths can be absolute or relative to the config file location
 - `~` in paths is expanded to user home directory
 
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `keepTempFiles` | boolean | false | If `true`, temporary directories created during processing (`temp_organized_input`, `temp_defaced_organized`) are retained after the workflow completes. Useful for step-by-step validation of the deidentification pipeline. |
+
 **Deidentification Options:**
 
 | Option | Type | Default | Description |
@@ -1431,6 +1435,7 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 | `projectHashRoot` | string | "myproject2025" | Root hash for deterministic anonymization across project (required for HMAC-based anonymization) |
 | `maxDateShiftDays` | integer | 1095 | Maximum days for date shifting (3 years default) |
 | `patientIdPrefix` | string | "Zenta" | Prefix for generated patient IDs (e.g., "Zenta000001") |
+| `physicalFacePixelationSizeMm` | number | 8.5 | Physical block size (in mm) for face pixelation during defacing. |
 
 **Database and Cache Options:**
 

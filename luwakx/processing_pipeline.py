@@ -513,8 +513,22 @@ class ProcessingPipeline:
     def cleanup(self) -> None:
         """Clean up temporary directories created during processing.
         
-        Renamed from cleanup_temp_directories for consistency.
+        
+        If the config option 'keepTempFiles' is set to True, temporary directories
+        (temp_organized_input, temp_defaced_organized) are retained after processing
+        to allow step-by-step validation of the deidentification pipeline.
         """
+        if self.config.get('keepTempFiles', False):
+            if self.logger:
+                self.logger.info(
+                    f"Worker {self.worker_id}: Skipping cleanup of temporary directories "
+                    f"(keepTempFiles=True). Temp dirs retained for validation:\n"
+                    f"  organized: {self.organized_temp_dir}\n"
+                    f"  defaced:   {self.defaced_temp_dir}"
+                )
+            self.current_stage = ProcessingStage.CLEANUP
+            return
+
         if self.logger:
             self.logger.info(f"Worker {self.worker_id}: Cleaning up temporary directories")
         

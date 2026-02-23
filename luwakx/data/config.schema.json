@@ -99,6 +99,11 @@
       "minimum": 1.0,
       "examples": [8.5, 10.0, 5.0]
     },
+    "keepTempFiles": {
+      "type": "boolean",
+      "description": "If true, temporary directories created during processing (temp_organized_input, temp_defaced_organized) are retained after the workflow completes. Useful for step-by-step validation of the deidentification pipeline.",
+      "default": false
+    },
     "testOptions": {
       "type": "object",
       "description": "Options for testing, including mask defacer paths.",

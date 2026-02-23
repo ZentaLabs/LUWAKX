@@ -132,6 +132,23 @@ class TestConfigOptions(unittest.TestCase):
         anonymizer = LuwakAnonymizer(config_path)
         self.assertEqual(anonymizer.config["patientIdPrefix"], "CustomPrefix")
 
+    def test_keep_temp_files(self):
+        config_path = self.make_config({"keepTempFiles": True})
+        anonymizer = LuwakAnonymizer(config_path)
+        self.assertTrue(anonymizer.config["keepTempFiles"])
+
+    def test_keep_temp_files_default(self):
+        config_path = self.make_config()
+        anonymizer = LuwakAnonymizer(config_path)
+        # Should default to False
+        self.assertIn("keepTempFiles", anonymizer.config)
+        self.assertFalse(anonymizer.config["keepTempFiles"])
+
+    def test_physical_face_pixelation_size_mm_custom(self):
+        config_path = self.make_config({"physicalFacePixelationSizeMm": 12.3})
+        anonymizer = LuwakAnonymizer(config_path)
+        self.assertEqual(anonymizer.config["physicalFacePixelationSizeMm"], 12.3)
+
     def test_patient_id_prefix_default(self):
         # When not specified, should default to 'Zenta'
         config_path = self.make_config()

@@ -56,6 +56,7 @@ Create a JSON configuration file with the following structure:
 - **`excludedTagsFromParquet`**: List of DICOM tags to exclude from Parquet export (default: ["(7FE0,0010)"])
 - **`logLevel`**: Logging level - PRIVATE, DEBUG, INFO, WARNING, ERROR (default: "INFO")
 - **`physicalFacePixelationSizeMm`**: Physical block size (in mm) for face pixelation during defacing (default: 8.5)
+- **`keepTempFiles`**: If `true`, temporary directories created during processing (`temp_organized_input`, `temp_defaced_organized`) are retained after the workflow completes. Useful for step-by-step validation of the deidentification pipeline. (default: false)
 
 #### LLM Integration Parameters
 
