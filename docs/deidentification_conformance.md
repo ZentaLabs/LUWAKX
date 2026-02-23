@@ -602,7 +602,7 @@ REPLACE (0010,0020) func:generate_patient_id
 
 #### 5.3.7 LLM Descriptor Cleaning `func:clean_descriptors_with_llm`
 
-**Purpose:** Remove PHI/PII from textual descriptors using open-source on-premise large language models. This module is intended to automatically detect PHI/PII in free-text and annotation fields that are often manually edited by technicians and operators. **Example:** Study/Series Description with free-text "CT scan for John Doe".
+**Purpose:** Remove PHI/PII from textual descriptors using open-source on-premise large language models. This module is intended to automatically detect PHI/PII in free-text, annotation fields, patient characteristics and device information, that are often manually edited by technicians and operators. **Example:** Study/Series Description with free-text "CT scan for John Doe".
 **Note:** 
 This module is intended to be used with open-source LLMs (e.g., gpt-oss, llama3, qwen) that are running locally on-premise so that sensitive DICOM tag data is not sent to external cloud infrastructure.
 
@@ -613,7 +613,7 @@ While Luwak theoretically allows to use an OpenAI API key for proprietary OpenAI
 - Uses a binary classifier that returns 0 (no PHI/PII) or 1 (PHI/PII detected)
 - Caches results in shared SQLite database to avoid redundant LLM calls
 - If PHI detected (result = 1): attempts to delete the tag entirely from the DICOM dataset; if deletion fails, replaces with "ANONYMIZED"
-- If no PHI detected (result = 0): keeps the original text value unchanged
+- If no PHI detected (result = 0): keeps the original text value unchanged and logs a warning requesting manual verification.
 - Thread-safe for parallel processing with shared cache
 
 **Implementation:** `DicomProcessor.clean_descriptors_with_llm()`
@@ -694,6 +694,26 @@ REPLACE (0008,0012) func:set_fixed_datetime
 **Current limitations**
 - These dummy values will be assigned to all the patients, all series and all studies. This might create issues to 4D data loading and some DICOM viewer. This action is specified only for the Basic Profile, so if you don't want to have these issues, combine the profile with other options that keep/or shift the dates consistently (see [§6](#6-deidentification-recipe-creation-pipeline-stage-3---4) ).
 
+#### 5.3.9 Patient Age Handling `func:check_patient_age`
+
+**Purpose:** Ensure patient age is handled according to profile requirements, with custom logic for age retention and deidentification.
+
+**Method:**
+- Replaces or keeps the value of patient age tag ((0010,1010) PatientAge) depending on its original value:
+  - If the PatientAge value is missing (empty), the function returns an empty string.
+  - If the format is non-standard, the function returns the original value and logs a warning for manual review (it does NOT remove or blank it automatically).
+  - If the value is standard and valid, it is kept or capped to "090Y" if >"089Y" 
+
+**Implementation:** `DicomProcessor.check_patient_age()`
+
+**Recipe Usage:**
+```
+REPLACE (0010,1010) func:check_patient_age
+```
+
+**Current limitations:**
+- Only standard age formats are supported; missing values are blanked, and non-standard values are kept with a warning for manual review.
+
 ### 5.4 Profile/Options description
 
 The profiles and options are columns in the standard and private tags template ([§5.1](#51-standard-tags-template) and [§5.2](#52-private-tags-template)). For each tag and profile column we provide a specific action ([§5.3](#53-tagprofile-specific-actions)), that will be applied to the tag during the deidentification process. 
@@ -757,7 +777,7 @@ The Retain Device Identity option preserves device and manufacturer identificati
 - Maps to `keep` action
 
 **DICOM Code 'C' (Clean):**
-- Maps to `clean_manually` action (requires manual review)
+- Maps to `func:clean_descriptors_with_llm` action (LLM-based PHI/PII cleaning)
 
 **Implementation:** `retain_device_id_option()` in `luwakx/scripts/retrieve_tags.py`
 
@@ -780,13 +800,21 @@ The Retain Patient Characteristics option preserves demographic patient informat
 
 **DICOM Code 'K' (Keep):**
 - Maps to `keep` action
+- Maps to `func:check_patient_age` action for PatientAge tag
 
 **DICOM Code 'C' (Clean):**
-- Maps to `clean_manually` action (requires manual review)
+- Maps to `remove` or `func:clean_descriptors_with_llm` action (LLM-based PHI/PII cleaning) depending on specific tag and TCIA chosen action for that tag:
+  - **(0010,0042) VR=UT (Sex Parameters for Clinical Use Category Comment)**: Not in TCIA list; maps to `func:clean_descriptors_with_llm` action.
+  - **(0010,2110) VR=LO (Allergies)**: removed by TCIA; maps to `remove` action.
+  - **(0038,0050) VR=LO (Special Needs)**: removed by TCIA; maps to `remove` action.
+  - **(0038,0500) VR=LO (Patient State)**: removed by TCIA; maps to `remove` action.
+  - **(0040,0012) VR=LO (Pre-Medication)**: kept by TCIA; maps to `func:clean_descriptors_with_llm` action.
+
+  For these tags, we follow the TCIA line of action as specified in their CTP anonymizer script. For more details, see the [TCIA Submission and De-identification Overview, Table 1](https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview).
 
 **Implementation:** `generate_retain_patient_characteristics_profile()` in `luwakx/scripts/retrieve_tags.py`
 
-**Effect:** Retains patient age, sex, size, and weight that would otherwise be removed or replaced by Basic Profile.
+**Effect:** Retains patient age, sex, size, and weight that would otherwise be removed or replaced by Basic Profile. Applies LLM cleaning when required.
 
 #### 5.4.6 Retain Longitudinal Temporal Information with Full Dates Option
 
@@ -1081,6 +1109,11 @@ REPLACE (tag) func:clean_descriptors_with_llm
 REPLACE (tag) func:generate_patient_id
 ```
 
+**`func:check_patient_age` Action:**
+```
+REPLACE (tag) func:check_patient_age
+```
+
 **`clean_manually` Action:**
 ```
 # REPLACE (tag) CLEANED NEEDS MANUAL REVIEW
@@ -1205,8 +1238,9 @@ When multiple profiles are selected, actions are prioritized in the following or
 4. **`func:clean_descriptors_with_llm`** - LLM-based cleaning
 5. **`replace`** - Generic replacement
 6. **`func:set_fixed_datetime`** - Fixed datetime
-7. **`blank`** - Blanking/emptying
-8. **`remove`** - Removal (lowest priority)
+7. **`func:check_patient_age`** - Keep/replace patient age
+8. **`blank`** - Blanking/emptying
+9. **`remove`** - Removal (lowest priority)
 
 #### 6.5.1
 
@@ -1218,7 +1252,7 @@ Examples of these tests are:
 - `test_basic_retain_uid_should_have_original_uid` : Test that mixing basic profile and retain uid option keeps original UID for retained fields
 - `test_basic_retain_date_should_have_original_date`: Test that mixing retain and date shift keeps original date for retain fields
 - `test_basic_modified_date_should_have_modified_date`: Test that mixing basic profile and date shift modifies original date.
-
+- `test_retain_patient_chars_recipe`: Test that mixing basic profile and retain patient characteristics profile keep/replace/clean patient characteristics.
 
 ### 6.6 Generated Recipe File Format
 

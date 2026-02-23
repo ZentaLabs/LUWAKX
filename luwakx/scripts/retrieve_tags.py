@@ -859,8 +859,9 @@ def generate_retain_patient_characteristics_profile(final_df, doc_refs_dict):
             group = str(row['Group'])
             element = str(row['Element'])
             if group == '0010' and element == '1010':
+                # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#539-patient-age-handling-funccheck_patient_age
                 df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'func:check_patient_age'
-                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#custom-patient-age")
+                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#539-patient-age-handling-funccheck_patient_age")
             else:
                 # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
                 df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'keep'
@@ -870,11 +871,12 @@ def generate_retain_patient_characteristics_profile(final_df, doc_refs_dict):
             if '@remove()' in final_ctp_script:
                 # we perfrom the same action as TCIA
                 df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'remove'
-                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#remove-action-from-final-ctp-script")
+                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove, Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview")
             else:
                 # TCIA keeps these tags, but we check with the LLM for PHI for safety
+                # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#548-clean-descriptors-option
                 df.at[idx, 'Rtn. Pat. Chars. Opt.'] = 'func:clean_descriptors_with_llm'
-                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#clean-descriptors-with-llm")
+                doc_refs_dict[idx].append("Retain Patient Characteristics: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#537-llm-descriptor-cleaning-funcclean_descriptors_with_llm")
         elif profile == "":
             continue
         else:
@@ -1018,9 +1020,10 @@ def retain_device_id_option(df, doc_refs_dict):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
         if profile == DICOMStandardActionCode.C_CLEAN.value:
+            # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#548-clean-descriptors-option
             # Use LLM-based cleaning for device ID
             df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'func:clean_descriptors_with_llm'
-            doc_refs_dict[idx].append("Retain Device ID: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#clean-descriptors-with-llm")
+            doc_refs_dict[idx].append("Retain Device ID: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#537-llm-descriptor-cleaning-funcclean_descriptors_with_llm")
         elif profile == DICOMStandardActionCode.K_KEEP.value:
             # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#531-keep
             df.at[idx, 'Rtn. Dev. Id. Opt.'] = 'keep'

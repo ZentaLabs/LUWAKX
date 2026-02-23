@@ -55,6 +55,7 @@ Create a JSON configuration file with the following structure:
 - **`maxDateShiftDays`**: Maximum number of days for date shifting (default: 1095)
 - **`excludedTagsFromParquet`**: List of DICOM tags to exclude from Parquet export (default: ["(7FE0,0010)"])
 - **`logLevel`**: Logging level - PRIVATE, DEBUG, INFO, WARNING, ERROR (default: "INFO")
+- **`physicalFacePixelationSizeMm`**: Physical block size (in mm) for face pixelation during defacing (default: 8.5)
 
 #### LLM Integration Parameters
 

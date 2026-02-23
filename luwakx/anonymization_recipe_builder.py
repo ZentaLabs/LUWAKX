@@ -201,6 +201,7 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     # See patient ID generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"REPLACE {tag} func:generate_patient_id\n"
                 elif final_action == 'func:check_patient_age':
+                    # See check patient age: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"REPLACE {tag} func:check_patient_age\n"
                 elif final_action == 'clean_manually':
                     # See clean_manually action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
