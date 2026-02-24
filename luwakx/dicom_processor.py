@@ -122,29 +122,37 @@ class DicomProcessor:
         self.logger.info(f"Anonymizing {len(dicom_files)} files to {self.series.output_base_path}")
         
         try:
-            parsed_files = replace_identifiers(
-                dicom_files=dicom_files,
-                deid=recipe,
-                strip_sequences=False,
-                ids=items,
-                remove_private=False,  # Let recipes handle private tag removal
-                save=True,
-                output_folder=self.series.output_base_path,
-                overwrite=True,
-                force=True
-            )
-            
-            if not parsed_files:
-                self.logger.warning(f"No files were anonymized for series {series_display}")
-                return
+            # Initialise tqdm bar and reset per-series counters
+            if progress_handler:
+                progress_handler.init_progress(len(dicom_files))
+
+            for dicom_file in dicom_files:
+
+                parsed_file = replace_identifiers(
+                    dicom_files=dicom_file,
+                    deid=recipe,
+                    strip_sequences=False,
+                    ids=items,
+                    remove_private=False,  # Let recipes handle private tag removal
+                    save=True,
+                    output_folder=self.series.output_base_path,
+                    overwrite=True,
+                    force=True
+                )
+
+                if not parsed_file:
+                    self.logger.warning(f"No files were anonymized for series {series_display}")
+                    return
+
+                # Advance progress bar and emit interval log messages
+                if progress_handler:
+                    progress_handler.update_progress(dicom_file)
             
             # 6. Update series files with anonymized paths
             for dicom_file in self.series.files:
                 output_path = os.path.join(self.series.output_base_path, dicom_file.filename)
                 dicom_file.set_anonymized_path(output_path)
-            
-            self.logger.info(f"Successfully anonymized {len(parsed_files)} files")
-            
+                        
             # 7. Inject DeidentificationMethodCodeSequence into anonymized files
             self.inject_deidentification_method_code_sequence()
             
@@ -176,9 +184,9 @@ class DicomProcessor:
             # Free large memory structures immediately after anonymization completes
             try:
                 del items
-                del parsed_files
+                del parsed_file
                 gc.collect()
-                self.logger.debug("Freed items and parsed_files memory after anonymization")
+                self.logger.debug("Freed items and parsed_file memory after anonymization")
             except (NameError, UnboundLocalError):
                 # Variables may not exist if exception occurred before they were created
                 pass

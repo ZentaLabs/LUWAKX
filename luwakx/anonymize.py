@@ -29,17 +29,8 @@ def setup_deid_repo():
     if "MESSAGELEVEL" not in os.environ:
         os.environ["MESSAGELEVEL"] = "1"
     
-    # Try to import deid to check if it's already available
-    try:
-        import deid
-        deid_location = os.path.dirname(os.path.abspath(deid.__file__))
-        logger.info(f"Using deid from: {deid_location}")
-        return
-    except ImportError:
-        logger.info("deid package not found, installing from GitHub...")
-    
-    # Install directly from GitHub at a specific commit using pip (no --upgrade needed)
-    zip_url = "https://github.com/ZentaLabs/deid/archive/547efb853b03d5e5414a07ddcef5e8bade771c50.zip"
+    # Always reinstall deid from GitHub zip
+    zip_url = "https://github.com/ZentaLabs/deid/archive/8d26fca2ea09793932877f285ad76e196f205b27.zip"
     try:
         logger.info("Installing deid from GitHub (fixed commit)...")
         subprocess.check_call(
@@ -47,16 +38,13 @@ def setup_deid_repo():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE
         )
-        
         # Force reimport to ensure we get the newly installed version
         if 'deid' in sys.modules:
             del sys.modules['deid']
-        
         # Verify installation
         import deid
         deid_location = os.path.dirname(os.path.abspath(deid.__file__))
         logger.info(f"deid installed at: {deid_location}")
-        
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to install deid from GitHub: {e}")
         if e.stderr:
