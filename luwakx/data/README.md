@@ -203,6 +203,14 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
       "minimum": 1.0,
       "examples": [8.5, 10.0, 5.0]
     }
+    ,
+    "selectedModalities": {
+      "type": "array",
+      "description": "List of DICOM modalities to include in processing. If empty or not set, all modalities are included.",
+      "items": {"type": "string"},
+      "default": [],
+      "examples": [["MR", "CT"]]
+    }
   },
   "required": ["inputFolder", "outputDeidentifiedFolder", "outputPrivateMappingFolder", "recipesFolder", "recipes"],
   "additionalProperties": false

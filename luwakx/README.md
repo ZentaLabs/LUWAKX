@@ -49,6 +49,7 @@ Create a JSON configuration file with the following structure:
 - **`recipesFolder`**: Directory containing deid recipe files
 - **`recipes`**: List of recipe names to apply (e.g., `["basic_profile", "retain_safe_private_tags"]`)
 
+
 #### Optional Parameters
 
 - **`projectHashRoot`**: Salt for deterministic UID generation and date shifting (default: "myproject2025")
@@ -57,6 +58,8 @@ Create a JSON configuration file with the following structure:
 - **`logLevel`**: Logging level - PRIVATE, DEBUG, INFO, WARNING, ERROR (default: "INFO")
 - **`physicalFacePixelationSizeMm`**: Physical block size (in mm) for face pixelation during defacing (default: 8.5)
 - **`keepTempFiles`**: If `true`, temporary directories created during processing (`temp_organized_input`, `temp_defaced_organized`) are retained after the workflow completes. Useful for step-by-step validation of the deidentification pipeline. (default: false)
+- **`selectedModalities`**: List of DICOM modalities to include in processing. If empty or not set, all modalities are included. Example: `["MR", "CT"]` (default: empty)
+
 
 #### LLM Integration Parameters
 

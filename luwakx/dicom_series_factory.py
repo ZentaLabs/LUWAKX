@@ -111,7 +111,13 @@ class DicomSeriesFactory:
                 patient_id = str(getattr(ds, 'PatientID', ''))
                 patient_name = str(getattr(ds, 'PatientName', ''))
                 birthdate = str(getattr(ds, 'PatientBirthDate', ''))
-                
+
+                # Extract modality and filter if selectedModalities is configured
+                modality = str(getattr(ds, 'Modality', ''))
+                selected_modalities = self.config.get('selectedModalities', [])
+                if selected_modalities and modality not in selected_modalities:
+                    continue
+
                 # PRE-COMPUTATION: Populate patient UID database on first encounter
                 if self.patient_uid_db:
                     patient_key = (patient_id, patient_name, birthdate)
@@ -136,7 +142,6 @@ class DicomSeriesFactory:
                     # Extract metadata (once per series)
                     series_desc = getattr(ds, 'SeriesDescription', '')
                     series_number = getattr(ds, 'SeriesNumber', '')
-                    modality = getattr(ds, 'Modality', '')
                     
                     series_metadata[grouping_key] = {
                         'series_description': series_desc,
