@@ -11,6 +11,8 @@ import traceback
 import importlib.util
 from typing import Any, Dict
 
+import numpy as np
+
 from dicom_series import DicomSeries
 from utils import cleanup_gpu_memory
 from luwak_logger import log_project_stacktrace
@@ -173,25 +175,45 @@ class DefaceService:
             log_project_stacktrace(self.logger, e)
             self.logger.error(f"Failed to save NRRD volumes: {e}")
         
-        # Convert defaced volume back to DICOM files
-        defaced_array = SimpleITK.GetArrayFromImage(image_defaced)  # Shape: [slices, height, width]
+        # Convert defaced volume back to DICOM files.
+        # We iterate over all files (any order is fine) and extract each slice from the
+        # defaced 3D volume using the slice's own DICOM spatial metadata
+        # (ImagePositionPatient / ImageOrientationPatient / PixelSpacing).
+        # This approach guarantees that the pixel data written to each file 
+        # matches its spatial location.
         defaced_dicom_files = []
-        
+
         # Build mapping from organized_path to DicomFile for efficient lookup
         organized_to_dicom_file = {f.organized_path: f for f in series.files if f.organized_path is not None}
-        
+
+        # Log whether axis-aligned or general orientation extraction will be used (check once for the series)
+        _first_ds = pydicom.dcmread(gdcm_sorted_files[0])
+        _iop_first = [float(x) for x in _first_ds.ImageOrientationPatient]
+        _axis_aligned = self._is_volume_axis_aligned(_iop_first)
+        if _axis_aligned:
+            self.logger.info(f"Volume has axis-aligned with the world (LPS) coordinate axes") 
+        else:
+            self.logger.warning(f"Volume has axis not aligned with the world (LPS) coordinate axes, check final defacing result, this option is not tested")
+
         try:
-            # Iterate using gdcm_sorted_files to match the slice order of defaced_array,
-            # which was produced from the volume loaded in GDCM sort order.
-            for i, original_file_path in enumerate(gdcm_sorted_files):
+            for original_file_path in gdcm_sorted_files:
                 ds = pydicom.dcmread(original_file_path)
+
+                # Extract the defaced 2D slice that corresponds to this DICOM file's
+                # physical position/orientation — independent of file order.
+                ipp = [float(x) for x in ds.ImagePositionPatient]
+                iop = [float(x) for x in ds.ImageOrientationPatient]
+                pixel_spacing = [float(x) for x in ds.PixelSpacing]
+                slice_2d = self._extract_slice_from_volume(
+                    image_defaced, ipp, iop, pixel_spacing, ds.Rows, ds.Columns
+                )
 
                 # Get rescale parameters
                 rescale_slope = getattr(ds, 'RescaleSlope', 1.0)
                 rescale_intercept = getattr(ds, 'RescaleIntercept', 0.0)
 
-                # Apply inverse scaling to get back to raw values
-                raw_pixels = ((defaced_array[i] - rescale_intercept) / rescale_slope).round().astype(ds.pixel_array.dtype)
+                # Apply inverse scaling to get back to raw stored values
+                raw_pixels = ((slice_2d - rescale_intercept) / rescale_slope).round().astype(ds.pixel_array.dtype)
                 ds.PixelData = raw_pixels.tobytes()
 
                 # Save defaced DICOM file
@@ -227,6 +249,112 @@ class DefaceService:
             'defaced_dicom_files': defaced_dicom_files
         }
     
+    @staticmethod
+    def _is_volume_axis_aligned(iop) -> bool:
+        """Check if the DICOM slice is aligned with the world (LPS) coordinate axes.
+
+        Axis-aligned means the row and column direction cosines are each parallel
+        to one of the standard basis vectors [1,0,0], [0,1,0], [0,0,1] (LPS axes).
+        This covers standard axial, coronal and sagittal acquisitions.
+
+        Args:
+            iop: ImageOrientationPatient (list of 6 floats)
+
+        Returns:
+            True if axis-aligned, False otherwise.
+        """
+        axes = np.eye(3)  # [[1,0,0], [0,1,0], [0,0,1]]
+        row_cosines = np.array(iop[:3], dtype=float)
+        col_cosines = np.array(iop[3:], dtype=float)
+        row_cosines_aligned = any(np.allclose(np.abs(row_cosines), axis, atol=1e-5) for axis in axes)
+        col_cosines_aligned = any(np.allclose(np.abs(col_cosines), axis, atol=1e-5) for axis in axes)
+
+        return row_cosines_aligned and col_cosines_aligned
+    
+
+    @staticmethod
+    def _extract_slice_from_volume(volume, ipp, iop, pixel_spacing, rows: int, cols: int) -> np.ndarray:
+        """Extract a 2D slice from a 3D SimpleITK volume at the physical location of a DICOM slice.
+
+        Uses ExtractImageFilter when the volume is axis-aligned (fast, lossless) and
+        ResampleImageFilter for arbitrary orientation acquisitions.
+
+        For the axis-aligned path, the slice index is computed directly. 
+        The 3rd column of the direction matrix gives the slice axis direction
+        in world space. Since the volume is axis-aligned, this direction is parallel to
+        exactly one world axis k. The slice index is then:
+
+            k              = argmax(|z_axis_dir|)   # which world axis (0=x,1=y,2=z)
+            slice_step     = spacing[2] * z_axis_dir[k]  # signed mm per slice
+            slice_index    = round((ipp[k] - origin[k]) / slice_step)
+
+        Args:
+            volume: SimpleITK.Image (3D) — the defaced volume
+            ipp: ImagePositionPatient (list/tuple of 3 floats)
+            iop: ImageOrientationPatient (list/tuple of 6 floats)
+            pixel_spacing: PixelSpacing (list/tuple of 2 floats, [row_spacing, col_spacing])
+            rows: DICOM Rows
+            cols: DICOM Columns
+
+        Returns:
+            2D numpy array with the extracted pixel values.
+        """
+        import SimpleITK
+
+        ipp_arr = np.array(ipp, dtype=float)
+        row_cosines = np.array(iop[:3], dtype=float)
+        col_cosines = np.array(iop[3:], dtype=float)
+
+        if DefaceService._is_volume_axis_aligned(iop):
+            # --- Axis-aligned volume path ---
+            # For axis-aligned volumes the slice direction (3rd column of vol_dir) is
+            # parallel to exactly one world axis k. The slice index is computed directly
+            # as the offset along that axis divided by the signed physical step per slice.
+            vol_dir = np.array(volume.GetDirection()).reshape(3, 3)
+            vol_spacing = np.array(volume.GetSpacing())
+            vol_origin = np.array(volume.GetOrigin())
+
+            z_axis_dir = vol_dir[:, 2]                          # slice direction in world space
+            k = int(np.argmax(np.abs(z_axis_dir)))              # dominant world axis (0=x,1=y,2=z)
+            slice_step = vol_spacing[2] * z_axis_dir[k]         # signed mm per slice along axis k
+            slice_index = int(round((ipp_arr[k] - vol_origin[k]) / slice_step))
+            # Clamp to valid range
+            slice_index = max(0, min(slice_index, volume.GetSize()[2] - 1))
+
+            extractor = SimpleITK.ExtractImageFilter()
+            size = list(volume.GetSize())
+            size[2] = 0  # collapse z → 2D output
+            extractor.SetSize(size)
+            extractor.SetIndex([0, 0, slice_index])
+            slice_2d = extractor.Execute(volume)
+            return SimpleITK.GetArrayFromImage(slice_2d)
+        else:
+            # --- General path: arbitrary orientation ---
+            # TODO: Test this path with appropriate data, then remove the warning logged if validated
+            # Build a 2D reference image with the exact geometry of the DICOM slice
+            # and resample the 3D volume onto it. SimpleITK's ResampleImageFilter
+            # handles the full 3D→2D transform internally.
+            row_spacing = float(pixel_spacing[0])
+            col_spacing = float(pixel_spacing[1])
+
+            # SimpleITK 2D direction is the upper-left 2×2 sub-matrix (row-major)
+            direction_2d = (
+                row_cosines[0], row_cosines[1],
+                col_cosines[0], col_cosines[1]
+            )
+
+            slice_ref = SimpleITK.Image([cols, rows], volume.GetPixelID())
+            slice_ref.SetSpacing([col_spacing, row_spacing])
+            slice_ref.SetOrigin(ipp_arr.tolist())
+            slice_ref.SetDirection(direction_2d)
+
+            resampler = SimpleITK.ResampleImageFilter()
+            resampler.SetReferenceImage(slice_ref)
+            resampler.SetInterpolator(SimpleITK.sitkLinear)
+            resampler.SetDefaultPixelValue(0)
+            extracted = resampler.Execute(volume)
+            return SimpleITK.GetArrayFromImage(extracted)
+
     def _copy_without_defacing(self, series: DicomSeries) -> Dict[str, Any]:
         """Copy files without defacing when defacing fails or is not applicable.
         

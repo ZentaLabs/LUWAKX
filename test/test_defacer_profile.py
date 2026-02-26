@@ -1,4 +1,5 @@
 import zipfile
+import numpy as np
 import vedo
 import SimpleITK as sitk
 import unittest
@@ -19,7 +20,7 @@ from anonymize import LuwakAnonymizer
 from deface_service import DefaceService
 from dicom_series import DicomSeries
 from dicom_file import DicomFile
-from luwak_logger import get_logger
+from luwak_logger import get_logger, setup_logger
 from utils import has_gpu, download_github_asset_by_tag
 
 class TestDefacerProfile(unittest.TestCase):
@@ -88,6 +89,12 @@ class TestDefacerProfile(unittest.TestCase):
         if os.path.exists(self.test_output_dir):
             shutil.rmtree(self.test_output_dir)
         os.makedirs(self.test_output_dir, exist_ok=True)
+
+        # Initialize logger
+        log_file_path = os.path.join(self.test_output_dir, 'luwak_test.log')
+        setup_logger(log_level='INFO', log_file=log_file_path, console_output=False)
+        self.logger = get_logger('test_defacer_profile')
+
         print("\n######################START TEST######################")
 
     def test_defacer_service_makes_defacing(self):    
@@ -106,13 +113,8 @@ class TestDefacerProfile(unittest.TestCase):
         with open(config_path, 'r') as f:
             config = json.load(f)
         
-        # Setup logger with console output to see what's happening
-        from luwak_logger import setup_logger
-        setup_logger(log_level='INFO', console_output=False)
-        logger = get_logger('test_defacer')
-        
         # Create DefaceService
-        deface_service = DefaceService(config, logger)
+        deface_service = DefaceService(config, self.logger)
         
         # Get DICOM files (assuming they're all one series)
         from deid.dicom import get_files
@@ -164,7 +166,51 @@ class TestDefacerProfile(unittest.TestCase):
         # Check what NRRD paths were returned
         nrrd_image = result.get('nrrd_image_path')
         nrrd_defaced = result.get('nrrd_defaced_path')
-        
+
+        # --- Non-face pixel integrity check ---
+        # Read original DICOM series (files are in organized_temp_dir/series_uid/)
+        original_dicom_dir = os.path.join(organized_temp_dir, series_uid)
+        reader = sitk.ImageSeriesReader()
+        original_series_files = reader.GetGDCMSeriesFileNames(original_dicom_dir)
+        reader.SetFileNames(original_series_files)
+        original_vol = reader.Execute()
+        original_arr = sitk.GetArrayFromImage(original_vol)
+
+        # Read defaced DICOM series
+        reader = sitk.ImageSeriesReader()
+        defaced_series_files = reader.GetGDCMSeriesFileNames(defaced_temp_dir)
+        reader.SetFileNames(defaced_series_files)
+        defaced_arr = sitk.GetArrayFromImage(reader.Execute())
+
+        # Load face mask 
+        face_mask_path = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
+        face_mask_img = sitk.ReadImage(face_mask_path)
+        # Dilate the mask to account for pixelation block boundary effects.
+        # Blocks at the mask border will always affect pixels up to block_size voxels
+        # beyond the mask edge. Compute the dilation radius from the physical block
+        # size and the volume's minimum voxel spacing.
+        block_size_mm = config.get('physicalFacePixelationSizeMm', 8.5)
+        min_spacing = min(original_vol.GetSpacing())
+        dilation_radius = int(np.ceil(block_size_mm / min_spacing))
+        self.logger.info(f"Face mask dilation radius: {dilation_radius} voxels (block={block_size_mm}mm, spacing={min_spacing:.2f}mm)")
+        dilate_filter = sitk.BinaryDilateImageFilter()
+        dilate_filter.SetKernelRadius(dilation_radius)
+        dilate_filter.SetForegroundValue(1)
+        face_mask_dilated_vol = dilate_filter.Execute(sitk.Cast(face_mask_img, sitk.sitkUInt8))
+        face_mask_dilated = sitk.GetArrayFromImage(face_mask_dilated_vol).astype(bool)
+
+        # Check shapes
+        self.assertEqual(original_arr.shape, defaced_arr.shape, "Original and defaced volumes have different shapes!")
+        self.assertEqual(original_arr.shape, face_mask_dilated.shape, "Face mask shape does not match volume shape!")
+
+        # Compare only non-face voxels (outside dilated mask): allow atol=1e-4
+        nonface_voxels = ~face_mask_dilated
+        unchanged = np.isclose(original_arr[nonface_voxels], defaced_arr[nonface_voxels], atol=1e-4)
+        n_changed = int(np.sum(~unchanged))
+        self.assertTrue(
+            np.all(unchanged),
+            f"Non-face pixels were modified by defacing! ({n_changed} voxels differ outside dilated face mask)"
+        )
         # Verify NRRD files exist
         if nrrd_image and nrrd_defaced:
             self.assertTrue(os.path.exists(nrrd_image), f"NRRD image not found at {nrrd_image}")
