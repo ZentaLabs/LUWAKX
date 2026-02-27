@@ -17,6 +17,8 @@ from dicom_private_tag_registry import register_private_tags_from_csv
 from llm_cache import LLMResultCache
 # Import patient UID database
 from patient_uid_database import PatientUIDDatabase
+# Import deface mask database
+from deface_mask_database import DefaceMaskDatabase
 # Import recipe builder functions
 from anonymization_recipe_builder import make_recipe_file
 # Import utilities
@@ -163,7 +165,54 @@ class LuwakAnonymizer:
             self.logger.warning(f"Failed to initialize patient UID database: {e}")
             self.patient_uid_db = None
             self.persistent_uid_db = False
-        
+
+        # Initialize deface mask database (if saveDefaceMasks.primary is non-empty)
+        self.deface_mask_db = None
+        self.persistent_deface_mask_db = False  # Track if db should persist
+        best_modalities = self.config.get('saveDefaceMasks', {}).get('primary', [])
+        if best_modalities:
+            try:
+                project_hash_root = self.config.get('projectHashRoot', '')
+                cache_folder = self.config.get('analysisCacheFolder')
+
+                if cache_folder:
+                    # Persistent: store alongside the other cache databases
+                    self.persistent_deface_mask_db = True
+                    mask_db_file = os.path.join(cache_folder, 'deface_mask.db')
+                    db_exists = os.path.exists(mask_db_file)
+                    self.logger.info(f"Using persistent deface mask database: {mask_db_file}")
+                    if db_exists:
+                        self.logger.info("Existing deface mask database found - will load and update")
+                    else:
+                        self.logger.info("No existing deface mask database - will create new")
+                else:
+                    # Temporary: stored in private mapping folder; removed after run
+                    mask_db_folder = self.config.get('outputPrivateMappingFolder')
+                    mask_db_file = os.path.join(mask_db_folder, 'deface_mask.db')
+                    self.logger.debug(
+                        "Using temporary deface mask database (will be deleted after run)"
+                    )
+
+                self.deface_mask_db = DefaceMaskDatabase(
+                    db_path=mask_db_file,
+                    project_hash_root=project_hash_root,
+                )
+                stats = self.deface_mask_db.get_stats()
+                self.logger.info(
+                    f"Deface mask database initialized for modalities {best_modalities}: "
+                    f"{stats['total_masks']} cached mask(s)"
+                )
+                self.logger.debug(f"Deface mask database file: {mask_db_file}")
+
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize deface mask database: {e}")
+                self.deface_mask_db = None
+                self.persistent_deface_mask_db = False
+        else:
+            self.logger.info(
+                "Deface mask caching disabled: 'saveDefaceMasks.primary' is empty or absent"
+            )
+
         # Setup deid repository before any operations that need it
         self.logger.info("Setting up deid repository...")
         setup_deid_repo()
@@ -568,7 +617,8 @@ class LuwakAnonymizer:
             num_workers=num_workers,
             llm_cache=self.llm_cache,
             patient_uid_db=self.patient_uid_db,
-            recipe=recipe
+            recipe=recipe,
+            deface_mask_db=self.deface_mask_db,
         )
         
         # Execute all pipelines (streaming mode: results exported incrementally)
@@ -621,6 +671,25 @@ class LuwakAnonymizer:
                     self.logger.info(f"Persistent patient UID database saved at: {self.patient_uid_db.db_path}")
             except Exception as e:
                 self.logger.warning(f"Error closing patient UID database: {e}")
+
+        # Close and cleanup deface mask database
+        if self.deface_mask_db:
+            try:
+                stats = self.deface_mask_db.get_stats()
+                self.logger.info(
+                    f"Deface mask database final stats: {stats['total_masks']} cached mask(s)"
+                )
+                mask_db_path = self.deface_mask_db.db_path
+                self.deface_mask_db.close()
+
+                if not self.persistent_deface_mask_db:
+                    if os.path.exists(mask_db_path):
+                        os.remove(mask_db_path)
+                        self.logger.debug("Temporary deface mask database cleaned up")
+                else:
+                    self.logger.info(f"Persistent deface mask database saved at: {mask_db_path}")
+            except Exception as e:
+                self.logger.warning(f"Error closing deface mask database: {e}")
         
         # Cleanup GPU memory to free resources for other applications
         cleanup_gpu_memory()

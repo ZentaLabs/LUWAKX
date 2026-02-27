@@ -9,7 +9,7 @@ import os
 import shutil
 import traceback
 import importlib.util
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -30,25 +30,41 @@ class DefaceService:
         external_mask_paths: List of paths to external mask files
     """
     
-    def __init__(self, config: Dict[str, Any], logger):
+    def __init__(self, config: Dict[str, Any], logger, deface_mask_db=None):
         """Initialize DefaceService.
-        
+
         Args:
             config: Configuration dictionary
             logger: Logger instance
+            deface_mask_db: Optional DefaceMaskDatabase instance.  When provided
+                the service will check for a cached mask before running the ML
+                model and will persist newly-computed masks for primary deface
+                candidates.
         """
         self.config = config
         self.logger = logger
-        
+
+        # Optional deface-mask database (None when feature is not configured)
+        self.deface_mask_db = deface_mask_db
+
+        # Modalities for which mask caching is requested
+        # (driven by config: saveDefaceMasks.primary = ["CT", "MR", ...])
+        self.best_modalities: list = [
+            m.upper()
+            for m in config.get('saveDefaceMasks', {}).get('primary', [])
+        ]
+
+        # Private mapping folder is used to store persisted mask NRRD files
+        self.private_folder: str = config.get('outputPrivateMappingFolder', '')
+
         # Configuration for defacing strategy
-        #self.use_external_mask = config.get('use_external_mask', False)
         self.external_mask_paths = config.get('testOptions', {}).get('useExistingMaskDefacer', [])
         if self.external_mask_paths:
             self.external_mask_paths = [os.path.abspath(m) for m in self.external_mask_paths]
-        
+
         # Physical block size for pixelation (in mm)
         self.physical_block_size_mm = config.get('physicalFacePixelationSizeMm', 8.5)
-        
+
         # Track series counter for external mask indexing
         self._series_counter = 0
     
@@ -132,21 +148,45 @@ class DefaceService:
             return self._copy_without_defacing(series)
         
         # Apply face detection/segmentation strategy
+        #
+        # Strategies (highest priority first):
+        #   1. Test-time external mask  (testOptions.useExistingMaskDefacer)
+        #   2. Primary candidate        → run ML, save mask to DB
+        #   3. All other series         → run ML normally, no DB interaction
+        #
+        # DefacePriorityElector determines the best series per (patient, study,
+        # FrameOfReferenceUID, modality) group *before* the defacer runs, so
+        # the primary is already the optimal candidate — no comparison or
+        # overwrite logic is needed when persisting its mask.
+        save_mask_after_ml = False
+
         try:
             if self.external_mask_paths:
-                # Strategy 1: Use pre-computed external mask
+                # Strategy 1: Use pre-computed external mask (test / override)
                 self.logger.info("Using external mask for face segmentation")
                 mask_path = self.external_mask_paths[self._series_counter]
                 image_face_segmentation = defacer.prepare_face_mask(image, modality, mask_path)
                 self._series_counter += 1
-            else:
-                # Strategy 2: Run ML face detection
+
+            elif series.is_primary_deface_candidate:
+                # Strategy 2: Primary candidate – run ML and mark for DB persistence.
+                # No DB lookup needed: by definition no better mask exists yet.
+                self.logger.info(
+                    f"Series is primary deface candidate for modality={modality}; "
+                    f"running ML defacing."
+                )
                 image_face_segmentation = defacer.prepare_face_mask(image, modality)
-                
-                # Clean up GPU memory immediately after ML inference
                 cleanup_gpu_memory()
                 self.logger.debug("GPU memory cleaned up after face detection")
-                
+                save_mask_after_ml = True
+
+            else:
+                # Strategy 3: Non-primary or untracked modality.
+                # Run ML defacing normally; do not persist the mask.
+                image_face_segmentation = defacer.prepare_face_mask(image, modality)
+                cleanup_gpu_memory()
+                self.logger.debug("GPU memory cleaned up after face detection")
+
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
@@ -174,6 +214,14 @@ class DefaceService:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
             self.logger.error(f"Failed to save NRRD volumes: {e}")
+
+        # Persist the primary mask to the database (if elected as primary candidate)
+        if save_mask_after_ml:
+            try:
+                self._persist_mask_to_db(series, image_face_segmentation, image)
+            except Exception as e:
+                log_project_stacktrace(self.logger, e)
+                self.logger.warning(f"Failed to persist deface mask to database: {e}")
         
         # Convert defaced volume back to DICOM files.
         # We iterate over all files (any order is fine) and extract each slice from the
@@ -215,6 +263,15 @@ class DefaceService:
                 # Apply inverse scaling to get back to raw stored values
                 raw_pixels = ((slice_2d - rescale_intercept) / rescale_slope).round().astype(ds.pixel_array.dtype)
                 ds.PixelData = raw_pixels.tobytes()
+
+                # If the original file used a compressed transfer syntax, the raw
+                # pixel bytes we just assigned are NOT encapsulated, so pydicom would
+                # raise a ValueError on save.  Switch to Explicit VR Little Endian
+                # (uncompressed) so the file can be written correctly.
+                if hasattr(ds, 'file_meta') and ds.file_meta.TransferSyntaxUID.is_compressed:
+                    ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+                    ds.is_implicit_VR = False
+                    ds.is_little_endian = True
 
                 # Save defaced DICOM file
                 defaced_file_path = os.path.join(series_temp_dir, os.path.basename(original_file_path))
@@ -354,6 +411,150 @@ class DefaceService:
             resampler.SetDefaultPixelValue(0)
             extracted = resampler.Execute(volume)
             return SimpleITK.GetArrayFromImage(extracted)
+
+    def _get_cached_mask_path(self, series: DicomSeries) -> Optional[str]:
+        """Return the path of a cached mask for this series, or ``None``.
+
+        Only called for non-primary series.  Because the factory guarantees
+        that the primary candidate for each (patient, FrameOfReferenceUID,
+        modality) group is processed before the others, a mask is already in
+        the database when this method is called for any non-primary series in
+        the same group.
+
+        For modalities not listed in ``saveDefaceMasks.primary``, or when no DB is
+        configured, returns ``None`` immediately so the caller falls through to
+        plain ML processing.
+
+        Args:
+            series: The non-primary series about to be defaced.
+
+        Returns:
+            Absolute path to the cached NRRD mask file, or ``None``.
+        """
+        if self.deface_mask_db is None:
+            return None
+
+        modality = (series.modality or '').upper()
+        if modality not in self.best_modalities:
+            return None
+
+        if not series.frame_of_reference_uid:
+            return None
+
+        cached = self.deface_mask_db.get_primary_mask(
+            series.original_patient_id,
+            series.original_patient_name,
+            series.original_patient_birthdate,
+            series.original_study_uid,
+            series.frame_of_reference_uid,
+            modality,
+        )
+
+        if not cached:
+            return None
+
+        # mask_path in the DB is relative to private_folder — reconstruct absolute.
+        abs_mask_path = os.path.join(self.private_folder, cached['mask_path'])
+        if not os.path.exists(abs_mask_path):
+            self.logger.warning(f"Cached deface mask file not found: {abs_mask_path}")
+            return None
+        return abs_mask_path
+
+    def _persist_mask_to_db(
+        self,
+        series: DicomSeries,
+        mask_image,   # SimpleITK.Image
+        source_image,  # SimpleITK.Image
+    ) -> None:
+        """Save ``mask_image`` as an NRRD file and upsert the database record.
+
+        The mask is stored alongside ``image.nrrd`` in the private mapping
+        folder, mirroring the series output path structure::
+
+            <outputPrivateMappingFolder>/<rel_series_path>/deface_mask_<modality>.nrrd
+
+        where ``rel_series_path`` is the path of ``series.output_base_path``
+        relative to ``outputDeidentifiedFolder``.  This places the mask in the
+        same directory as ``image.nrrd`` (moved there by
+        ``ProcessingPipeline._export_nrrd_files``).
+
+        The directory is created if it does not exist.  After writing the file
+        the database entry for the (patient, FrameOfReferenceUID, modality)
+        combination is inserted or replaced.
+
+        Args:
+            series: The series that produced the mask.
+            mask_image: SimpleITK mask image (binary label map).
+            source_image: The original (pre-defacing) SimpleITK image.  Its
+                spacing / origin / direction are stored in the DB so the mask
+                can later be resampled onto other series.
+        """
+        import SimpleITK
+
+        modality = (series.modality or 'UNKNOWN').upper()
+
+        if self.deface_mask_db is None:
+            return
+
+        if not self.private_folder:
+            self.logger.warning("outputPrivateMappingFolder is not set; cannot persist mask")
+            return
+
+        if not series.anonymized_patient_id:
+            self.logger.warning("anonymized_patient_id not set on series; cannot persist mask")
+            return
+
+        # Mirror the same directory as image.nrrd by computing the series path
+        # relative to outputDeidentifiedFolder, then rooting it under the
+        # private mapping folder.  This is identical to what
+        # ProcessingPipeline._export_nrrd_files does for image.nrrd.
+        deidentified_folder = self.config.get('outputDeidentifiedFolder', '')
+        if series.output_base_path and deidentified_folder:
+            rel_path = os.path.relpath(series.output_base_path, deidentified_folder)
+            mask_dir = os.path.join(self.private_folder, rel_path)
+        else:
+            # Fallback: store under patient folder in private mapping
+            self.logger.warning(
+                "output_base_path or outputDeidentifiedFolder not available; "
+                "falling back to patient-level mask directory"
+            )
+            mask_dir = os.path.join(self.private_folder, series.anonymized_patient_id)
+        os.makedirs(mask_dir, exist_ok=True)
+
+        mask_filename = f"deface_mask_{modality}.nrrd"
+        mask_path = os.path.join(mask_dir, mask_filename)
+
+        SimpleITK.WriteImage(mask_image, mask_path)
+        self.logger.info(f"Saved deface mask: {mask_path}")
+
+        # Store the path relative to private_folder so the DB is portable
+        # (moving the private mapping folder does not break cached entries).
+        mask_path_db = os.path.relpath(mask_path, self.private_folder)
+
+        # Collect image geometry for future resampling
+        spacing   = list(source_image.GetSpacing())
+        origin    = list(source_image.GetOrigin())
+        direction = list(source_image.GetDirection())
+        for_uid   = series.frame_of_reference_uid or ''
+
+        self.deface_mask_db.upsert_mask(
+            patient_id            = series.original_patient_id,
+            patient_name          = series.original_patient_name,
+            birthdate             = series.original_patient_birthdate,
+            study_instance_uid    = series.original_study_uid,
+            frame_of_reference_uid= for_uid,
+            modality              = modality,
+            mask_path             = mask_path_db,
+            # spatial_volume_cm3 / min_voxel_size_mm live on DefacePrioritySeries;
+            # use getattr so the signature stays DicomSeries without coupling.
+            spatial_volume_cm3    = getattr(series, 'spatial_volume_cm3', None) or 0.0,
+            min_voxel_size_mm     = getattr(series, 'min_voxel_size_mm',  None) or 0.0,
+            spacing               = spacing,
+            origin                = origin,
+            direction             = direction,
+            anonymized_patient_id = series.anonymized_patient_id,
+            anonymized_study_uid  = series.anonymized_study_uid,
+        )
 
     def _copy_without_defacing(self, series: DicomSeries) -> Dict[str, Any]:
         """Copy files without defacing when defacing fails or is not applicable.

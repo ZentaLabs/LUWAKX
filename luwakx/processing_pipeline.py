@@ -37,7 +37,8 @@ class ProcessingPipeline:
     
     def __init__(self, series_subset: List[DicomSeries], output_directory: str,
                  config: Dict[str, Any], logger=None, worker_id: int = 0,
-                 llm_cache=None, patient_uid_db=None, recipe=None):
+                 llm_cache=None, patient_uid_db=None, recipe=None,
+                 deface_mask_db=None):
         """Initialize a ProcessingPipeline instance.
         
         Args:
@@ -49,6 +50,7 @@ class ProcessingPipeline:
             llm_cache: Shared LLM cache instance (thread-safe, read-only for workers)
             patient_uid_db: Shared patient UID database instance (thread-safe)
             recipe: DeidRecipe instance for anonymization (shared across all workers)
+            deface_mask_db: Shared DefaceMaskDatabase instance (thread-safe, optional)
         """
         self.worker_id = worker_id
         self.series_collection: Dict[str, DicomSeries] = {}
@@ -75,6 +77,9 @@ class ProcessingPipeline:
         
         # Shared recipe (read-only for workers)
         self.recipe = recipe
+
+        # Shared deface mask database (thread-safe, optional)
+        self.deface_mask_db = deface_mask_db
         
         # Create output directory if it doesn't exist
         os.makedirs(output_directory, exist_ok=True)
@@ -114,7 +119,9 @@ class ProcessingPipeline:
         """Lazy-load DefaceService instance."""
         if self._deface_service is None:
             from deface_service import DefaceService
-            self._deface_service = DefaceService(self.config, self.logger)
+            self._deface_service = DefaceService(
+                self.config, self.logger, deface_mask_db=self.deface_mask_db
+            )
         return self._deface_service
     
     @property

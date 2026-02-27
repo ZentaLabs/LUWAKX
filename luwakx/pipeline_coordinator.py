@@ -6,12 +6,11 @@ by distributing series across multiple workers.
 """
 
 import os
-from typing import Any, Dict, List, Set, Tuple
-import pydicom
+from typing import Any, Dict, List
 from processing_pipeline import ProcessingPipeline
-from dicom_series import DicomSeries, PathTooLongError
-from dicom_file import DicomFile
+from dicom_series import DicomSeries
 from dicom_series_factory import DicomSeriesFactory
+from deface_priority_elector import DefacePriorityElector
 
 
 class PipelineCoordinator:
@@ -36,7 +35,8 @@ class PipelineCoordinator:
     
     def __init__(self, all_series: List[DicomSeries], output_directory: str,
                  config: Dict[str, Any], logger, num_workers: int = 1, 
-                 llm_cache=None, patient_uid_db=None, recipe=None):
+                 llm_cache=None, patient_uid_db=None, recipe=None,
+                 deface_mask_db=None):
         """Initialize PipelineCoordinator.
         
         Args:
@@ -48,15 +48,17 @@ class PipelineCoordinator:
             llm_cache: Shared LLM cache instance (thread-safe, read-only for workers)
             patient_uid_db: Shared patient UID database instance (thread-safe)
             recipe: DeidRecipe instance for anonymization (shared across all workers)
+            deface_mask_db: Shared DefaceMaskDatabase instance (thread-safe, optional)
         """
         self.all_series = all_series
         self.output_directory = output_directory
         self.config = config
         self.logger = logger
         self.num_workers = max(1, min(num_workers, len(all_series)))  # Cap at series count
-        self.llm_cache = llm_cache  # Shared across all workers
+        self.llm_cache = llm_cache          # Shared across all workers
         self.patient_uid_db = patient_uid_db  # Shared across all workers
-        self.recipe = recipe  # Shared across all workers
+        self.recipe = recipe                  # Shared across all workers
+        self.deface_mask_db = deface_mask_db  # Shared across all workers
         
         self.pipelines: List[ProcessingPipeline] = []
         
@@ -81,9 +83,10 @@ class PipelineCoordinator:
                 config=self.config,
                 logger=self.logger,
                 worker_id=worker_id,
-                llm_cache=self.llm_cache,  # Pass shared LLM cache to all workers
-                patient_uid_db=self.patient_uid_db,  # Pass shared patient UID DB to all workers
-                recipe=self.recipe  # Pass shared recipe to all workers
+                llm_cache=self.llm_cache,
+                patient_uid_db=self.patient_uid_db,
+                recipe=self.recipe,
+                deface_mask_db=self.deface_mask_db,
             )
             
             self.pipelines.append(pipeline)
@@ -275,7 +278,8 @@ class PipelineCoordinator:
     def create_from_dicom_files(cls, dicom_files, output_directory: str,
                                config: Dict[str, Any], logger,
                                num_workers: int = 1, llm_cache=None, 
-                               patient_uid_db=None, recipe=None) -> 'PipelineCoordinator':
+                               patient_uid_db=None, recipe=None,
+                               deface_mask_db=None) -> 'PipelineCoordinator':
         """Factory method to create coordinator from DICOM file list or input folder.
         
         Uses DicomSeriesFactory to create DicomSeries objects, then initializes
@@ -291,6 +295,7 @@ class PipelineCoordinator:
             llm_cache: Shared LLM cache instance (thread-safe)
             patient_uid_db: Patient UID database for anonymization
             recipe: DeidRecipe instance for anonymization (shared across workers)
+            deface_mask_db: Shared DefaceMaskDatabase instance (thread-safe, optional)
             
         Returns:
             PipelineCoordinator: Initialized coordinator ready to run
@@ -305,7 +310,14 @@ class PipelineCoordinator:
         
         # Factory handles file discovery, reading, grouping, and series creation
         all_series = factory.create_series_from_files(dicom_files)
-        
+
+        # Elect primary deface candidates and reorder so each primary precedes
+        # its group members – required for mask-caching to work correctly.
+        best_modalities = [m.upper() for m in config.get('saveDefaceMasks', {}).get('primary', [])]
+        if best_modalities:
+            elector = DefacePriorityElector(best_modalities=best_modalities, logger=logger)
+            all_series = elector.elect_and_sort(all_series)
+
         # Create and return coordinator with created series
         return cls(all_series, output_directory, config, logger, num_workers, 
-                  llm_cache, patient_uid_db, recipe)
+                  llm_cache, patient_uid_db, recipe, deface_mask_db)

@@ -45,7 +45,15 @@ class DicomSeries:
         series_description: Series description from DICOM metadata
         series_number: Series number from DICOM metadata
         modality: Imaging modality (CT, MR, etc.)
-        
+        frame_of_reference_uid: DICOM FrameOfReferenceUID (0020,0052) – groups series
+            that share the same physical coordinate space
+
+        # Defacing role flag (always False here; overridden by DefacePrioritySeries)
+        is_primary_deface_candidate: Always False on the base class.  Set to True on
+            a DefacePrioritySeries instance by DicomSeriesFactory when this series is
+            the primary candidate (largest coverage, finest resolution) for its
+            (patient, FrameOfReferenceUID, modality) group.
+
         # Processing state
         processing_status: Overall processing status of the series
         
@@ -94,7 +102,15 @@ class DicomSeries:
         self.series_description: Optional[str] = None
         self.series_number: Optional[str] = None
         self.modality: Optional[str] = None
-        
+        # FrameOfReferenceUID (0020,0052): standard DICOM tag grouping series that
+        # share the same physical coordinate space.  Always populated by the factory.
+        self.frame_of_reference_uid: Optional[str] = None
+
+        # Defacing role flag – always False on the base class.
+        # DefacePrioritySeries overrides this and the factory sets it to True for
+        # the elected primary candidate in each (patient, FOR, modality) group.
+        self.is_primary_deface_candidate: bool = False
+
         # Processing state
         self.processing_status = ProcessingStatus.ORIGINAL
         
@@ -404,10 +420,89 @@ class DicomSeries:
     
     def __str__(self) -> str:
         """Return human-readable string representation.
-        
+
         Returns:
             str: Simple string with patient ID and file count
         """
         patient_display = self.anonymized_patient_id or self.original_patient_id
         series_display = f"{self.series_description or self.original_series_uid[:15]}"
         return f"{patient_display}/{series_display} ({len(self.files)} files) [{self.processing_status}]"
+
+
+class DefacePrioritySeries(DicomSeries):
+    """DicomSeries enriched with spatial ranking metrics for deface-mask caching.
+
+    DicomSeriesFactory creates this subclass *only* when the ``saveDefaceMasks``
+    config option lists at least one modality.  All other series remain plain
+    ``DicomSeries`` objects, keeping the base class lean.
+
+    Responsibilities (single responsibility):
+        - Store the spatial metrics needed to rank candidates within a
+          (patient, FrameOfReferenceUID, modality) group.
+        - Compute those metrics from raw DICOM header values passed at
+          construction time (no file I/O here).
+
+    The factory retains the ranking/election responsibility (it alone sees all
+    series), and sets ``is_primary_deface_candidate = True`` on exactly one
+    instance per group after all objects are created.
+
+    Attributes:
+        spatial_volume_cm3: Bounding-box volume of the 3D volume in cm³
+            (Rows × Cols × n_slices × PixelSpacing[0] × PixelSpacing[1] × SliceThickness ÷ 1000).
+            ``None`` when any required header value is missing or zero.
+        min_voxel_size_mm: Smallest voxel dimension in mm (resolution proxy;
+            lower is finer).  ``None`` when header values are missing.
+    """
+
+    def __init__(
+        self,
+        original_patient_id: str,
+        original_patient_name: str,
+        original_patient_birthdate: str,
+        original_study_uid: str,
+        original_series_uid: str,
+        rows: int,
+        columns: int,
+        n_slices: int,
+        pixel_spacing: List[float],
+        slice_thickness: float,
+        anonymized_patient_id: str = None,
+    ) -> None:
+        """Initialise a DefacePrioritySeries.
+
+        Args:
+            original_patient_id: Original DICOM PatientID.
+            original_patient_name: Original DICOM PatientName.
+            original_patient_birthdate: Original DICOM PatientBirthDate.
+            original_study_uid: Original StudyInstanceUID.
+            original_series_uid: Original SeriesInstanceUID.
+            rows: DICOM Rows (0028,0010).
+            columns: DICOM Columns (0028,0011).
+            n_slices: Number of slices (i.e. number of files in the series).
+            pixel_spacing: [row_spacing_mm, col_spacing_mm] from PixelSpacing
+                (0028,0030).  Use ``[1.0, 1.0]`` when absent.
+            slice_thickness: SliceThickness (0050,0050) in mm.  Use ``1.0``
+                when absent.
+            anonymized_patient_id: Pre-computed anonymised patient ID (optional).
+        """
+        super().__init__(
+            original_patient_id=original_patient_id,
+            original_patient_name=original_patient_name,
+            original_patient_birthdate=original_patient_birthdate,
+            original_study_uid=original_study_uid,
+            original_series_uid=original_series_uid,
+            anonymized_patient_id=anonymized_patient_id,
+        )
+
+        # Compute spatial metrics from construction args (no I/O).
+        if rows and columns and n_slices and pixel_spacing and slice_thickness:
+            self.spatial_volume_cm3: Optional[float] = (
+                rows * columns * n_slices * pixel_spacing[0] * pixel_spacing[1] * slice_thickness
+                / 1000.0
+            )
+            self.min_voxel_size_mm: Optional[float] = min(
+                pixel_spacing[0], pixel_spacing[1], slice_thickness
+            )
+        else:
+            self.spatial_volume_cm3: Optional[float] = None
+            self.min_voxel_size_mm: Optional[float] = None

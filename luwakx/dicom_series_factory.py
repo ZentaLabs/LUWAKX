@@ -8,7 +8,7 @@ file reading to a single pass and manages patient UID pre-computation.
 import os
 from typing import Any, Dict, List, Set, Tuple
 import pydicom
-from dicom_series import DicomSeries, PathTooLongError
+from dicom_series import DicomSeries, DefacePrioritySeries, PathTooLongError
 from dicom_file import DicomFile
 
 
@@ -77,13 +77,16 @@ class DicomSeriesFactory:
     
     def create_series_from_files(self, dicom_files) -> List[DicomSeries]:
         """Create DicomSeries objects from DICOM files (single-pass read).
-        
+
         This method reads each DICOM file once and:
         1. Pre-computes patient UID mappings
         2. Groups files by Patient/Study/Series hierarchy
         3. Creates DicomSeries objects with metadata
         4. Generates anonymized UIDs used for output paths
         5. Builds output paths with collision detection
+
+        Primary deface candidate election and series ordering are *not* handled
+        here; that concern belongs to :class:`DefacePriorityElector`.
         
         Args:
             dicom_files: List of DICOM file paths, single file path, or directory path
@@ -96,7 +99,14 @@ class DicomSeriesFactory:
             dicom_files = self.discover_files(dicom_files)
         
         self.logger.info(f"Creating series from {len(dicom_files)} DICOM files")
-        
+
+        # Whether to read spatial ranking tags and create DefacePrioritySeries objects.
+        # Gated here so the factory only incurs the extra tag-reading cost when the
+        # saveDefaceMasks feature is actually requested.
+        _needs_deface_priority: bool = bool(
+            self.config.get('saveDefaceMasks', {}).get('primary', [])
+        )
+
         # Single-pass read: precompute patients AND group series simultaneously
         series_groups: Dict[Tuple[str, str, str, str, str], List[str]] = {}
         series_metadata: Dict[Tuple[str, str, str, str, str], Dict[str, Any]] = {}
@@ -142,12 +152,33 @@ class DicomSeriesFactory:
                     # Extract metadata (once per series)
                     series_desc = getattr(ds, 'SeriesDescription', '')
                     series_number = getattr(ds, 'SeriesNumber', '')
-                    
-                    series_metadata[grouping_key] = {
-                        'series_description': series_desc,
-                        'series_number': series_number,
-                        'modality': modality
+                    frame_of_reference_uid = str(getattr(ds, 'FrameOfReferenceUID', '') or '')
+
+                    meta: Dict[str, Any] = {
+                        'series_description':     series_desc,
+                        'series_number':          series_number,
+                        'modality':               modality,
+                        'frame_of_reference_uid': frame_of_reference_uid,
                     }
+
+                    # Spatial ranking tags – only when the defacing priority feature
+                    # is active.  All tags are available with stop_before_pixels=True.
+                    if _needs_deface_priority:
+                        rows = int(getattr(ds, 'Rows', 0) or 0)
+                        columns = int(getattr(ds, 'Columns', 0) or 0)
+                        raw_ps = getattr(ds, 'PixelSpacing', None)
+                        pixel_spacing = (
+                            [float(raw_ps[0]), float(raw_ps[1])]
+                            if raw_ps and len(raw_ps) >= 2
+                            else [1.0, 1.0]
+                        )
+                        slice_thickness = float(getattr(ds, 'SliceThickness', 1.0) or 1.0)
+                        meta['rows']            = rows
+                        meta['columns']         = columns
+                        meta['pixel_spacing']   = pixel_spacing
+                        meta['slice_thickness'] = slice_thickness
+
+                    series_metadata[grouping_key] = meta
                 
                 series_groups[grouping_key].append(file_path)
                 
@@ -157,11 +188,18 @@ class DicomSeriesFactory:
                 unknown_key = ('unknown', '', '', 'unknown_study', 'unknown_series')
                 if unknown_key not in series_groups:
                     series_groups[unknown_key] = []
-                    series_metadata[unknown_key] = {
-                        'series_description': None,
-                        'series_number': None,
-                        'modality': None
+                    unknown_meta: Dict[str, Any] = {
+                        'series_description':     None,
+                        'series_number':          None,
+                        'modality':               None,
+                        'frame_of_reference_uid': '',
                     }
+                    if _needs_deface_priority:
+                        unknown_meta['rows']            = 0
+                        unknown_meta['columns']         = 0
+                        unknown_meta['pixel_spacing']   = [1.0, 1.0]
+                        unknown_meta['slice_thickness'] = 1.0
+                    series_metadata[unknown_key] = unknown_meta
                 series_groups[unknown_key].append(file_path)
         
         self.logger.info(f"Pre-computed {patient_count} unique patients during file grouping")
@@ -173,20 +211,39 @@ class DicomSeriesFactory:
         for grouping_key, files in series_groups.items():
             patient_id, patient_name, birthdate, study_uid, series_uid = grouping_key
             metadata = series_metadata[grouping_key]
-            
-            # Create DicomSeries object
-            series = DicomSeries(
-                original_patient_id=patient_id,
-                original_patient_name=patient_name,
-                original_patient_birthdate=birthdate,
-                original_study_uid=study_uid,
-                original_series_uid=series_uid
-            )
-            
+
+            # Factory decides which class to instantiate:
+            #   DefacePrioritySeries  – when spatial ranking is needed (saveDefaceMasks
+            #                           lists at least one modality); carries spatial
+            #                           metrics computed from DICOM header values.
+            #   DicomSeries           – default for all other cases.
+            if _needs_deface_priority:
+                series = DefacePrioritySeries(
+                    original_patient_id=patient_id,
+                    original_patient_name=patient_name,
+                    original_patient_birthdate=birthdate,
+                    original_study_uid=study_uid,
+                    original_series_uid=series_uid,
+                    rows=metadata.get('rows', 0),
+                    columns=metadata.get('columns', 0),
+                    n_slices=len(files),
+                    pixel_spacing=metadata.get('pixel_spacing', [1.0, 1.0]),
+                    slice_thickness=metadata.get('slice_thickness', 1.0),
+                )
+            else:
+                series = DicomSeries(
+                    original_patient_id=patient_id,
+                    original_patient_name=patient_name,
+                    original_patient_birthdate=birthdate,
+                    original_study_uid=study_uid,
+                    original_series_uid=series_uid,
+                )
+
             # Set series-level metadata (stored once, accessible everywhere)
-            series.series_description = metadata['series_description']
-            series.series_number = metadata['series_number']
-            series.modality = metadata['modality']
+            series.series_description    = metadata['series_description']
+            series.series_number         = metadata['series_number']
+            series.modality              = metadata['modality']
+            series.frame_of_reference_uid = metadata.get('frame_of_reference_uid', '')
             
             # Generate anonymized UIDs if patient_uid_db is available
             if self.patient_uid_db and patient_id != 'unknown':
@@ -245,5 +302,4 @@ class DicomSeriesFactory:
             all_series.append(series)
         
         self.logger.info(f"Created {len(all_series)} DicomSeries objects")
-        
         return all_series

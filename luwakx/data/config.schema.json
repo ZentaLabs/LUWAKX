@@ -141,6 +141,21 @@
           "examples": ["./data/private_tags.csv", "/path/to/custom/private_tags.csv"]
         }
       }
+    },
+    "saveDefaceMasks": {
+      "type": "object",
+      "description": "Configuration for persisting the primary defacing mask per (patient, study, FrameOfReferenceUID, modality) group.\nWhen the 'primary' list is non-empty, luwak selects one series per group – the one with the largest spatial coverage and finest voxel resolution – runs ML defacing on it, and stores the resulting mask as an NRRD file in the private mapping folder.\nSubsequent series in the same group reuse the cached mask, avoiding redundant ML inference.\nThe study UID is included in the cache key so masks are scoped to a single study and are not shared across studies.\nThe mask database follows the same persistence rules as analysisCacheFolder: if that folder is configured the database persists across runs; otherwise it is temporary.\nWhen this option is absent or 'primary' is empty, the feature is fully disabled: no DB is created, no masks are saved, and all series are defaced independently.",
+      "default": {},
+      "properties": {
+        "primary": {
+          "type": "array",
+          "description": "List of DICOM modalities for which the primary defacing mask should be cached and reused (e.g. [\"CT\", \"MR\"]). An empty list or absent key disables the feature.",
+          "items": {"type": "string"},
+          "default": [],
+          "examples": [["CT"], ["CT", "MR"]]
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": [
