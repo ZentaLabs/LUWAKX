@@ -174,17 +174,11 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                         line = f"REPLACE {tag} {set_values_to_zero(vr)}\n"
                     elif vr == 'AS':
                         line = f"REPLACE {tag} 000D\n"
-                    elif vr in ['SQ']:
-                        # For sequences, check Final CTP Script column to determine disposition
-                        # See "Sequences (SQ)" paragraph in: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#631-replace-action---dummy-value-generation
-                        if row['Final CTP Script'] in ['@remove()', 'removed']:
-                            line = f"REMOVE {tag}\n"
-                            logger.warning(f"Tag {tag} with VR=SQ specified with DICOM code 'replace' is set to be removed as per Final CTP Script.")
-                        else:
-                            line = f"#REPLACE {tag} SEQUENCE NEEDS REVIEW\n"
-                            logger.warning(f"Tag {tag} with VR=SQ requires custom template/manual review for replacement.")
                     else:
                         logger.warning(f"Tag {tag} with VR={vr} requires custom template/manual review for replacement.")
+                elif final_action == 'func:sq_keep_original_with_review':
+                    # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    line = f"REPLACE {tag} func:sq_keep_original_with_review\n"
                 elif final_action == 'func:generate_hmacuid':
                     # See UID generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"REPLACE {tag} func:generate_hmacuid\n"
@@ -313,6 +307,8 @@ def _determine_final_action(actions, vr):
         return 'clean_manually'
     elif 'blank' in actions:
         return 'blank'
+    elif 'func:sq_keep_original_with_review' in actions:
+        return 'func:sq_keep_original_with_review'
     elif 'remove' in actions:
         return 'remove'
     # Otherwise, take the first non-empty action from the priority order

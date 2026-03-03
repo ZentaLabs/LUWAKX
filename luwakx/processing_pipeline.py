@@ -100,6 +100,20 @@ class ProcessingPipeline:
         
         self.uid_mappings_file = os.path.join(private_folder, 'uid_mappings.csv')
         self.metadata_file = os.path.join(private_folder, 'metadata.parquet')
+        self.review_flags_file = os.path.join(private_folder, 'review_flags.csv')
+
+        # Review-flags collector: created here (like uid_mappings_file) and injected into
+        # DicomProcessor rather than letting the processor build its own path.
+        self.review_collector = None
+        if private_folder:
+            try:
+                from review_flag_collector import ReviewFlagCollector
+                self.review_collector = ReviewFlagCollector()
+                if self.logger:
+                    self.logger.debug(f"ReviewFlagCollector initialised; review flags will be written to: {self.review_flags_file}")
+            except Exception as _rc_exc:
+                if self.logger:
+                    self.logger.warning(f"Could not initialise ReviewFlagCollector: {_rc_exc}")
     
     @property
     def processor(self):
@@ -107,10 +121,11 @@ class ProcessingPipeline:
         if self._processor is None:
             from dicom_processor import DicomProcessor
             self._processor = DicomProcessor(
-                self.config, 
-                self.logger, 
+                self.config,
+                self.logger,
                 llm_cache=self.llm_cache,
-                patient_uid_db=self.patient_uid_db
+                patient_uid_db=self.patient_uid_db,
+                review_collector=self.review_collector,
             )
         return self._processor
     
@@ -635,6 +650,23 @@ class ProcessingPipeline:
                     self.metadata_file,
                     [metadata_dict]  # Wrap in list since append expects a list
                 )
+
+        # Flush review flags for this series and write via MetadataExporter
+        if self.review_collector:
+            try:
+                _review_rows = self.review_collector.flush_series()
+                if _review_rows:
+                    if self.logger:
+                        self.logger.debug(f"Worker {self.worker_id}: flushing {len(_review_rows)} review-flag row(s) to {self.review_flags_file}")
+                    self.exporter.append_series_review_flags(
+                        self.review_flags_file, _review_rows
+                    )
+                else:
+                    if self.logger:
+                        self.logger.debug(f"Worker {self.worker_id}: no review flags to flush for this series")
+            except Exception as _rf_exc:
+                if self.logger:
+                    self.logger.warning(f"Worker {self.worker_id}: review flags flush failed: {_rf_exc}")
         
     def get_processing_summary(self) -> Dict[str, Any]:
         """Get summary of processing status for all series.

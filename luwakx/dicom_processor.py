@@ -17,6 +17,7 @@ import pydicom
 
 from dicom_series import DicomSeries
 from luwak_logger import log_project_stacktrace
+from review_flag_collector import ReviewFlagCollector
 
 
 class DicomProcessor:
@@ -33,7 +34,8 @@ class DicomProcessor:
         current_file_mappings: Dictionary storing UID mappings for this worker
     """
     
-    def __init__(self, config: Dict[str, Any], logger, llm_cache=None, patient_uid_db=None):
+    def __init__(self, config: Dict[str, Any], logger, llm_cache=None, patient_uid_db=None,
+                 review_collector=None):
         """Initialize DicomProcessor.
         
         Args:
@@ -41,6 +43,8 @@ class DicomProcessor:
             logger: Logger instance
             llm_cache: Optional shared LLM cache instance (thread-safe)
             patient_uid_db: Optional shared patient UID database instance (thread-safe)
+            review_collector: Optional ReviewFlagCollector instance (created and owned by
+                ProcessingPipeline, injected here to keep I/O concerns out of the processor)
         """
         self.config = config
         self.logger = logger
@@ -50,8 +54,15 @@ class DicomProcessor:
         
         # Isolated state per worker (NOT shared)
         self.current_file_mappings: Dict[str, Any] = {}  # UID mappings
-        self.warned_non_modified_tags: set = set()  # Track tags warned about wrong VR types per series which are not modified
-        self.llm_verified_clean_tags: set = set()  # Track tags where LLM found no PHI (requires manual verification)
+
+        # Fallback dedup set for logger warnings when review_collector is None.
+        # When review_collector is available, _first_occurrence() uses
+        # is_first_flag() instead, so this set stays empty in normal operation.
+        self.warned_non_modified_tags: set = set()
+
+        # Injected by ProcessingPipeline (same pattern as uid_mappings_file).
+        # None when outputPrivateMappingFolder is not configured.
+        self.review_collector = review_collector
     
     def process_series(self, series: DicomSeries, recipe) -> None:
         """Process (anonymize) a single DICOM series using deid library.
@@ -76,8 +87,13 @@ class DicomProcessor:
         from deid_logger_handler import DeidProgressHandler
         
         self.series = series
-        # Reset LLM-verified clean tags for this series
-        self.llm_verified_clean_tags = set()
+        # Initialise review-flags context for this series
+        if self.review_collector:
+            self.review_collector.set_series_context(
+                self.series.anonymized_patient_id,
+                self.series.anonymized_study_uid,
+                self.series.anonymized_series_uid,
+            )
         series_display = f"series:{self.series.anonymized_series_uid}, of study:{self.series.anonymized_study_uid}, for patient:{self.series.anonymized_patient_id}"
         self.logger.info(f"DicomProcessor: Anonymizing series {series_display}")
         
@@ -102,6 +118,7 @@ class DicomProcessor:
             items[item]["is_tag_private"] = self.is_tag_private
             items[item]["is_curve_or_overlay_tag"] = self.is_curve_or_overlay_tag
             items[item]["check_patient_age"] = self.check_patient_age
+            items[item]["sq_keep_original_with_review"] = self.sq_keep_original_with_review
         
         # 4. Setup progress handler to redirect deid.bot output to logger
         progress_handler = None
@@ -110,7 +127,8 @@ class DicomProcessor:
             progress_handler = DeidProgressHandler(
                 self.logger,
                 len(dicom_files),
-                series_uid_name=series_uid
+                series_uid_name=series_uid,
+                review_collector=self.review_collector,
             )
             bot.outputStream = progress_handler
             bot.errorStream = progress_handler
@@ -127,6 +145,12 @@ class DicomProcessor:
                 progress_handler.init_progress(len(dicom_files))
 
             for dicom_file in dicom_files:
+                # Update handler with current instance UID so VR-format warnings
+                # emitted by deid/pydicom can be attributed to the right instance.
+                if progress_handler:
+                    progress_handler.set_current_instance_uid(
+                        str(items.get(dicom_file, {}).get('SOPInstanceUID', '*'))
+                    )
 
                 parsed_file = replace_identifiers(
                     dicom_files=dicom_file,
@@ -155,19 +179,27 @@ class DicomProcessor:
                         
             # 7. Inject DeidentificationMethodCodeSequence into anonymized files
             self.inject_deidentification_method_code_sequence()
-            
-            # 8. Warn about LLM-verified clean tags that need manual verification
-            if self.llm_verified_clean_tags:
-                tag_list = ', '.join(sorted(self.llm_verified_clean_tags))
-                self.logger.warning(
-                    f"MANUAL VERIFICATION REQUIRED: The following tags were verified by LLM as containing no PHI, "
-                    f"but additional manual checks are recommended to ensure content validity:\n"
-                    f"   Series Information:\n"
-                    f"     - Patient ID: {self.series.anonymized_patient_id}\n"
-                    f"     - Study UID: {self.series.anonymized_study_uid}\n"
-                    f"     - Series UID: {self.series.anonymized_series_uid}\n"
-                    f"   Tags to verify: {tag_list}"
+
+            # 8. Warn about LLM-verified clean tags that need manual verification.
+            # Query the review_collector buffer BEFORE flushing so it still holds
+            # this series' flags.
+            if self.review_collector:
+                _llm_tags = self.review_collector.get_pending_keywords_by_reason(
+                    ReviewFlagCollector.REASON_LLM_VERIFIED_CLEAN
                 )
+                if _llm_tags:
+                    tag_list = ', '.join(sorted(_llm_tags))
+                    self.logger.warning(
+                        f"MANUAL VERIFICATION REQUIRED: The following tags were verified by LLM as containing no PHI, "
+                        f"but additional manual checks are recommended to ensure content validity:\n"
+                        f"   Series Information:\n"
+                        f"     - Patient ID: {self.series.anonymized_patient_id}\n"
+                        f"     - Study UID: {self.series.anonymized_study_uid}\n"
+                        f"     - Series UID: {self.series.anonymized_series_uid}\n"
+                        f"   Tags to verify: {tag_list}"
+                    )
+            # flush_series() and CSV writing are handled by ProcessingPipeline
+            # via MetadataExporter after process_series() returns.
             
         except Exception as e:
             series_display = os.path.basename(self.series.output_base_path)
@@ -194,12 +226,78 @@ class DicomProcessor:
             # NOTE: self.series and current_file_mappings remain in memory for export stage
             # They are cleared later in clear_series_data() after export completes
             
+        if self.review_collector:
+            pending = len(self.review_collector._flags)
+            self.logger.debug(
+                f"DicomProcessor: series {series_display} completed — "
+                f"{pending} review-flag key(s) pending in collector"
+            )
         self.logger.debug(f"DicomProcessor: Completed series {series_display}")
     
     # =================================================================
     # DEID Custom Functions - Injected into DEID recipe processing
     # =================================================================
-    
+
+    def _first_occurrence(self, tag_group: str, tag_element: str, reason: str,
+                          fallback_key: str) -> bool:
+        """Dedup guard – True on the first occurrence of (tag, reason) within this series.
+
+        When a review_collector is present, delegates to
+        ``review_collector.is_first_flag()`` so the collector buffer is the single
+        source of truth (no duplicate state).  Falls back to the local
+        ``warned_non_modified_tags`` set otherwise.
+
+        Must be called *before* the corresponding ``review_collector.add_flag()``
+        call so the buffer is still empty for that key.
+
+        Args:
+            tag_group:    4-char hex group string.
+            tag_element:  4-char hex element string.
+            reason:       ``ReviewFlagCollector.REASON_*`` constant.
+            fallback_key: Key used in ``warned_non_modified_tags`` when no collector.
+
+        Returns:
+            bool: True if this is the first time this (tag, reason) has fired.
+        """
+        if self.review_collector:
+            return self.review_collector.is_first_flag(tag_group, tag_element, reason)
+        # Fallback: no output folder / collector not initialised
+        if fallback_key in self.warned_non_modified_tags:
+            return False
+        self.warned_non_modified_tags.add(fallback_key)
+        return True
+
+    def _flag_params(self, field, dicom_dataset) -> dict:
+        """Extract common tag-identification parameters for ReviewFlagCollector.add_flag().
+
+        Args:
+            field:          deid field wrapper whose ``.element`` is a pydicom DataElement.
+            dicom_dataset:  PyDicom Dataset for the file being processed (provides SOPInstanceUID).
+
+        Returns:
+            Dict with keys: tag_group, tag_element, attribute_name, keyword, vr, vm,
+            sop_instance_uid.  Safe to spread (``**``) directly into add_flag().
+        """
+        try:
+            tag         = field.element.tag
+            tag_group   = f"{tag.group:04X}"
+            tag_element = f"{tag.element:04X}"
+            keyword     = getattr(field.element, 'keyword', '') or ''
+            vr          = str(getattr(field.element, 'VR',  '') or '')
+            vm          = str(getattr(field.element, 'VM',  '') or '')
+        except Exception:
+            tag_group = tag_element = keyword = vr = vm = ''
+        sop_uid = str(getattr(dicom_dataset, 'SOPInstanceUID', '*') or '*')
+        return dict(
+            tag_group       = tag_group,
+            tag_element     = tag_element,
+            attribute_name  = keyword,
+            keyword         = keyword,
+            vr              = vr,
+            vm              = vm,
+            sop_instance_uid= sop_uid,
+        )
+
     def generate_patient_id(self, item, value, field, dicom):
         """Generate consistent patient ID using patient UID database.
         
@@ -351,20 +449,31 @@ class DicomProcessor:
         if field_vr != 'UI':
             tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
             keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
-            
-            # Only log warning once per unique tag per series
-            tag_key = f"replaceuid_{tag_str}_{keyword_str}"
-            if tag_key not in self.warned_non_modified_tags:
-                self.warned_non_modified_tags.add(tag_key)
+            _orig = str(field.element.value)
+            _fp = self._flag_params(field, dicom)
+            if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                      ReviewFlagCollector.REASON_VR_MISMATCH,
+                                      f"replaceuid_{tag_str}_{keyword_str}"):
                 series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
                 self.logger.warning(
                     f"Tag {tag_str} ({keyword_str}) has VR={field_vr}, which cannot have UID replacement applied. "
                     f"UID replacement only applies to VR type UI. Please verify this tag manually. "
                     f"Series: {series_info}"
                 )
-            
+            # Record in review CSV (called every time, not gated by dedup, to track all instances)
+            if self.review_collector:
+                try:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_VR_MISMATCH,
+                        original_value = _orig,
+                        keep           = 1,
+                        output_value   = _orig,
+                        **_fp,
+                    )
+                except Exception:
+                    pass
             # Return original value for non-UI VR types
-            return str(field.element.value)
+            return _orig
         
         project_hash_root = self.config.get('projectHashRoot', '')
         
@@ -484,17 +593,29 @@ class DicomProcessor:
         if field_vr not in ['DA', 'DT']:
             tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
             keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
-            # Only log warning once per unique tag per series
-            tag_key = f"dateshift_{tag_str}_{keyword_str}"
-            if tag_key not in self.warned_non_modified_tags:
-                self.warned_non_modified_tags.add(tag_key)
+            _orig = str(getattr(field.element, 'value', ''))
+            _fp = self._flag_params(field, dicom)
+            if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                      ReviewFlagCollector.REASON_VR_MISMATCH,
+                                      f"dateshift_{tag_str}_{keyword_str}"):
                 series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
                 self.logger.warning(
                     f"Tag {tag_str} ({keyword_str}) has VR={field_vr}, which cannot be jittered. "
                     f"Date shift only applies to VR types DA and DT. Please verify this tag manually. "
                     f"Series: {series_info}"
                 )
-            
+            # Record in review CSV (every instance, not gated by dedup)
+            if self.review_collector:
+                try:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_VR_MISMATCH,
+                        original_value = _orig,
+                        keep           = 1,
+                        output_value   = _orig,
+                        **_fp,
+                    )
+                except Exception:
+                    pass
             return 0  # Return 0 (no shift) for non-date VR types
         
         project_hash_root = self.config.get('projectHashRoot', '')
@@ -614,17 +735,32 @@ class DicomProcessor:
                 return "000000.00"
             else:
                 # For unknown VR, log warning once per unique tag per series
-                tag_key = f"fixeddatetime_{tag_str}_{keyword_str}"
-                if tag_key not in self.warned_non_modified_tags:
-                    self.warned_non_modified_tags.add(tag_key)
+                # original_value is assigned here (outside the dedup guard) so it
+                # is always defined for the add_flag call and return below.
+                original_value = field.element.value if hasattr(field, 'element') and hasattr(field.element, 'value') else ""
+                _orig = str(original_value) if original_value is not None else ''
+                _fp = self._flag_params(field, dicom)
+                if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                          ReviewFlagCollector.REASON_VR_MISMATCH,
+                                          f"fixeddatetime_{tag_str}_{keyword_str}"):
                     series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
-                    original_value = field.element.value if hasattr(field, 'element') and hasattr(field.element, 'value') else ""
                     self.logger.warning(
                         f"Unknown VR type '{vr}' for tag {tag_str} ({keyword_str}). "
                         f"Expected DA, DT, or TM. Returning original value. "
                         f"Series: {series_info}"
                     )
-                return str(original_value) if original_value is not None else ""
+                if self.review_collector:
+                    try:
+                        self.review_collector.add_flag(
+                            reason         = ReviewFlagCollector.REASON_VR_MISMATCH,
+                            original_value = _orig,
+                            keep           = 1,
+                            output_value   = _orig,
+                            **_fp,
+                        )
+                    except Exception:
+                        pass
+                return _orig
                 
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
@@ -757,8 +893,19 @@ class DicomProcessor:
                 f"Keeping original value for tag {field.element.tag} "
                 f"({tag_keyword})."
             )
-            # Track this tag for manual verification warning
-            self.llm_verified_clean_tags.add(f"{field.element.tag} ({tag_keyword})")
+            # Record in review CSV (the pending buffer is queried at end of
+            # process_series to produce the MANUAL VERIFICATION warning log)
+            if self.review_collector:
+                try:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_LLM_VERIFIED_CLEAN,
+                        original_value = original_value,
+                        keep           = 1,
+                        output_value   = original_value,
+                        **self._flag_params(field, dicom),
+                    )
+                except Exception:
+                    pass
             return original_value
     
     def is_tag_private(self, dicom, value, field, item):
@@ -814,26 +961,105 @@ class DicomProcessor:
                 else:
                     return age_str
             except Exception:
-                warn_key = "patient_age_format_invalid"
-                if warn_key not in self.warned_non_modified_tags:
-                    self.warned_non_modified_tags.add(warn_key)
+                _fp = self._flag_params(field, dicom)
+                if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                          ReviewFlagCollector.REASON_VR_MISMATCH,
+                                          "patient_age_format_invalid"):
                     series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
                     self.logger.warning(
                         f"Patient Age tag {field.element.tag} format not recognized. "
                         f"Please manually check the validity of this tag. Series: {series_info}"
                     )
+                if self.review_collector:
+                    try:
+                        self.review_collector.add_flag(
+                            reason         = ReviewFlagCollector.REASON_VR_MISMATCH,
+                            original_value = age_str,
+                            keep           = 1,
+                            output_value   = age_str,
+                            **_fp,
+                        )
+                    except Exception:
+                        pass
                 return age_str
         else:
-            warn_key = "patient_age_format_invalid"
-            if warn_key not in self.warned_non_modified_tags:
-                self.warned_non_modified_tags.add(warn_key)
+            _fp = self._flag_params(field, dicom)
+            if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                      ReviewFlagCollector.REASON_VR_MISMATCH,
+                                      "patient_age_format_invalid"):
                 series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
                 self.logger.warning(
                     f"Patient Age tag {field.element.tag} format not recognized. "
                     f"Please manually check the validity of this tag. Series: {series_info}"
                 )
+            if self.review_collector:
+                try:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_VR_MISMATCH,
+                        original_value = str(age_value),
+                        keep           = 1,
+                        output_value   = str(age_value),
+                        **_fp,
+                    )
+                except Exception:
+                    pass
             return age_value
     
+    def sq_keep_original_with_review(self, item, value, field, dicom):
+        """Keep the original value of a VR=SQ tag and flag it for manual review.
+
+        This function is injected into deid recipe processing and is called for SQ
+        (Sequence) tags that are marked for ``replace`` in the anonymization template
+        but have no automatic replacement logic available (i.e. the Final CTP Script
+        column does not specify ``@remove()`` or ``removed``).
+
+        The tag value is returned unchanged so the sequence content is preserved;
+        a review-flag row is written to the review CSV so a human reviewer can
+        decide whether the sequence contains PHI and act accordingly.
+
+        Args:
+            item:  Item identifier from deid processing.
+            value: Recipe string (``"func:sq_keep_original_with_review"``).
+            field: DICOM field element containing the SQ tag.
+            dicom: PyDicom dataset object.
+
+        Returns:
+            The original field value, unchanged.
+
+        Example recipe usage::
+
+            REPLACE (0040,A730) func:sq_keep_original_with_review
+        """
+        original_value = getattr(field.element, 'value', None)
+        _fp = self._flag_params(field, dicom)
+        if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                  ReviewFlagCollector.REASON_SQ_REPLACE_NEEDS_REVIEW,
+                                  f"sq_review_{_fp['tag_group']}_{_fp['tag_element']}"):
+            series_info = (
+                f"series:{self.series.anonymized_series_uid}, "
+                f"study:{self.series.anonymized_study_uid}, "
+                f"patient:{self.series.anonymized_patient_id}"
+            )
+            self.logger.warning(
+                f"MANUAL REVIEW REQUIRED: Tag ({_fp['tag_group']},{_fp['tag_element']}) "
+                f"({_fp['keyword']}) has VR=SQ and is marked for replacement, but no "
+                f"automatic replacement is available. The original sequence value is kept "
+                f"unchanged. Please review this tag manually. Series: {series_info}"
+            )
+        if self.review_collector:
+            try:
+                sq_str = str(original_value).replace("\n", " | ") if original_value is not None else ""
+                self.review_collector.add_flag(
+                    reason         = ReviewFlagCollector.REASON_SQ_REPLACE_NEEDS_REVIEW,
+                    original_value = sq_str,
+                    keep           = 1,
+                    output_value   = sq_str,
+                    **_fp,
+                )
+            except Exception:
+                pass
+        return original_value
+
     def is_curve_or_overlay_tag(self, dicom, value, field, item):
         """Check if a DICOM tag is Curve Data, Overlay Data, or Overlay Comments.
         
@@ -1040,10 +1266,10 @@ class DicomProcessor:
         """
         # Clear UID mappings for this series
         self.current_file_mappings.clear()
-        
-        # Clear warning tracking for this series
+
+        # Clear the fallback dedup set (only populated when review_collector is None)
         self.warned_non_modified_tags.clear()
-        
+
         # Clear series reference to allow garbage collection
         self.series = None
         

@@ -1,7 +1,17 @@
 # luwakx/deid_logger_handler.py
 
+import re
 import time
 from tqdm import tqdm
+
+# Regex to extract a DICOM tag pair (XXXX, XXXX) from deid / pydicom warning messages.
+_RE_TAG      = re.compile(r'\(([0-9a-fA-F]{4})[,\s]+([0-9a-fA-F]{4})\)')
+# Regex to extract a two-to-three-letter VR token (e.g. "IS", "DS", "LO").
+_RE_VR       = re.compile(r'\bVR[\s\'":]+([A-Z]{2,3})\b|\b([A-Z]{2,3})[\s\'":]+VR\b')
+# Regex to extract a quoted value from the message.
+_RE_VALUE    = re.compile(r"[\"']([^\"']{0,256})[\"']")
+# Keywords that indicate the message is about an invalid VR *content* (not just any warning).
+_VR_WARN_KEYWORDS = ("invalid", "not valid", "not a valid", "vr", "value representation")
 
 
 class DeidProgressHandler:
@@ -28,6 +38,7 @@ class DeidProgressHandler:
         interval_sec=6,
         percent_interval=10,
         series_uid_name=None,
+        review_collector=None,
     ):
         self.luwak_logger = luwak_logger
         self.total_slices = total_slices
@@ -38,10 +49,24 @@ class DeidProgressHandler:
         self.last_log_time = time.time()
         self.last_logged_percent = 0
         self.pbar = None
+        # Optional ReviewFlagCollector – receives VR-format warnings caught from deid/pydicom.
+        self.review_collector = review_collector
+        # SOPInstanceUID of the file currently being processed; updated before each
+        # replace_identifiers() call so warnings can be attributed to the right instance.
+        self._current_sop_uid: str = "*"
 
     # ------------------------------------------------------------------
     # deid bot stream interface  (bot.outputStream / bot.errorStream)
     # ------------------------------------------------------------------
+
+    def set_current_instance_uid(self, sop_instance_uid: str) -> None:
+        """Record the SOPInstanceUID of the file about to be processed.
+
+        Call this immediately before each ``replace_identifiers()`` invocation so
+        that VR-format warnings emitted during that call can be attributed to the
+        correct DICOM instance in the review CSV.
+        """
+        self._current_sop_uid = sop_instance_uid or "*"
 
     def write(self, msg):
         """Receive output from deid's internal bot logger.
@@ -49,6 +74,10 @@ class DeidProgressHandler:
         Errors and warnings are forwarded to the project logger and also
         written via tqdm.write() so they appear above the progress bar
         without corrupting it.
+
+        Additionally, WARNING messages that indicate an invalid VR *content*
+        (e.g. ``DS`` field containing letters) are parsed and forwarded to the
+        ``ReviewFlagCollector`` when one is attached.
         """
         import traceback
 
@@ -70,8 +99,60 @@ class DeidProgressHandler:
         elif "WARNING" in msg or "Warning" in msg:
             self.luwak_logger.warning(msg.strip())
             tqdm.write(f"[WARNING] {msg.strip()}")
+            self._try_capture_vr_warning(msg)
         # Other deid bot output (e.g. "Anonymized file") is intentionally
         # suppressed here; progress is tracked explicitly via update_progress().
+
+    def _try_capture_vr_warning(self, msg: str) -> None:
+        """Parse *msg* for a VR-format violation and forward it to the collector.
+
+        Only fires when:
+        * a ``review_collector`` is attached, and
+        * the message lower-cased contains at least one VR invalid-content keyword.
+        """
+        if self.review_collector is None:
+            return
+        msg_lower = msg.lower()
+        if not any(kw in msg_lower for kw in _VR_WARN_KEYWORDS):
+            return
+
+        # Try to extract a tag (XXXX, XXXX) from the message.
+        tag_match = _RE_TAG.search(msg)
+        if tag_match:
+            tag_group   = tag_match.group(1).upper()
+            tag_element = tag_match.group(2).upper()
+        else:
+            tag_group   = "UNKN"
+            tag_element = "UNKN"
+
+        # Try to extract a VR token.
+        vr_match = _RE_VR.search(msg)
+        if vr_match:
+            vr = (vr_match.group(1) or vr_match.group(2) or "").upper()
+        else:
+            vr = ""
+
+        # Try to extract a quoted value (take first match).
+        value_match = _RE_VALUE.search(msg)
+        original_value = value_match.group(1) if value_match else ""
+
+        try:
+            from review_flag_collector import ReviewFlagCollector
+            self.review_collector.add_flag(
+                tag_group       = tag_group,
+                tag_element     = tag_element,
+                attribute_name  = "",
+                keyword         = "",
+                vr              = vr,
+                vm              = "",
+                reason          = ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
+                sop_instance_uid= self._current_sop_uid,
+                original_value  = original_value,
+                keep            = 1,  # deid passes the value through when format is bad
+                output_value    = original_value,
+            )
+        except Exception:
+            pass  # Never let review-CSV logic break the main anonymization flow
 
     def flush(self):
         pass

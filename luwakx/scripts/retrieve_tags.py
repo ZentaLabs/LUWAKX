@@ -654,7 +654,7 @@ def generate_basic_profile(final_df, doc_refs_dict):
     df = final_df.copy()
     
     # Ensure required columns exist
-    required_cols = ['Basic Prof.', 'Name', 'VR', 'TCIA element_sig_pattern', 'Group', 'Element']
+    required_cols = ['Basic Prof.', 'Name', 'VR', 'TCIA element_sig_pattern', 'Group', 'Element', 'Final CTP Script']
     for col in required_cols:
         if col not in df.columns:
             print(f"Warning: Required column '{col}' not found in DataFrame")
@@ -697,7 +697,7 @@ def generate_basic_profile(final_df, doc_refs_dict):
             # See dummy value generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#631-replace-action---dummy-value-generation
             # See VR-based mapping logic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#541-basic-application-confidentiality-profile---action-mapping-logic (DICOM Code 'D')
             replace_tag = ["AE", "LO", "LT", "SH", "PN", "CS", "ST", "UT", "UC", "UR", "DS", "IS", 
-                           "FD", "FL", "SS", "US", "SL", "UL", 'AS', 'SQ', 'OD', 'OL', 'OV', 'SV', 'UV']
+                           "FD", "FL", "SS", "US", "SL", "UL", 'AS', 'OD', 'OL', 'OV', 'SV', 'UV']
             # Check if VR is date/time related for date replacement
             # See fixed datetime: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#538-fixed-datetime-funcset_fixed_datetime
             if vr in ['DA', 'DT', 'TM']:
@@ -708,6 +708,17 @@ def generate_basic_profile(final_df, doc_refs_dict):
                 # Note: Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
                 df.at[idx, 'Basic Prof.'] = 'func:generate_hmacuid'
                 doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-uid-generation-funcgenerate_hmacuid, Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer")
+            elif vr == 'SQ':
+                # Sequence tags cannot be automatically replaced. If the Final CTP Script
+                # indicates removal, remove the tag; otherwise keep the original value at
+                # runtime and flag it for manual review via review_flags.csv.
+                final_ctp = str(row.get('Final CTP Script', '')).strip()
+                if final_ctp in ['@remove()', 'removed']:
+                    df.at[idx, 'Basic Prof.'] = 'remove'
+                    doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove, Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview")
+                else:
+                    df.at[idx, 'Basic Prof.'] = 'func:sq_keep_original_with_review'
+                    doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action")
             elif vr in replace_tag:
                 df.at[idx, 'Basic Prof.'] = 'replace'
                 doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#534-replace")
@@ -759,6 +770,18 @@ def generate_basic_profile(final_df, doc_refs_dict):
                 if vr in ['OB', 'OW', 'OF', 'UN']:
                     df.at[idx, 'Basic Prof.'] = 'remove'
                     doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove, Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview")
+                elif vr == 'SQ':
+                    # Sequence tags cannot be automatically replaced. If the Final CTP Script
+                    # indicates removal, remove the tag; otherwise keep the original value at
+                    # runtime and flag it for manual review via review_flags.csv.
+                    final_ctp = str(row.get('Final CTP Script', '')).strip()
+                    if final_ctp in ['@remove()', 'removed']:
+                        # Note: Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview
+                        df.at[idx, 'Basic Prof.'] = 'remove'
+                        doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove, Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview")
+                    else:
+                        df.at[idx, 'Basic Prof.'] = 'func:sq_keep_original_with_review'
+                        doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action")
                 # Note: Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
                 else:
                     df.at[idx, 'Basic Prof.'] = 'replace'

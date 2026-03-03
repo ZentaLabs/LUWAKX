@@ -81,6 +81,50 @@ class MetadataExporter:
     # Streaming Export Methods (Memory-Efficient Incremental Export)
     # ============================================================================
     
+    # ============================================================================
+    # Streaming Export Methods (Memory-Efficient Incremental Export)
+    # ============================================================================
+
+    def append_series_review_flags(self, review_flags_file: str,
+                                   rows: List[Dict[str, Any]]) -> None:
+        """Append review-flag rows for one series to the project-level CSV.
+
+        Creates the file with a header row on the first write, then appends.
+        Rows are produced by ``ReviewFlagCollector.flush_series()``.
+
+        Args:
+            review_flags_file: Absolute path to the review-flags CSV.
+            rows: List of row dicts, keys matching
+                ``ReviewFlagCollector.CSV_COLUMNS``.  No-op when empty.
+
+        See conformance documentation ("Review Flags CSV" section):
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
+        """
+        if not rows:
+            return
+
+        from review_flag_collector import ReviewFlagCollector
+        columns = ReviewFlagCollector.CSV_COLUMNS
+        file_exists = os.path.exists(review_flags_file)
+
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(review_flags_file)), exist_ok=True)
+            with open(review_flags_file, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=columns)
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerows(rows)
+            if self.logger:
+                self.logger.debug(
+                    f"MetadataExporter: wrote {len(rows)} review-flag row(s) to {review_flags_file}"
+                )
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(
+                    f"MetadataExporter: failed to write {len(rows)} review-flag row(s) "
+                    f"to {review_flags_file}: {e}"
+                )
+
     def append_series_uid_mappings(self, uid_mappings_file: str, 
                                    series: 'DicomSeries',
                                    mappings: Dict[str, Any],
