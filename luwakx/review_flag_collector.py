@@ -29,6 +29,7 @@ CSV columns (see ``ReviewFlagCollector.CSV_COLUMNS``):
     override_value          – *user-fillable* (leave blank; luwak never writes this)
 """
 
+import re
 from typing import Any, Dict, List, Tuple
 
 
@@ -93,6 +94,22 @@ class ReviewFlagCollector:
     ]
 
     # ─────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _sanitize(value: str) -> str:
+        """Replace control characters in *value* with their escape representations.
+
+        Prevents newlines, carriage returns, and other non-printable characters
+        from corrupting CSV rows when the value is written to the review-flags file.
+        """
+        # Replace common control chars with visible escape sequences
+        value = value.replace('\r\n', '\\n')
+        value = value.replace('\r', '\\r')
+        value = value.replace('\n', '\\n')
+        value = value.replace('\t', '\\t')
+        # Replace any remaining ASCII control characters (0x00-0x1F, 0x7F)
+        value = re.sub(r'[\x00-\x1f\x7f]', lambda m: f'\\x{ord(m.group()):02x}', value)
+        return value
 
     def __init__(self) -> None:
         """Initialise an empty collector.  No file paths or I/O involved."""
@@ -170,9 +187,9 @@ class ReviewFlagCollector:
             "vr":               vr,
             "vm":               vm,
             "sop_instance_uid": sop_instance_uid or "*",
-            "original_value":   str(original_value),
+            "original_value":   self._sanitize(str(original_value)),
             "keep":             keep,
-            "output_value":     str(output_value),
+            "output_value":     self._sanitize(str(output_value)),
         }
         if key not in self._flags:
             self._flags[key] = []

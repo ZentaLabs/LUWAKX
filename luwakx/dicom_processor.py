@@ -792,6 +792,30 @@ class DicomProcessor:
         See conformance documentation:
         https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#537-llm-descriptor-cleaning-funcclean_descriptors_with_llm
         """
+        # Bypass LLM: treat result as 0 (no PHI) and keep the tag unchanged
+        if self.config.get('bypassCleanDescriptorsLlm', False):
+            try:
+                original_value = str(field.element.value)
+            except Exception:
+                original_value = "unknown"
+            tag_keyword = getattr(field.element, 'keyword', 'Unknown')
+            self.logger.debug(
+                f"LLM bypass enabled: keeping original value for tag "
+                f"{field.element.tag} ({tag_keyword})."
+            )
+            if self.review_collector:
+                try:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_LLM_VERIFIED_CLEAN,
+                        original_value = original_value,
+                        keep           = 1,
+                        output_value   = original_value,
+                        **self._flag_params(field, dicom),
+                    )
+                except Exception:
+                    pass
+            return original_value
+
         from openai import OpenAI
         
         # Extract original value

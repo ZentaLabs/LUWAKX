@@ -66,6 +66,7 @@ Create a JSON configuration file with the following structure:
 - **`cleanDescriptorsLlmBaseUrl`**: Base URL for LLM API used in descriptor cleaning (optional)
 - **`cleanDescriptorsLlmModel`**: LLM model name for descriptor cleaning (default: "openai/gpt-4o-mini")
 - **`cleanDescriptorsLlmApiKeyEnvVar`**: Environment variable name containing the LLM API key (optional)
+- **`bypassCleanDescriptorsLlm`**: If `true`, skips the LLM call entirely in `clean_descriptors_with_llm`. The result is always treated as 0 (no PHI detected) and the tag is kept with its original value. Useful for testing or when LLM access is unavailable. (default: false)
 
 #### Analysis Cache Parameters
 

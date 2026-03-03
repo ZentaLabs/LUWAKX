@@ -142,6 +142,11 @@
         }
       }
     },
+    "bypassCleanDescriptorsLlm": {
+      "type": "boolean",
+      "description": "If true, bypasses the LLM call in clean_descriptors_with_llm. The result is always treated as 0 (no PHI detected) and the tag is kept unchanged.",
+      "default": false
+    },
     "saveDefaceMasks": {
       "type": "object",
       "description": "Configuration for persisting the primary defacing mask per (patient, study, FrameOfReferenceUID, modality) group.\nWhen the 'primary' list is non-empty, luwak selects one series per group – the one with the largest spatial coverage and finest voxel resolution – runs ML defacing on it, and stores the resulting mask as an NRRD file in the private mapping folder.\nSubsequent series in the same group reuse the cached mask, avoiding redundant ML inference.\nThe study UID is included in the cache key so masks are scoped to a single study and are not shared across studies.\nThe mask database follows the same persistence rules as analysisCacheFolder: if that folder is configured the database persists across runs; otherwise it is temporary.\nWhen this option is absent or 'primary' is empty, the feature is fully disabled: no DB is created, no masks are saved, and all series are defaced independently.",
