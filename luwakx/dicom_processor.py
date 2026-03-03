@@ -63,6 +63,8 @@ class DicomProcessor:
         # Injected by ProcessingPipeline (same pattern as uid_mappings_file).
         # None when outputPrivateMappingFolder is not configured.
         self.review_collector = review_collector
+
+
     
     def process_series(self, series: DicomSeries, recipe) -> None:
         """Process (anonymize) a single DICOM series using deid library.
@@ -206,12 +208,26 @@ class DicomProcessor:
             self.logger.error(f"Error during anonymization of series {series_display}: {e}")
             raise
         finally:
-            # Close progress handler
+            # Close progress handler and detach from the deid bot singleton.
+            # Without the reset, bot.outputStream keeps the handler (and all objects
+            # it references) alive until the next series replaces it.  The last
+            # series' handler would never be freed at all.
             if progress_handler:
                 try:
                     progress_handler.close()
                 except Exception as e:
                     self.logger.warning(f"Error closing progress handler: {e}")
+            try:
+                bot.outputStream = None
+                bot.errorStream  = None
+                # bot.history is a list that accumulates every log message the deid
+                # library emits and is never cleared automatically.  With hundreds of
+                # DICOM files per series this grows continuously and is the primary
+                # source of unbounded memory growth across series.
+                if hasattr(bot, 'history') and isinstance(bot.history, list):
+                    bot.history.clear()
+            except Exception:
+                pass
             
             # Free large memory structures immediately after anonymization completes
             try:
@@ -1225,8 +1241,8 @@ class DicomProcessor:
                 continue
             
             try:
-                # Read the DICOM file
-                ds = pydicom.dcmread(path)
+                # Read the DICOM file (pixel data not needed — only tag injection)
+                ds = pydicom.dcmread(path, stop_before_pixels=True)
                 
                 # Inject the DeidentificationMethodCodeSequence with all recipe items
                 ds.DeidentificationMethodCodeSequence = sequence_items
@@ -1299,6 +1315,18 @@ class DicomProcessor:
         
         # Force garbage collection to free memory immediately
         gc.collect()
-        
+
+        # ── deid @cache leak fix ───────────────────────────────────────────
+        # deid.dicom.fields._get_fields_inner is decorated with
+        # @functools.cache (unbounded).  It is keyed by id(FileDataset), so
+        # every slice processed during this series is pinned in the cache
+        # forever, preventing GC.  Clearing it after each series releases all
+        # those FileDataset references immediately.
+        try:
+            from deid.dicom.fields import _get_fields_inner
+            _get_fields_inner.cache_clear()
+        except (ImportError, AttributeError):
+            pass  # deid not installed or API changed – silently skip
+
         if self.logger:
             self.logger.debug(f"Cleared memory for series")

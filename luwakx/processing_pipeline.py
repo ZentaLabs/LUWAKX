@@ -210,15 +210,19 @@ class ProcessingPipeline:
         
         completed = 0
         failed = 0
-        
-        for series_uid, series in self.series_collection.items():
+        total = len(self.series_collection)
+
+        # Iterate over a snapshot of UIDs so we can safely remove each series
+        # from series_collection immediately after it is processed, freeing memory.
+        for series_uid in list(self.series_collection.keys()):
+            series = self.series_collection[series_uid]
             try:
                 if self.logger:
                     # Use output_base_path basename for logging (contains UID hierarchy)
                     series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
                     self.logger.info(
                         f"Worker {self.worker_id}: Processing series "
-                        f"{completed + 1}/{len(self.series_collection)}: {series_display}"
+                        f"{completed + 1}/{total}: {series_display}"
                     )
                 
                 # Process this series through ALL stages
@@ -235,6 +239,19 @@ class ProcessingPipeline:
                 if self.logger:
                     self.logger.error(f"✗ Failed: {series_display}: {e}")
                 # Continue with next series
+            finally:
+                # Remove series from collection and drop the reference so the
+                # garbage collector can reclaim the memory immediately.
+                del self.series_collection[series_uid]
+                del series
+                # Force GC cycle and return freed pages to the OS.
+                import gc
+                gc.collect()
+                try:
+                    import ctypes
+                    ctypes.CDLL("libc.so.6").malloc_trim(0)
+                except Exception:
+                    pass
         
         if self.logger:
             self.logger.info(
@@ -272,7 +289,7 @@ class ProcessingPipeline:
         # Stage 5: Clear series data from memory after export completes
         # This frees current_file_mappings and self.series reference
         self.processor.clear_series_data(series)
-        
+
         # Clean up LM Studio worker processes after series is complete
         # The LLM inference (recipe generation) creates worker processes that
         # accumulate GPU memory. Clean them up after each series to prevent OOM.

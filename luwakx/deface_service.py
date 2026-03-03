@@ -67,6 +67,10 @@ class DefaceService:
 
         # Track series counter for external mask indexing
         self._series_counter = 0
+
+        # Cached defacer module – loaded once on the first series to avoid
+        # re-executing module-level moosez initialisation code on every series.
+        self._defacer = None
     
     def process_series(self, series: DicomSeries) -> Dict[str, Any]:
         """Process (deface) a single DICOM series.
@@ -109,21 +113,22 @@ class DefaceService:
         series_temp_dir = series.defaced_base_path
         os.makedirs(series_temp_dir, exist_ok=True)
         
-        try:
-            # Load defacer module
-            defacer_path = os.path.join(
-                os.path.dirname(__file__), "scripts", "defacing", 
-                "image_defacer", "image_anonymization.py"
-            )
-            spec = importlib.util.spec_from_file_location("image_anonymization", defacer_path)
-            defacer = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(defacer)
-        except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
-            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
-            log_project_stacktrace(self.logger, e)
-            self.logger.error(f"Failed to load defacer module: {e}")
-            return self._copy_without_defacing(series)
+        if self._defacer is None:
+            try:
+                # Load defacer module once and cache it on the instance to avoid
+                # re-executing moosez module-level initialisation on every series.
+                defacer_path = os.path.join(
+                    os.path.dirname(__file__), "scripts", "defacing",
+                    "image_defacer", "image_anonymization.py"
+                )
+                spec = importlib.util.spec_from_file_location("image_anonymization", defacer_path)
+                self._defacer = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(self._defacer)
+            except Exception as e:
+                log_project_stacktrace(self.logger, e)
+                self.logger.error(f"Failed to load defacer module: {e}")
+                return self._copy_without_defacing(series)
+        defacer = self._defacer
         
         # Get metadata from series (already loaded during series creation - no file re-reading!)
         modality = series.modality        
@@ -222,7 +227,7 @@ class DefaceService:
             except Exception as e:
                 log_project_stacktrace(self.logger, e)
                 self.logger.warning(f"Failed to persist deface mask to database: {e}")
-        
+
         # Convert defaced volume back to DICOM files.
         # We iterate over all files (any order is fine) and extract each slice from the
         # defaced 3D volume using the slice's own DICOM spatial metadata
@@ -237,6 +242,7 @@ class DefaceService:
         # Log whether axis-aligned or general orientation extraction will be used (check once for the series)
         _first_ds = pydicom.dcmread(gdcm_sorted_files[0])
         _iop_first = [float(x) for x in _first_ds.ImageOrientationPatient]
+        del _first_ds  # full pydicom Dataset no longer needed — free it before the slice loop
         _axis_aligned = self._is_volume_axis_aligned(_iop_first)
         if _axis_aligned:
             self.logger.info(f"Volume has axis-aligned with the world (LPS) coordinate axes") 
@@ -289,6 +295,29 @@ class DefaceService:
             self.logger.error(f"Failed to convert defaced volume to DICOM files: {e}")
             self.logger.error("Defacing failed - falling back to undefaced files")
             return self._copy_without_defacing(series)
+        finally:
+            # Explicitly release large 3D volumes now that the slice loop is done.
+            # NRRD files are on disk; image_defaced was needed only for per-slice
+            # extraction above.  Releasing here (rather than waiting for function-scope
+            # GC) lets the C++/ITK allocator reclaim the memory before the next series.
+            import gc as _gc
+            try:
+                del image_defaced
+            except NameError:
+                pass
+            try:
+                del image_face_segmentation
+            except NameError:
+                pass
+            try:
+                del reader
+            except NameError:
+                pass
+            try:
+                del image
+            except NameError:
+                pass
+            _gc.collect()
         
         series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
         self.logger.info(
