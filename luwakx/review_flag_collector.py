@@ -65,6 +65,22 @@ class ReviewFlagCollector:
             automatic replacement logic is available (the Final CTP Script column does not
             specify ``@remove()`` or ``removed``).  The original sequence value is kept
             unchanged; manual review is required to determine whether the content contains PHI.
+        REASON_PHI_REMOVAL_FAILED:
+            PHI was detected in the tag value and deletion was attempted, but the removal
+            failed (typically because the tag is nested inside a sequence and deid does not
+            allow direct deletion from outside the sequence).  The value was replaced with
+            the placeholder string ``'ANONYMIZED'`` as a fallback.
+        REASON_PATIENT_DB_UNAVAILABLE:
+            The patient UID database was not initialised when a tag requiring it was processed
+            (e.g. ``PatientID``).  Common causes: ``outputPrivateMappingFolder`` not configured,
+            a path/permission error during database creation, or an upstream initialisation
+            failure.  A default fallback ID (``'ANON00'``) was used instead.
+        REASON_SERIES_FAILED:
+            A fatal exception caused the entire series to fail (e.g. a pydicom parsing error,
+            an I/O error, or an unexpected deid bot error).  No DICOM file from this series
+            was anonymized.  The error message is stored in ``original_value``.  ``tag_group``
+            and ``tag_element`` are both ``'*'`` because the failure is not attributable to a
+            specific tag.
     """
 
     # ── Reason codes ──────────────────────────────────────────────────────────
@@ -72,6 +88,9 @@ class ReviewFlagCollector:
     REASON_LLM_VERIFIED_CLEAN       = "LLM_VERIFIED_CLEAN"
     REASON_VR_FORMAT_INVALID        = "VR_FORMAT_INVALID"
     REASON_SQ_REPLACE_NEEDS_REVIEW  = "SQ_REPLACE_NEEDS_REVIEW"
+    REASON_PHI_REMOVAL_FAILED       = "PHI_REMOVAL_FAILED"
+    REASON_PATIENT_DB_UNAVAILABLE   = "PATIENT_DB_UNAVAILABLE"
+    REASON_SERIES_FAILED            = "SERIES_FAILED"
 
     # ── CSV schema ────────────────────────────────────────────────────────────
     CSV_COLUMNS: List[str] = [

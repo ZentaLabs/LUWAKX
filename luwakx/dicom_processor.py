@@ -15,6 +15,13 @@ import importlib.util
 from typing import Any, Dict
 import pydicom
 
+# Allow DICOM files whose private tags have a stored byte-length that is not an
+# exact multiple of the declared VR's element size written as 6 bytes
+# instead of 8 for VR 'UN'/'FD').  Without this flag pydicom raises a
+# ValueError and the entire series fails; with it the tag is silently re-typed to
+# UN so parsing continues.
+pydicom.config.convert_wrong_length_to_UN = True
+
 from dicom_series import DicomSeries
 from luwak_logger import log_project_stacktrace
 from review_flag_collector import ReviewFlagCollector
@@ -337,9 +344,24 @@ class DicomProcessor:
         """
         if not self.patient_uid_db:
             # Fallback if database not initialized - log once per series
-            warn_key = "patient_id_db_not_init"
-            if warn_key not in self.warned_non_modified_tags:
-                self.warned_non_modified_tags.add(warn_key)
+            _fp = self._flag_params(field, dicom)
+            is_first = self._first_occurrence(
+                _fp['tag_group'], _fp['tag_element'],
+                ReviewFlagCollector.REASON_PATIENT_DB_UNAVAILABLE,
+                "patient_id_db_not_init"
+            )
+            if self.review_collector:
+                try:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_PATIENT_DB_UNAVAILABLE,
+                        original_value = str(getattr(field.element, 'value', '')),
+                        keep           = 0,
+                        output_value   = 'ANON00',
+                        **_fp,
+                    )
+                except Exception:
+                    pass
+            if is_first:
                 series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
                 self.logger.warning(
                     f"Patient UID database not initialized, using default ID. "
@@ -920,7 +942,30 @@ class DicomProcessor:
                 )
                 return None
             except Exception as e:
-                self.logger.warning(f"Failed to remove element {field.element.tag}: {e}")
+                _fp = self._flag_params(field, dicom)
+                is_first = self._first_occurrence(
+                    _fp['tag_group'], _fp['tag_element'],
+                    ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                    f"failed_remove_{field.element.tag}"
+                )
+                if self.review_collector:
+                    try:
+                        self.review_collector.add_flag(
+                            reason         = ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                            original_value = str(getattr(field.element, 'value', '')),
+                            keep           = 0,
+                            output_value   = 'ANONYMIZED',
+                            **_fp,
+                        )
+                    except Exception:
+                        pass
+                if is_first:
+                    series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+                    self.logger.warning(
+                        f"Failed to remove element {field.element.tag} ({_fp['keyword']}): "
+                        f"tag is likely nested inside a sequence and deid does not allow direct removal from outside it. "
+                        f"Value was replaced with 'ANONYMIZED' as a fallback. Error: {e}. Series: {series_info}"
+                    )
                 self.logger.debug(
                     f"Replaced tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) "
                     f"to 'ANONYMIZED' as the detector found PHI information in its text."

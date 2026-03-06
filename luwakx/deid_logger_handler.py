@@ -96,6 +96,9 @@ class DeidProgressHandler:
             filtered = tb_list[start_idx:]
             formatted = "".join(traceback.format_list(filtered))
             self.luwak_logger.error(f"Project stack trace block (deid):\n{formatted}")
+            # Forward to review CSV: deid errors indicate per-instance (or series-level)
+            # failures that should be visible to reviewers.
+            self._try_capture_deid_error(msg)
         elif "WARNING" in msg or "Warning" in msg:
             self.luwak_logger.warning(msg.strip())
             tqdm.write(f"[WARNING] {msg.strip()}")
@@ -150,6 +153,39 @@ class DeidProgressHandler:
                 original_value  = original_value,
                 keep            = 1,  # deid passes the value through when format is bad
                 output_value    = original_value,
+            )
+        except Exception:
+            pass  # Never let review-CSV logic break the main anonymization flow
+
+    def _try_capture_deid_error(self, msg: str) -> None:
+        """Forward an ERROR message from deid's bot to the review_collector.
+
+        Records a flag with ``tag_group='*'`` and ``tag_element='*'`` (no specific
+        tag is identified) and ``reason=REASON_SERIES_FAILED`` so reviewers can see
+        that deid reported an error during processing of this instance/series.
+
+        Only fires when a ``review_collector`` is attached.
+        """
+        if self.review_collector is None:
+            return
+
+        # Truncate long messages so the CSV stays readable.
+        recorded_msg = msg.strip()[:512]
+
+        try:
+            from review_flag_collector import ReviewFlagCollector
+            self.review_collector.add_flag(
+                tag_group       = "*",
+                tag_element     = "*",
+                attribute_name  = "deid error",
+                keyword         = "",
+                vr              = "",
+                vm              = "",
+                reason          = ReviewFlagCollector.REASON_SERIES_FAILED,
+                sop_instance_uid= self._current_sop_uid,
+                original_value  = recorded_msg,
+                keep            = 0,
+                output_value    = "",
             )
         except Exception:
             pass  # Never let review-CSV logic break the main anonymization flow

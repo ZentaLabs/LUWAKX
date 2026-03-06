@@ -238,6 +238,44 @@ class ProcessingPipeline:
                 series.processing_status = ProcessingStatus.FAILED
                 if self.logger:
                     self.logger.error(f"✗ Failed: {series_display}: {e}")
+                # Record the series-level failure in the review flags CSV so that
+                # reviewers can see which series failed and why.  tag_group and
+                # tag_element are '*' because the failure is not attributable to a
+                # specific DICOM tag.
+                if self.review_collector:
+                    try:
+                        from review_flag_collector import ReviewFlagCollector
+                        # Reset context to this series (may differ if failure happened
+                        # before DicomProcessor.anonymize_series() set it).
+                        self.review_collector.set_series_context(
+                            series.anonymized_patient_id  or "",
+                            series.anonymized_study_uid   or "",
+                            series.anonymized_series_uid  or "",
+                        )
+                        self.review_collector.add_flag(
+                            tag_group        = "*",
+                            tag_element      = "*",
+                            attribute_name   = "SERIES",
+                            keyword          = "SERIES",
+                            vr               = "",
+                            vm               = "",
+                            reason           = ReviewFlagCollector.REASON_SERIES_FAILED,
+                            sop_instance_uid = "*",
+                            original_value   = str(e)[:512],
+                            keep             = 0,
+                            output_value     = "",
+                        )
+                        _failure_rows = self.review_collector.flush_series()
+                        if _failure_rows:
+                            self.exporter.append_series_review_flags(
+                                self.review_flags_file, _failure_rows
+                            )
+                    except Exception as _rf_exc:
+                        if self.logger:
+                            self.logger.warning(
+                                f"Worker {self.worker_id}: could not write series-failure "
+                                f"review flag: {_rf_exc}"
+                            )
                 # Continue with next series
             finally:
                 # Remove series from collection and drop the reference so the
