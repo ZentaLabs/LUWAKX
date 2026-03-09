@@ -211,9 +211,12 @@ class DefaceService:
         nrrd_image_path = os.path.join(series_temp_dir, "image.nrrd")
         nrrd_defaced_path = os.path.join(series_temp_dir, "image_defaced.nrrd")
         
+        nrrd_mask_path = os.path.join(series_temp_dir, "mask.nrrd")
+
         try:
             SimpleITK.WriteImage(image, nrrd_image_path)
             SimpleITK.WriteImage(image_defaced, nrrd_defaced_path)
+            SimpleITK.WriteImage(image_face_segmentation, nrrd_mask_path, useCompression=True)
             self.logger.debug(f"Saved NRRD volumes to {series_temp_dir}")
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
@@ -332,6 +335,7 @@ class DefaceService:
         return {
             'nrrd_image_path': nrrd_image_path,
             'nrrd_defaced_path': nrrd_defaced_path,
+            'nrrd_mask_path': nrrd_mask_path,
             'defaced_dicom_files': defaced_dicom_files
         }
     
