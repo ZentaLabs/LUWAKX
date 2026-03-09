@@ -1,8 +1,8 @@
 # DICOM Deidentification Conformance Statement
 
 **Luwak DICOM Deidentification System**  
-Version: 1.0  
-Date: November 19, 2025  
+Version: 1.1  
+Date: March 6, 2026  
 Based on: DICOM Standard 2025b
 
 ---
@@ -31,7 +31,8 @@ This document is intended for:
 
 | Document Version | Date of Revision | Code Version | Description                                      |
 |-----------------|------------------|-------------|--------------------------------------------------|
-| 1.0             | 2025-11-19       | v1.0         | Initial release for DICOM 2025b   ||
+| 1.0             | 2025-11-19       | v1.0         | Initial release for DICOM 2025b   |
+| 1.1             | 2026-03-06       | v1.1         | Added deface mask caching, review flags CSV output, `bypassCleanDescriptorsLlm` config option, `saveDefaceMasks` config option, `func:sq_keep_original_with_review` action, improved non-axis-aligned defacing slice extraction, new `DefaceMaskDatabase`, `DefacePriorityElector`, and `ReviewFlagCollector` classes, updated core classes and output file documentation. |
 
 
 ---
@@ -49,6 +50,7 @@ This chapter provides a clickable index for all major sections of this conforman
 | **Image Pixel Data Deidentification** |
 | Image Pixel Data Deidentification | [§4](#4-image-pixel-data-deidentification) |
 | Clean Recognizable Visual Features (Defacing) | [§4.1](#41-clean-recognizable-visual-features-defacing----pipeline-stage-2) |
+| Deface Mask Caching | [§4.1.10](#4110-deface-mask-caching) |
 | Burned-In Pixel Annotation Detection | [§4.2](#42-burned-in-pixel-annotation-detection) |
 | **Metadata Deidentification - Tags and Profiles Templates** |
 | Tags and Profiles Templates | [§5](#5-metadata-deideintification----tags-and-profiles-templates) |
@@ -69,6 +71,7 @@ This chapter provides a clickable index for all major sections of this conforman
 | DeidentificationMethodCodeSequence Injection | [§7](#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-5) |
 | Data and Metadata Export | [§8](#8-deidentified-data-and-metadata-export-pipeline-stage-6) |
 | Output Files Generated | [§8.1](#81-output-files-generated-by-luwak) |
+| Review Flags CSV | [§8 (output 9)](#81-output-files-generated-by-luwak) |
 | **Configuration and Usage** |
 | Configuration, Code Design, and Usage | [§9](#9-configuration-code-design-and-usage) |
 | Configuration File | [§9.1](#91-configuration-file) |
@@ -158,6 +161,8 @@ Luwak uses the [DEID library](https://github.com/pydicom/deid) for DICOM header 
 - `generate_hmacdate_shift` - HMAC-based deterministic date shifting
 - `clean_descriptors_with_llm` - LLM-based PHI detection in free-text/annotation tags
 - `set_fixed_datetime` - Fixed epoch datetime replacement
+- `check_patient_age` - Patient age retention with HIPAA-compliant capping (>89Y → 090Y)
+- `sq_keep_original_with_review` - Sequence retention with structured review flag emission
 - `is_tag_private` - Private tag identification for removal
 - `is_curve_or_overlay_tag` - Curve/overlay data identification for removal
 
@@ -224,10 +229,15 @@ The defacing pipeline processes DICOM series through four main stages while main
 
 **Step 4: DICOM Export**
 - Extracts defaced pixel data from 3D volume, stored in the SimpleITK.Image object, as 2D slices
+- Each slice is located in the 3D volume using its spatial metadata (ImagePositionPatient, ImageOrientationPatient, PixelSpacing) rather than relying on slice order, ensuring robustness for non-axis-aligned volumes
+  - For axis-aligned volumes, the nearest slice along the primary axis is selected (`_is_volume_axis_aligned()`)
+  - For arbitrarily oriented volumes, the correct slice is identified via spatial coordinates (`_extract_slice_from_volume()`)
 - Reads original DICOM files to preserve all header metadata
 - Applies inverse rescale transformation: `raw_pixels = (defaced_pixels - RescaleIntercept) / RescaleSlope`
-- Replaces only PixelData attribute; all spatial tags remain unchanged:
+- Replaces only PixelData attribute; all spatial tags remain unchanged
 - Adds CID 7050 code 113101 to DeidentificationMethodCodeSequence (0012,0064) to document defacing method
+
+**Implementation:** `DefaceService._is_volume_axis_aligned()`, `DefaceService._extract_slice_from_volume()`
 
 #### 4.1.3 Modality Support
 - **CT (Computed Tomography):** Fully supported with modality-specific AI models
@@ -300,6 +310,55 @@ Temporary NRRD files are stored in `defaced_base_path` during processing.
 - Defacing is supported only for CT modality.
 - The time/resource consuming AI model will run even when no face is included in the data, because we can't rely on BodyPartExamined correct labeling. For the future we plan to develop a functionality to determine from a coronal 2D slice whether the head is present and skip this step accordingly.
 - No modification on non-face data has been observed from the defacing model so far (David/Sebastian: tot number of tests??), but care must be taken to check the defacing result after each deidentification project. 
+
+#### 4.1.10 Deface Mask Caching
+
+When a study contains multiple series sharing the same spatial reference frame (same `FrameOfReferenceUID`), it is inefficient to re-run the expensive ML face segmentation for every series independently. Luwak provides an optional **deface mask caching** feature that runs the ML model only once per spatial reference frame and reuses the resulting mask for all other series in the group.
+
+**Implementation Modules:** `luwakx/deface_mask_database.py`, `luwakx/deface_priority_elector.py`
+
+##### 4.1.10.1 Primary Series Election
+
+Before processing begins, `DefacePriorityElector.elect_and_sort()` assigns a *primary* series to each `(patient, study, FrameOfReferenceUID, modality)` group. The primary series is selected as the one with:
+1. The **largest spatial coverage** (product of physical dimensions in all three axes), and
+2. The **finest voxel resolution** (smallest maximum voxel dimension) as a tiebreaker.
+
+The selected primary series is placed first in the processing order; remaining series in the group are marked as *secondary*.
+
+Only the modalities listed in `saveDefaceMasks.primary` are eligible for primary election. When this list is empty or the option is absent, the feature is fully disabled and all series are defaced independently.
+
+##### 4.1.10.2 Mask Database
+
+`DefaceMaskDatabase` is a thread-safe SQLite database that stores the segmentation mask (as an NRRD file path) computed for each primary series. The database key is a SHA-256 hash of:
+
+```
+project_hash_root || PatientID || PatientName || PatientBirthDate || FrameOfReferenceUID
+```
+
+The study UID is included in the key so masks are scoped to a single study and are not shared across studies.
+
+**Persistence:** The mask database follows the same rules as `analysisCacheFolder`:
+- If `analysisCacheFolder` is configured, `deface_mask.db` persists across runs.
+- Otherwise, it is created in the private mapping folder and deleted after processing.
+
+##### 4.1.10.3 Secondary Series Processing
+
+For secondary series whose group has a cached mask:
+1. The stored primary mask is resampled onto the secondary series geometry.
+2. The pixelation step is applied using the resampled mask.
+3. The ML model is **not re-run**, saving significant GPU compute time.
+
+##### 4.1.10.4 Configuration
+
+```json
+{
+  "saveDefaceMasks": {
+    "primary": ["CT"]
+  }
+}
+```
+
+The `primary` array lists the modalities for which mask caching is enabled. When the array is empty or the key is absent, caching is fully disabled. See [§9.1.2](#912-optional-configuration-options) for full option documentation.
 
 ### 4.2 Clean Pixel Data Option
 
@@ -673,6 +732,17 @@ A benchmark on 21,793 free-text/annotation DICOM tags (No PHI/PII: 20,383; PHI/P
 - The LLM provides a binary output for either keeping or removing the tag, no other action is currently supported.
 - The LLM can have false negatives, so a final review of the content of the leftover tags is always advised.
 
+**Bypass Mode (`bypassCleanDescriptorsLlm`):**
+
+When the `bypassCleanDescriptorsLlm` configuration option is set to `true`, the LLM call is skipped entirely. The result is treated as `0` (no PHI detected) and the tag value is always kept unchanged. This is useful for pipeline testing, when no LLM infrastructure is available, or when the user prefers to perform manual review downstream via `review_flags.csv`.
+
+**Configuration:**
+```json
+{
+  "bypassCleanDescriptorsLlm": true
+}
+```
+
 #### 5.3.8 Fixed DateTime `func:set_fixed_datetime`
 
 **Purpose:** Set date/time tags to fixed epoch values. Used to remove temporal information while maintaining DICOM compliance. These replacement values are the same as the ones used in KitwareMedical/dicomanonymizer.
@@ -694,7 +764,26 @@ REPLACE (0008,0012) func:set_fixed_datetime
 **Current limitations**
 - These dummy values will be assigned to all the patients, all series and all studies. This might create issues to 4D data loading and some DICOM viewer. This action is specified only for the Basic Profile, so if you don't want to have these issues, combine the profile with other options that keep/or shift the dates consistently (see [§6](#6-deidentification-recipe-creation-pipeline-stage-3---4) ).
 
-#### 5.3.9 Patient Age Handling `func:check_patient_age`
+#### 5.3.9 SQ Keep with Review Flag `func:sq_keep_original_with_review`
+
+**Purpose:** Retain the value of a Sequence (VR=SQ) tag unchanged and emit a structured review flag so downstream reviewers can verify whether the sequence contains PHI. This action is generated by the recipe builder for SQ tags that require `replace` in the template but for which no automated replacement logic exists (i.e., the `Final CTP Script` column does not specify `@remove()` or `removed`).
+
+**Method:**
+- Returns the original sequence value to deid, leaving the tag intact in the anonymized file.
+- Adds a `SQ_REPLACE_NEEDS_REVIEW` review flag to the `ReviewFlagCollector` buffer, capturing the tag path, original value, and series context.
+- The review flag is written to `review_flags.csv` (see [§8.1](#81-output-files-generated-by-luwak)) for downstream audit.
+
+**Implementation:** `DicomProcessor.sq_keep_original_with_review()`
+
+**Recipe Usage:**
+```
+REPLACE (0040,A730) func:sq_keep_original_with_review
+```
+
+**Current limitations:**
+- The original sequence value is kept unchanged; manual review via `review_flags.csv` is required to confirm that no PHI is present.
+
+#### 5.3.10 Patient Age Handling `func:check_patient_age`
 
 **Purpose:** Ensure patient age is handled according to profile requirements, with custom logic for age retention and deidentification.
 
@@ -1114,6 +1203,12 @@ REPLACE (tag) func:generate_patient_id
 REPLACE (tag) func:check_patient_age
 ```
 
+**`func:sq_keep_original_with_review` Action:**
+```
+REPLACE (tag) func:sq_keep_original_with_review
+```
+Keeps the original Sequence value unchanged and emits a `SQ_REPLACE_NEEDS_REVIEW` review flag (see [§5.3.9](#539-sq-keep-with-review-flag-funcsq_keep_original_with_review))
+
 **`clean_manually` Action:**
 ```
 # REPLACE (tag) CLEANED NEEDS MANUAL REVIEW
@@ -1239,8 +1334,9 @@ When multiple profiles are selected, actions are prioritized in the following or
 5. **`replace`** - Generic replacement
 6. **`func:set_fixed_datetime`** - Fixed datetime
 7. **`func:check_patient_age`** - Keep/replace patient age
-8. **`blank`** - Blanking/emptying
-9. **`remove`** - Removal (lowest priority)
+8. **`func:sq_keep_original_with_review`** - Keep sequence unchanged with review flag
+9. **`blank`** - Blanking/emptying
+10. **`remove`** - Removal (lowest priority)
 
 #### 6.5.1
 
@@ -1393,6 +1489,32 @@ Luwak produces several output files during the deidentification pipeline, each s
   - Persistence: Removed after processing unless `analysisCacheFolder` is specified; when specified, retained across multiple anonymization runs for performance optimization
   - Thread-safe: Supports concurrent access from parallel processing workers
 
+**9. Review Flags CSV (`review_flags.csv`)**
+  - Location: Private mapping folder (`outputPrivateMappingFolder`)
+  - Content: CSV table listing all DICOM tags that could not be processed automatically and require manual review. Each row records the anonymized patient/study/series UIDs, tag coordinates (group, element), attribute name, VR, original value, whether the value was kept or removed, and a machine-readable reason code. Two user-fillable columns (`override_keep`, `override_value`) are reserved for annotators.
+  - Generation: Appended incrementally after each series is processed by `MetadataExporter.append_series_review_flags()`
+  - Reason codes:
+
+    | Reason Code | Description |
+    |-------------|-------------|
+    | `VR_MISMATCH_OPERATION` | A recipe instruction (e.g. `func:generate_hmacuid`) was applied to a tag with an incompatible VR; the original value was preserved. |
+    | `LLM_VERIFIED_CLEAN` | The LLM found no PHI; the original value was kept. Manual verification is still recommended. |
+    | `VR_FORMAT_INVALID` | pydicom/deid detected that a stored value does not conform to its declared VR format; the value may or may not have been modified. |
+    | `SQ_REPLACE_NEEDS_REVIEW` | A sequence tag (VR=SQ) was kept unchanged because no automated replacement logic is available; manual review is required. |
+    | `PHI_REMOVAL_FAILED` | An attempt to delete or replace a PHI-containing tag failed (e.g., nested tag in a sequence); the tag may still contain PHI. |
+    | `PATIENT_DB_UNAVAILABLE` | The patient UID database was unavailable during processing; UID/date anonymization may be incomplete. |
+    | `SERIES_FAILED` | An unhandled exception occurred during series-level processing; the series output may be incomplete or unanonymized. |
+
+  - Implementation: `luwakx/review_flag_collector.py`, `luwakx/metadata_exporter.py`
+
+**10. Deface Mask Database (`deface_mask.db`)**
+  - Location: As configured in the optional `analysisCacheFolder` (if not specified: private mapping folder, temporary); only created when `saveDefaceMasks.primary` is non-empty
+  - Content: SQLite database caching per-patient, per-study, per-`FrameOfReferenceUID` defacing masks (stored as NRRD file paths) to avoid redundant ML inference for series sharing the same spatial reference frame
+  - Generation: Created and updated during the defacing stage by `DefaceMaskDatabase`
+  - Persistence: Removed after processing unless `analysisCacheFolder` is specified
+  - Thread-safe: Uses WAL mode with serialised writes for concurrent access
+  - See [§4.1.10](#4110-deface-mask-caching) for details on mask caching logic
+
 #### Export Logic
 The export of metadata and mappings is performed in a streaming, memory-efficient manner. After each series is processed, results are immediately written to the corresponding output files. The `MetadataExporter` class manages all export operations, including incremental appending and finalization of CSV and Parquet files, and movement of NRRD volumes.
 
@@ -1442,7 +1564,7 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `analysisCacheFolder` | string | none | Path to folder for persistent analysis databases (`patient_uid.db` and `llm_cache.db`). If not specified, temporary databases are created in the private mapping folder and deleted after processing. If specified and folder exists with databases, they will be loaded and updated; if not, new databases will be created. Databases persist across anonymization runs to ensure consistent patient ID and UID mappings and to cache LLM results for performance. |
+| `analysisCacheFolder` | string | none | Path to folder for persistent analysis databases (`patient_uid.db`, `llm_cache.db`, and `deface_mask.db`). If not specified, temporary databases are created in the private mapping folder and deleted after processing. If specified and folder exists with databases, they will be loaded and updated; if not, new databases will be created. Databases persist across anonymization runs to ensure consistent patient ID and UID mappings and to cache LLM results for performance. |
 
 **LLM Descriptor Cleaning Options:**
 
@@ -1451,6 +1573,7 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 | `cleanDescriptorsLlmBaseUrl` | string | "https://api.openai.com/v1" | Base URL for LLM API (OpenAI-compatible) |
 | `cleanDescriptorsLlmModel` | string | "gpt-oss-20b" | Model name for LLM service |
 | `cleanDescriptorsLlmApiKeyEnvVar` | string | "" | Environment variable name containing API key (empty by default) |
+| `bypassCleanDescriptorsLlm` | boolean | false | If `true`, bypasses the LLM call in `func:clean_descriptors_with_llm`. Result is always treated as `0` (no PHI detected) and the tag value is kept unchanged. Useful for testing or when no LLM infrastructure is available. |
 
 **Custom Tag Templates:**
 
@@ -1470,6 +1593,12 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `excludedTagsFromParquet` | array | ["(7FE0,0010)"] | List of DICOM tags to exclude from Parquet export (accepts integer, hex string, or bracketed formats) |
+
+**Deface Mask Caching Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `saveDefaceMasks.primary` | array | [] | List of DICOM modalities (e.g., `["CT"]`) for which deface mask caching is enabled. Luwak selects one *primary* series per `(patient, study, FrameOfReferenceUID, modality)` group — the one with the largest spatial coverage and finest voxel resolution — runs ML defacing on it, and stores the resulting mask. Subsequent series in the same group reuse the cached mask, avoiding redundant ML inference. When empty or absent, caching is disabled and all series are defaced independently. See [§4.1.10](#4110-deface-mask-caching). |
 
 #### 9.1.3 Example Configuration
 
@@ -1637,15 +1766,49 @@ Luwak follows an object-oriented design with clear separation of concerns:
   - `get_cache_stats()` - Cache statistics
 
 **`MetadataExporter`**
-- **Purpose:** Export UID mappings, metadata, and NRRD volumes
+- **Purpose:** Export UID mappings, metadata, NRRD volumes, and review flags
 - **Key Responsibilities:**
   - Stream UID mappings to CSV
   - Stream metadata to Parquet
   - Move NRRD files to final destinations
+  - Append review flag rows to `review_flags.csv`
 - **Key Methods:**
   - `append_series_uid_mappings()` - Append UID mappings for one series
   - `append_series_metadata()` - Append metadata for one series
   - `extract_dicom_metadata()` - Extract metadata from anonymized file
+  - `append_series_review_flags()` - Append review flag rows for one series
+
+**`ReviewFlagCollector`**
+- **Purpose:** In-memory accumulator of tags that could not be automatically anonymized and require manual review
+- **Key Responsibilities:**
+  - Buffer and deduplicate flagged-tag records during anonymization
+  - Collapse per-instance rows to per-series rows when all instances share the same value
+  - Expose structured rows for export via `flush_series()`
+- **Reason Codes:** `VR_MISMATCH_OPERATION`, `LLM_VERIFIED_CLEAN`, `VR_FORMAT_INVALID`, `SQ_REPLACE_NEEDS_REVIEW`, `PHI_REMOVAL_FAILED`, `PATIENT_DB_UNAVAILABLE`, `SERIES_FAILED`
+- **Key Methods:**
+  - `set_series_context(patient_id, study_uid, series_uid)` - Set current series context
+  - `add_flag(tag, reason, original_value, keep, value)` - Record a flagged tag
+  - `flush_series()` - Return all buffered rows and clear the buffer
+
+**`DefaceMaskDatabase`**
+- **Purpose:** Thread-safe SQLite cache for storing and retrieving ML-generated face-segmentation masks per spatial reference frame
+- **Key Responsibilities:**
+  - Store primary defacing mask (NRRD path) per `(patient, study, FrameOfReferenceUID, modality)` group
+  - Allow retrieval of cached masks for secondary series sharing the same frame
+  - Support WAL-mode concurrent reads with serialised writes
+- **Key Methods:**
+  - `get_mask(key_hash)` - Retrieve cached mask entry
+  - `store_mask(key_hash, nrrd_path, origin, spacing, direction)` - Store a new mask
+  - `get_stats()` - Database statistics
+
+**`DefacePriorityElector`**
+- **Purpose:** Elect the *primary* series for each `(patient, study, FrameOfReferenceUID, modality)` group and sort the full series list so the primary series is processed first
+- **Key Responsibilities:**
+  - Group series by spatial reference frame
+  - Select the series with the best spatial coverage and resolution as primary
+  - Return the sorted list for efficient pipeline ordering
+- **Key Methods:**
+  - `elect_and_sort(all_series)` - Returns the sorted series list with primary series first per group
 
 #### 9.2.3 Data Flow
 
@@ -1661,19 +1824,22 @@ Luwak follows an object-oriented design with clear separation of concerns:
 4. Pipeline Coordination (PipelineCoordinator)
    → Distributes series across workers
    → Manages shared resources (UID DB, LLM cache, recipe)
+   → DefacePriorityElector: elect primary series per (patient, study, FrameOfRef, modality) group (if saveDefaceMasks enabled)
    ↓
 5. Pipeline Processing (ProcessingPipeline) - per worker
    → For each DicomSeries:
       a. Organization Stage
          → Copy files to organized temp structure
       b. Defacing Stage (optional)
-         → DefaceService: Volume reconstruction → ML defacing → DICOM export
+         → DefaceService: Volume reconstruction → ML defacing (or mask reuse) → DICOM export
+         → DefaceMaskDatabase: Cache/retrieve primary mask per spatial reference frame
       c. Anonymization Stage
          → DicomProcessor: Apply recipe → Custom functions → Write files
+         → ReviewFlagCollector: Buffer tags requiring manual review
       d. Injection Stage
          → Add DeidentificationMethodCodeSequence
       e. Export Stage
-         → MetadataExporter: Stream UID mappings and metadata
+         → MetadataExporter: Stream UID mappings, metadata, and review flags
    ↓
 6. Result Aggregation (PipelineCoordinator)
    → Finalize exports and verify files
@@ -1681,7 +1847,7 @@ Luwak follows an object-oriented design with clear separation of concerns:
 7. Cleanup
    → Remove temp directories
    → Close databases
-   → Delete temp UID database (if configured)
+   → Delete temp UID/mask databases (if configured)
 ```
 
 #### 9.2.4 Threading and Parallelization
@@ -1690,7 +1856,8 @@ Luwak follows an object-oriented design with clear separation of concerns:
 - **Thread Safety:** 
   - `PatientUIDDatabase` uses write locks
   - `LLMResultCache` uses write locks
-  - Both support concurrent read access
+  - `DefaceMaskDatabase` uses write locks (WAL mode)
+  - All three support concurrent read access
 - **Memory Management:** 
   - Series data cleared after export
   - GPU memory cleaned after each series
@@ -1810,7 +1977,9 @@ outputDeidentifiedFolder/
 outputPrivateMappingFolder/
 ├── uid_mappings.csv
 ├── metadata.parquet
+├── review_flags.csv
 ├── patient_uid.db (if persistent database configured)
+├── deface_mask.db (if saveDefaceMasks.primary non-empty and analysisCacheFolder not set)
 └── {AnonymizedPatientID}/
     └── {HashedAnonymizedStudyUID}/
         └── {HashedAnonymizedSeriesUID}/
@@ -1821,7 +1990,8 @@ recipesFolder/
 
 analysisCacheFolder/ (if specified in config)
 ├── patient_uid.db
-└── llm_cache.db (if descriptor cleaning used)
+├── llm_cache.db (if descriptor cleaning used)
+└── deface_mask.db (if saveDefaceMasks.primary non-empty)
 ```
 
 **Directory Naming Convention:**
@@ -1894,12 +2064,19 @@ Luwak includes a comprehensive test suite validating core functionality and conf
 - `test_fixed_datetime_generation` - Fixed epoch datetime replacement
 - `test_generate_patient_id_method` - Sequential patient ID generation with database
 - `test_basic_clean_descriptors_should_have_clean_value` - LLM-based descriptor cleaning
+- `test_check_patient_age_method` - Patient age handling: capping values >89Y, empty inputs
+- `test_retain_patient_chars_recipe` - Retain patient characteristics profile: age capping, LLM cleaning, and tag removal
 
 **Profile Combination Tests:**
 - `test_basic_retain_uid_should_have_original_uid` - Basic profile + retain UID option
 - `test_basic_retain_date_should_have_original_date` - Basic profile + retain full dates
 - `test_basic_modified_date_should_have_modified_date` - Basic profile + date shifting
 - `test_keep_specific_private_tags_should_be_original_value` - Safe private tag retention
+
+**Configuration Tests:**
+- `test_keep_temp_files` - Verify that temporary directories are preserved when `keepTempFiles: true`
+- `test_keep_temp_files_default` - Verify that temporary directories are removed by default
+- `test_physical_face_pixelation_size_mm_custom` - Verify custom pixelation block size is applied
 
 **Export and Integration Tests:**
 - `test_uid_mapping_file_creation` - UID mappings CSV generation
