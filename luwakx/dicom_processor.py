@@ -1200,7 +1200,7 @@ class DicomProcessor:
             This should be called after anonymization but before cleanup/deletion of files.
             
         See conformance documentation:
-        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-5
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6
         """
         # Mapping of recipe names to DICOM CID 7050 De-identification Method codes
         # Based on DICOM PS3.16 CID 7050 - https://dicom.nema.org/medical/dicom/current/output/chtml/part16/sect_CID_7050.html

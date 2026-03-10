@@ -9,10 +9,13 @@ Based on: DICOM Standard 2025b
 
 ## 1. Introduction
 
-### 1.1 Purpose
 This document describes the deidentification process implemented in the Luwak project. It provides comprehensive details on recipe creation, tag template generation, deidentification profiles, and the complete deidentification workflow.
 
-### 1.2 Scope
+---
+
+## 2. Document Scope
+
+### 2.1 Scope
 This conformance statement applies to the deidentification features provided by the Luwak DICOM processing pipeline, including:
 - Standard and private DICOM tag anonymization
 - Recipe generation from configurable templates
@@ -20,85 +23,12 @@ This conformance statement applies to the deidentification features provided by 
 **Core Deidentification Engine:** Luwak uses the [deid](https://github.com/pydicom/deid) library (maintained in the [pydicom](https://github.com/pydicom) organization in GitHub) for DICOM metadata deidentification. The deid library provides the recipe processing engine that applies tag-level transformations according to configurable rules. Luwak extends deid with custom anonymization functions for HMAC-based UID generation, date shifting, LLM-supported descriptor cleaning, and image-defacing capabilities. It additionally provides support for a list of deidentification profiles from the [DICOM Standard 2025b PS3.15 Appendix E, Table E.1-1](https://dicom.nema.org/medical/dicom/current/output/html/part15.html#chapter_E).
 
 
-### 1.3 Audience
+### 2.2 Audience
 This document is intended for:
 - Clinical researchers implementing DICOM anonymization
 - Data protection officers ensuring HIPAA/GDPR compliance
 - Software developers integrating with the Luwak pipeline
 - Quality assurance teams validating anonymization procedures
-
-### 1.4 Revision History
-
-| Document Version | Date of Revision | Code Version | Description                                      |
-|-----------------|------------------|-------------|--------------------------------------------------|
-| 1.0             | 2025-11-19       | v1.0         | Initial release for DICOM 2025b   |
-| 1.1             | 2026-03-06       | v1.1         | Added deface mask caching, review flags CSV output, `bypassCleanDescriptorsLlm` config option, `saveDefaceMasks` config option, `func:sq_keep_original_with_review` action, improved non-axis-aligned defacing slice extraction, new `DefaceMaskDatabase`, `DefacePriorityElector`, and `ReviewFlagCollector` classes, updated core classes and output file documentation. |
-
-
----
-
-
-## 2. Document Index
-
-This chapter provides a clickable index for all major sections of this conformance statement. Click any entry to jump directly to the relevant section.
-
-| Section | Link |
-|---------|------|
-| **Profiles and Options** |
-| Supported Deidentification Profiles/Options | [§3](#3-supported-deidentification-profilesoptions) |
-| Profile Overview | [§3.1](#31-overview) |
-| **Image Pixel Data Deidentification** |
-| Image Pixel Data Deidentification | [§4](#4-image-pixel-data-deidentification) |
-| Clean Recognizable Visual Features (Defacing) | [§4.1](#41-clean-recognizable-visual-features-defacing----pipeline-stage-2) |
-| Deface Mask Caching | [§4.1.10](#4110-deface-mask-caching) |
-| Burned-In Pixel Annotation Detection | [§4.2](#42-burned-in-pixel-annotation-detection) |
-| **Metadata Deidentification - Tags and Profiles Templates** |
-| Tags and Profiles Templates | [§5](#5-metadata-deideintification----tags-and-profiles-templates) |
-| Standard Tags Template | [§5.1](#51-standard-tags-template) |
-| Private Tags Template | [§5.2](#52-private-tags-template) |
-| Tag/Profile Specific Actions | [§5.3](#53-tagprofile-specific-actions) |
-| Profile/Options Description | [§5.4](#54-profileoptions-description) |
-| **Recipe Creation** |
-| Deidentification Recipe Creation | [§6](#6-deidentification-recipe-creation-pipeline-stage-3---4) |
-| Recipe Builder Overview | [§6.1](#61-recipe-builder-overview) |
-| Deidentification Profiles | [§6.2](#62-deidentification-profiles) |
-| Dummy Value Replacement Rules | [§6.3](#63-dummy-value-replacement-rules) |
-| Recipe Builder Action-to-Recipe Translation | [§6.4](#64-recipe-builder-action-to-recipe-translation) |
-| Action Priority Rules | [§6.5](#65-action-priority-rules) |
-| Generated Recipe File Format | [§6.6](#66-generated-recipe-file-format) |
-| **Deidentification Process and Export** |
-| Deidentification Process | [§5 (duplicate)](#5-deidentification-process) |
-| DeidentificationMethodCodeSequence Injection | [§7](#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-5) |
-| Data and Metadata Export | [§8](#8-deidentified-data-and-metadata-export-pipeline-stage-6) |
-| Output Files Generated | [§8.1](#81-output-files-generated-by-luwak) |
-| Review Flags CSV | [§8 (output 9)](#81-output-files-generated-by-luwak) |
-| **Configuration and Usage** |
-| Configuration, Code Design, and Usage | [§9](#9-configuration-code-design-and-usage) |
-| Configuration File | [§9.1](#91-configuration-file) |
-| Code Architecture and Design | [§9.2](#92-code-architecture-and-design) |
-| Core Classes and Relationships | [§9.2.2](#922-core-classes-and-relationships) |
-| Data Flow | [§9.2.3](#923-data-flow) |
-| Threading and Parallelization | [§9.2.4](#924-threading-and-parallelization) |
-| Running Luwak | [§9.3](#93-running-luwak) |
-| Command-Line Usage | [§9.3.1](#931-command-line-usage) |
-| Programmatic Usage | [§9.3.2](#932-programmatic-usage) |
-| Output File Structure | [§9.4](#94-output-file-structure) |
-| **Limitations and Testing** |
-| Limitations and Constraints | [§10](#10-limitations-and-constraints) |
-| Known Limitations | [§10.1](#101-known-limitations) |
-| Dependencies | [§10.2](#102-dependencies) |
-| Validation and Testing | [§11](#11-validation-and-testing) |
-| Test Suite Overview | [§11.1](#111-test-suite-overview) |
-| Key Test Cases | [§11.2](#112-key-test-cases) |
-| Running Tests | [§11.3](#113-running-tests) |
-| **References and Appendices** |
-| References | [§12](#12-references) |
-| DICOM Standards | [§12.1](#121-dicom-standards) |
-| Community Resources | [§12.2](#122-community-resources) |
-| Software Libraries | [§12.3](#123-software-libraries) |
-| Appendix A: Configuration Schema Reference | [Appendix A](#appendix-a-configuration-schema-reference) |
-| Appendix B: Tag Template Maintenance | [Appendix B](#appendix-b-tag-template-maintenance) |
-| Appendix C: Basic Application Confidentiality Profile Recipe | [Appendix C](#appendix-c-basic-application-confidentiality-profile-recipe) |
 
 ---
 
@@ -106,7 +36,9 @@ This chapter provides a clickable index for all major sections of this conforman
 
 ### 3.1 Overview
 
-Luwak allows the user to select profile and options through a list of "recipes" specified in a config file (see [§9.1](#91-configuration-file) for details on how to use the config file). 
+Luwak employs a standards-based approach to DICOM image de-identification to ensure that images are free of protected health information (PHI), following the HIPAA Safe Harbor Method as defined in section 164.514(b)(2) of the HIPAA Privacy Rule. Compliance is achieved through a user-configurable combination of DICOM PS3.15 Appendix E profiles and options. To satisfy the HIPAA Safe Harbor de-identification standard, users should select the **Basic Application Confidentiality Profile** together with the following profile options: **Clean Pixel Data Option**, **Clean Descriptors Option**, **Retain Longitudinal With Modified Dates Option**, **Retain Patient Characteristics Option**, and **Retain Safe Private Option**.
+
+Luwak allows the user to select profiles and options through a list of "recipes" specified in a config file (see [§9.1](#91-configuration-file) for details on how to use the config file).
 The following DICOM PS3.15 Appendix E profiles and options are supported by Luwak:
 
 | Profile/Option | Recipe Name | CID 7050 Code | Description |
@@ -132,9 +64,11 @@ Luwak currently does not provide automated support for the following DICOM PS3.1
 
 These profiles require manual intervention to ensure PHI is properly removed from structured content sequences and graphic annotations.
 
+Before running the deidentification pipeline, it is recommended to assess whether the input dataset contains tags relevant to these profiles. The `luwakx/scripts/dicom_curation/analyze_graphics_structured_content.py` curation script can detect the presence of such tags across the entire dataset. It checks for, among others, `GraphicAnnotationSequence` (0070,0001), `OverlayData` (6000,3000), `ContentSequence` (0040,A730), and `AcquisitionContextSequence` (0040,0555) — the main tags that fall under the Clean Graphics and Clean Structured Content profiles. Series that contain these tags are reported in the analysis output, allowing the user to decide whether to exclude them from the deidentification project or perform manual cleaning before running Luwak. For full usage instructions, see `luwakx/scripts/dicom_curation/DICOM_PROCESSING_WORKFLOW.md`.
+
 **Note on Clean Pixel Data Option:**
 
-- *Clean Pixel Data Option:* Luwak includes detection rules for identifying burned-in pixel annotations that cannot be removed through header anonymization. The pixel cleaning functionality using the deid library is currently in active development and will be integrated into the automated pipeline in a future release. For now, users should manually review images (see [§4.2](#42-clean-pixel-data-option)).
+- *Clean Pixel Data Option:* Luwak includes detection rules for identifying burned-in pixel annotations that cannot be removed through header anonymization. The pixel cleaning functionality using the deid library is currently in active development (https://github.com/ZentaLabs/luwak/issues/47) and will be integrated into the automated pipeline in a future release. For now, users should manually review images (see [§4.2](#42-clean-pixel-data-option)).
 
 **Reference:** DICOM PS3.16 CID 7050 - De-identification Method  
 URL: https://dicom.nema.org/medical/dicom/current/output/chtml/part16/sect_CID_7050.html
@@ -170,15 +104,15 @@ These custom functions are injected into DEID's item processing dictionary and c
 
 In the following sections we explain the deidentification pipeline in detail:
 
-1. **Image Pixel Data Deidentification ([§4](#4-image-pixel-data-deidentification))** - Describes facial feature removal using MOOSE framework ([§4.1](#41-clean-recognizable-visual-features-defacing----pipeline-stage-2)) and burned-in pixel annotation detection ([§4.2](#42-clean-pixel-data-option)).
+1. **Image Pixel Data Deidentification ([§4](#4-image-pixel-data-deidentification))** - Describes facial feature removal using MOOSE framework ([§4.1](#41-clean-recognizable-visual-features-defacing----pipeline-stage-3)) and burned-in pixel annotation detection ([§4.2](#42-clean-pixel-data-option)).
 
 2. **Metadata Deidentification ([§5](#5-metadata-deideintification----tags-and-profiles-templates))** - Details the tag template generation ([§5.1](#51-standard-tags-template), [§5.2](#52-private-tags-template)), deidentification actions ([§5.3](#53-tagprofile-specific-actions)), and profile implementation ([§5.4](#54-profileoptions-description)).
 
-3. **Recipe Creation ([§6](#6-deidentification-recipe-creation-pipeline-stage-3---4))** - Explains how CSV templates are converted into DEID recipes, including dummy value generation ([§6.3](#63-dummy-value-replacement-rules)) and action translation logic ([§6.4](#64-recipe-builder-action-to-recipe-translation)).
+3. **Recipe Creation ([§6](#6-deidentification-recipe-creation-pipeline-stage-4---5))** - Explains how CSV templates are converted into DEID recipes, including dummy value generation ([§6.3](#63-dummy-value-replacement-rules)) and action translation logic ([§6.4](#64-recipe-builder-action-to-recipe-translation)).
 
-4. **DeidentificationMethodCodeSequence Injection ([§7](#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-5))** - Documents how applied deidentification methods are recorded in DICOM standard format.
+4. **DeidentificationMethodCodeSequence Injection ([§7](#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6))** - Documents how applied deidentification methods are recorded in DICOM standard format.
 
-5. **Data and Metadata Export ([§8](#8-deidentified-data-and-metadata-export-pipeline-stage-6))** - Describes all output files generated by Luwak, including deidentified DICOM files, UID mappings, metadata exports, and audit logs.
+5. **Data and Metadata Export ([§8](#8-deidentified-data-and-metadata-export-pipeline-stage-7))** - Describes all output files generated by Luwak, including deidentified DICOM files, UID mappings, metadata exports, and audit logs.
 
 6. **Configuration and Code Architecture ([§9](#9-configuration-code-design-and-usage))** - Provides comprehensive guide to configuration options ([§9.1](#91-configuration-file)), system architecture ([§9.2](#92-code-architecture-and-design)), and usage instructions ([§9.3](#93-running-luwak)).
 
@@ -188,11 +122,12 @@ In the following sections we explain the deidentification pipeline in detail:
 
 This section describes Luwak's implementation of image pixel data deidentification, specifically addressing the Clean Recognizable Visual Features profile and the Clean Pixel Data Option.
 
-### 4.1 Clean Recognizable Visual Features (Defacing -- pipeline stage 2)
+### 4.1 Clean Recognizable Visual Features (Defacing -- pipeline stage 3)
 
 #### 4.1.1 Overview
-Luwak implements automated face detection and pixelation for medical imaging volumes (CT, PET) to remove identifiable facial features from pixel data, complying with DICOM CID 7050 code 113101.
-Currently only CT is supported, but we are soon extenting this to PET and we plan in the future to add also MRI.
+Luwak implements automated face detection and pixelation for medical imaging volumes (CT, PET) to remove identifiable facial features from pixel data, complying with DICOM CID 7050 code 113101. 
+This is achieved by generating a segmentation of the face, with subsequent downsampling followed by upsampling to the original resolution of the image within the segmented region to voxelize the facial features. The process was implemented akin to Selfridge et al [10.2967/jnumed.122.265280]. 
+Currently only CT is supported, but we are soon extending this to PET and we plan in the future to add also MRI (https://github.com/ZentaLabs/luwak/issues/31).
 
 **Implementation Module:** `luwakx/deface_service.py`  
 **ML Defacing Module:** `luwakx/scripts/defacing/image_defacer/image_anonymization.py`
@@ -241,9 +176,9 @@ The defacing pipeline processes DICOM series through four main stages while main
 
 #### 4.1.3 Modality Support
 - **CT (Computed Tomography):** Fully supported with modality-specific AI models
-- **PET (Positron Emission Tomography):** Soon to be developed as : 
-  - If the input image is a PET/CT, project CT-based face mask on PET and run the defacing algorithm on resampled face mask to pixelate (or blur) the face in the PET image.
-  - If an input image has no associated CT, run a custom PET face segmentation model on the PET and deface the image based on the PET-derived face mask. 
+- **PET (Positron Emission Tomography):** Partially supported, depending on the availability of a co-registered CT:
+  - **PET/CT (co-registered CT available):** This option is under development (https://github.com/ZentaLabs/luwak/issues/31): When a PET series shares a `FrameOfReferenceUID` with a CT series in the same study, Luwak runs the AI face segmentation on the CT, resamples the resulting face mask onto the PET geometry, and applies the pixelation step directly on the PET volume. No ML model is executed on the PET data itself. See [§4.1.9](#4110-petct-defacing-via-ct-mask-projection) for full implementation details.
+  - **Standalone PET (no co-registered CT):** Support via a dedicated PET face segmentation model is planned for a future release (https://github.com/ZentaLabs/luwak/issues/31).
 - **MR (Magnetic Resonance):** Planned for future implementation
 - **Other modalities:** Not currently supported for defacing
 
@@ -306,28 +241,24 @@ Temporary NRRD files are stored in `defaced_base_path` during processing.
 - Memory cleanup after each series to prevent GPU OOM.
 - Typical processing time with GPU: 30-90 seconds per series (Linux, Ubuntu), 3 minutes (MacOS ARM).
 
-#### 4.1.9 Current limitations
-- Defacing is supported only for CT modality.
-- The time/resource consuming AI model will run even when no face is included in the data, because we can't rely on BodyPartExamined correct labeling. For the future we plan to develop a functionality to determine from a coronal 2D slice whether the head is present and skip this step accordingly.
-- No modification on non-face data has been observed from the defacing model so far (David/Sebastian: tot number of tests??), but care must be taken to check the defacing result after each deidentification project. 
+#### 4.1.9 PET/CT Defacing via CT Mask Projection
 
-#### 4.1.10 Deface Mask Caching
-
-When a study contains multiple series sharing the same spatial reference frame (same `FrameOfReferenceUID`), it is inefficient to re-run the expensive ML face segmentation for every series independently. Luwak provides an optional **deface mask caching** feature that runs the ML model only once per spatial reference frame and reuses the resulting mask for all other series in the group.
+For PET/CT studies, Luwak implements PET defacing by projecting the CT-derived face mask onto the PET geometry rather than running a separate ML model on the PET data. This approach exploits the spatial co-registration intrinsic to PET/CT acquisitions: the CT face segmentation model runs once, its output mask is stored, and that mask is resampled onto any PET series sharing the same `FrameOfReferenceUID` within the same study. This avoids redundant ML inference and ensures anatomically consistent face pixelation across both the CT and PET volumes.
 
 **Implementation Modules:** `luwakx/deface_mask_database.py`, `luwakx/deface_priority_elector.py`
 
-##### 4.1.10.1 Primary Series Election
+##### 4.1.9.1 CT Primary Series Selection
 
-Before processing begins, `DefacePriorityElector.elect_and_sort()` assigns a *primary* series to each `(patient, study, FrameOfReferenceUID, modality)` group. The primary series is selected as the one with:
-1. The **largest spatial coverage** (product of physical dimensions in all three axes), and
-2. The **finest voxel resolution** (smallest maximum voxel dimension) as a tiebreaker.
+Before processing begins, `DefacePriorityElector.elect_and_sort()` identifies, for each PET series, a *primary* CT series within the same `(patient, study, FrameOfReferenceUID)` group that will serve as the source of the face mask.
 
-The selected primary series is placed first in the processing order; remaining series in the group are marked as *secondary*.
+When a PET series shares the same `(patient, study, FrameOfReferenceUID)` with one or more CT series, `DefacePriorityElector` selects the CT series whose `AcquisitionDateTime` (0008,002A) is closest to the PET `AcquisitionDateTime`. This acquisition date/time proximity criterion ensures the most temporally — and therefore geometrically — aligned CT scan is chosen for the mask resampling step.
 
-Only the modalities listed in `saveDefaceMasks.primary` are eligible for primary election. When this list is empty or the option is absent, the feature is fully disabled and all series are defaced independently.
+The selected primary CT series is placed first in the processing order so that its face mask is computed before any associated PET series are processed.
 
-##### 4.1.10.2 Mask Database
+This nask selection and reusage happens only when `saveDefaceMasks.primary` option is enabled.
+When the option is absent, PET/CT mask projection is fully disabled and all series are defaced independently (only CT modalities for the moment).
+
+##### 4.1.9.2 Mask Database
 
 `DefaceMaskDatabase` is a thread-safe SQLite database that stores the segmentation mask (as an NRRD file path) computed for each primary series. The database key is a SHA-256 hash of:
 
@@ -341,14 +272,14 @@ The study UID is included in the key so masks are scoped to a single study and a
 - If `analysisCacheFolder` is configured, `deface_mask.db` persists across runs.
 - Otherwise, it is created in the private mapping folder and deleted after processing.
 
-##### 4.1.10.3 Secondary Series Processing
+##### 4.1.9.3 PET Series Defacing via Projected CT Mask
 
-For secondary series whose group has a cached mask:
-1. The stored primary mask is resampled onto the secondary series geometry.
-2. The pixelation step is applied using the resampled mask.
-3. The ML model is **not re-run**, saving significant GPU compute time.
+For each PET series paired with a primary CT series in the same group:
+1. The CT face mask whose `AcquisitionDateTime` (0008,002A) is closest to the PET series acquisition date/time is retrieved from the mask database (relevant when multiple CT masks exist for the same `FrameOfReferenceUID`).
+2. The selected CT mask is resampled onto the PET series geometry using the PET spatial metadata (origin, direction, spacing).
+3. The pixelation step is applied to the PET volume using the resampled mask.
 
-##### 4.1.10.4 Configuration
+##### 4.1.9.4 Configuration
 
 ```json
 {
@@ -358,33 +289,146 @@ For secondary series whose group has a cached mask:
 }
 ```
 
-The `primary` array lists the modalities for which mask caching is enabled. When the array is empty or the key is absent, caching is fully disabled. See [§9.1.2](#912-optional-configuration-options) for full option documentation.
+The `primary` array lists the modality for which CT mask projection onto co-registered PET series is enabled. Only `["CT"]` is currently supported. When the array is empty or the key is absent, PET/CT defacing via mask projection is fully disabled and each series is defaced independently. See [§9.1.2](#912-optional-configuration-options) for full option documentation.
+
+#### 4.1.10 Current limitations
+- Defacing is supported only for CT modality.
+- The time/resource consuming AI model will run even when no face is included in the data, because we can't rely on BodyPartExamined correct labeling. For the future we plan to develop a functionality to determine from a coronal 2D slice whether the head is present and skip this step accordingly.
+- No modification on non-face data has been observed from the defacing model so far, but care must be taken to check the defacing result after each deidentification project. 
+- The defacer does not modify ears region, there is ongoing discussion to include this part of the face in the future (https://github.com/ZentaLabs/luwak/issues/71).
 
 ### 4.2 Clean Pixel Data Option
 
 #### 4.2.1 Overview
-Luwak includes DEID-based detection rules for burned-in pixel annotations, that cannot be removed through header deidentification or defacing.
 
-**Recipe File:** `deid.dicom.burnedin-pixel-recipe`
+Luwak includes DEID-based detection rules for burned-in pixel annotations that cannot be removed through header deidentification or defacing. This part is still under actibve developement (https://github.com/ZentaLabs/luwak/issues/47) and will be included in future release.
 
-**Pixel Cleaning Implementation:** Burned-in pixel cleaning is performed using the `deid` library, which provides tools for detecting and masking sensitive pixel regions in DICOM images. The process involves identifying known areas which typically include annotations (such as patient names or IDs) and applying pixel masking to remove them. For more details, see the [deid pixel cleaning documentation](https://pydicom.github.io/deid/getting-started/dicom-pixels/).
+**Implementation Module:** `luwakx/pixel_cleaner_service.py`  
+**Recipe File:** `luwakx/data/BurnedPixelLocation/deid.dicom.burnedin-pixel-recipe`
 
-This functionality will soon be integrated and called within Luwak, ensuring that images are cleaned of burned-in identifiers. We also plan to extend this approach for more general automatic detection of sensitive pixel regions in future releases.
+**Pixel Cleaning Implementation:** Burned-in pixel cleaning is performed using the `deid` library's `DicomCleaner` class, which provides tools for detecting and masking sensitive pixel regions in DICOM images based on rule-based pattern matching. The process involves identifying known areas which typically include annotations (such as patient names or IDs) and applying pixel masking to remove them. For more details, see the [deid pixel cleaning documentation](https://pydicom.github.io/deid/getting-started/dicom-pixels/).
+
+**Future Development:** There are recent plans to develop an automatic burned-in pixel detection system using machine learning techniques (OCR, image analysis) to identify and mask PHI in arbitrary locations without requiring pre-configured coordinates. This enhancement will complement the current rule-based approach and provide more comprehensive protection against burned-in annotations in unknown equipment configurations or custom text overlays.
+
+**Detection Method:**
+
+- **Rule-Based Pattern Matching:** The deid library uses header metadata matching against known patterns, NOT actual image analysis, OCR, or machine learning  
+- **Pre-Configured Coordinates:** Rectangular regions where annotations are known to appear for specific manufacturer/model combinations are defined in the recipe  
+- **Header-Based Triggers:** Detection is triggered by specific DICOM attributes such as:  
+  - `BurnedInAnnotation` tag value  
+  - `ImageType` containing "SAVE" keyword  
+  - Specific manufacturer/model/series description combinations
+
+**Cleaning Process:**
+
+1. **Detection Phase:** `DicomCleaner.detect()` evaluates each DICOM file against the recipe rules  
+2. **Flagging:** Files matching known patterns are flagged with specific coordinates  
+3. **Masking Phase:** `DicomCleaner.clean()` replaces flagged pixel regions with black pixels (value 0\)  
+4. **Preservation:** All DICOM metadata headers remain unchanged; only pixel data is modified
+
+**Modified DICOM Attributes:**
+
+- **Pixel Data (7FE0,0010)** at the top-level dataset only is modified  
+- Masked regions are replaced with black pixels (value 0\)  
+- All DICOM metadata is preserved unchanged  
+- Pixel Data within private attributes is NOT processed (those attributes are removed by the basic\_profile as they are not known to be safe)
+
+**Icon Image Sequence Handling:** The Icon Image Sequence (0088,0200) attribute is not modified or cleaned by the pixel cleaning process. Instead, this attribute is completely removed during deidentification as specified in the Basic Application Confidentiality Profile. This ensures that any potential PHI present in thumbnail or icon images is eliminated rather than attempting pixel-level cleaning.
+
+**Private Tag Pixel Data:** Luwak does not perform pixel cleaning on private tag Pixel Data attributes. All private tags, including those containing pixel data, are removed by default unless they are explicitly listed in the DICOM PS3.15 Appendix E.3.10 Safe Private Attributes list (see [§5.2](#52-private-tags-template)) and the Retain Safe Private Option profile ([§5.4.11](#5411-retain-safe-private-option)) is selected by the user. This approach ensures that potentially sensitive pixel data stored in vendor-specific private tags is not inadvertently retained.
 
 #### 4.2.2 Detection Rules
-- **Whitelist filters:** Known clean image types/modalities
-- **Graylist filters:** Specific pixel regions with common annotations
-- **Equipment-specific rules:** Manufacturer-specific patterns
+
+- **Whitelist filters:** Known clean image types/modalities that are safe to process  
+- **Graylist filters:** Specific pixel regions with common annotations where coordinates are defined for cleaning  
+- **Blacklist filters:** High-risk patterns that flag images for manual review or rejection (e.g., SECONDARY/SAVE images, missing ImageType, BurnedInAnnotation=YES)  
+- **Equipment-specific rules:** Manufacturer-specific patterns with pre-configured coordinate regions
 
 #### 4.2.3 Common Burned-In Locations
-- Dose reports in CT (coordinates 0,0,512,121)
-- Localizer images
-- Enhancement curves
+
+- Dose reports in CT (coordinates 0,0,512,121)  
+- Localizer images  
+- Enhancement curves  
 - Reconstruction metadata overlays
 
-TODO: ADD description of how this is integrated in luwak, once I do it.
+#### 4.2.4 Integration in Luwak Pipeline
 
-Once the pixel data have been cleaned of all possible identification risks, the pipeline proceeds to stage 3 for metadata deidentification.
+**Pipeline Stage:** Pixel cleaning occurs at stage 2, after organization and BEFORE defacing.
+
+**Conditional Processing:** Pixel cleaning is performed when `'clean_pixel_data'` is included in the `recipes` array in the config (see [§9.1](#91-configuration-file) for configuration details). The decision logic is implemented in `ProcessingPipeline._needs_pixel_cleaning()`.
+
+**Processing Flow:**
+
+1. **Service Initialization:** `PixelCleanerService` is instantiated with the burned-in pixel recipe path  
+2. **Series Processing:** For each series requiring pixel cleaning:  
+   - Files are read from the `organized` directory  
+   - `DicomCleaner.detect()` is called for each file to identify burned-in annotations  
+   - Files flagged with coordinates are cleaned using `DicomCleaner.clean()`  
+   - Cleaned files are saved to the `pixel_cleaned` directory  
+   - Files without flags or coordinates are copied as-is  
+3. **Path Updates:** `DicomFile.set_pixel_cleaned_path()` updates each file's path for downstream processing  
+4. **Status Tracking:** Series status is updated to `ProcessingStatus.PIXEL_CLEANED`  
+5. **Result Reporting:** Results include counts of cleaned, flagged, and skipped files
+
+**Behavior on Detection:**
+
+- **Files with coordinates (graylist matches):** Pixel regions are masked with black pixels (value 0\)  
+- **Files flagged without coordinates (blacklist matches):** Copied as-is with warning logged for manual review \- deidentification continues normally  
+- **Files not flagged (whitelist matches):** Copied as-is without modification with this info logged  
+- **Processing errors:** Files are copied as-is on error, with error logged
+
+**Configuration:**
+
+{
+
+  "recipes": \["clean\_pixel\_data"\]
+
+}
+
+**Implementation Reference:**
+
+- `PixelCleanerService.process_series()` \- Main entry point for series cleaning  
+- `PixelCleanerService._detect_with_cleaner()` \- Detection wrapper  
+- `ProcessingPipeline._pixel_clean_series()` \- Pipeline integration point  
+- `ProcessingPipeline._needs_pixel_cleaning()` \- Business logic decision
+
+#### 4.2.5 Current Limitations
+
+**Detection Limitations:**
+
+- **Rule-Based Only:** Detection relies solely on header metadata matching, NOT actual image analysis or OCR  
+- **Known Patterns Only:** Only detects annotations in pre-configured locations for equipment specified in the recipe database  
+- **No Custom Text Detection:** Will miss custom text, annotations in unexpected locations, or unknown equipment configurations  
+- **Manual Review Required:** Files flagged without coordinates require manual inspection to ensure complete PHI removal
+
+**Cleaning Scope:**
+
+- **Top-Level Pixel Data Only:** Only modifies Pixel Data (7FE0,0010) at the dataset's top level  
+- **No Private Tag Cleaning:** Private tag Pixel Data attributes are not cleaned at the pixel level; these tags are removed by default (unless retained via Safe Private Option)  
+- **Rectangular Regions Only:** Masking is limited to pre-configured rectangular coordinate regions  
+- **No Dynamic Detection:** Cannot adapt to new annotation patterns without recipe updates
+
+**Recipe Maintenance:**
+
+- The burned-in pixel recipe (`deid.dicom.burnedin-pixel-recipe`) must be manually updated to include new manufacturer/model/coordinate patterns  
+- Community contributions to the deid library's recipe database improve coverage over time  
+- Organizations should validate the recipe against their specific imaging equipment
+
+**Recommendations:**
+
+- Enable pixel cleaning as a baseline protection by adding "clean\_pixel\_data" to the recipe list in the config file  
+- Perform manual review of flagged files, especially those without cleaning coordinates  
+- Validate cleaned images visually for residual burned-in annotations  
+- Report new annotation patterns to the deid library community for recipe inclusion
+
+**Future Enhancements:**
+
+- **Automatic Detection System (In Development):** Machine learning-based approach using OCR and image analysis to detect burned-in text in arbitrary locations without requiring pre-configured coordinates. This will address current limitations by enabling dynamic detection of:  
+  - Custom text annotations in unexpected locations  
+  - PHI from unknown equipment configurations  
+- This enhancement will complement the existing rule-based method and significantly improve detection coverage
+
+Once the pixel data have been cleaned of all possible identification risks, the pipeline proceeds to metadata deidentification.
 
 ---
 
@@ -540,7 +584,7 @@ For completeness, we have added the equivalent actions in the DICOM Standard PS3
 | `func:clean_descriptors_with_llm` | Clean text with LLM PHI detection | Study/Series descriptions | C | | REPLACE |
 | `func:generate_patient_id` | Generate consistent anonymized patient ID | PatientID in basic_profile | Z/D | LOOKUP(this,ptid) | REPLACE | 
 
-Luwak supports custom deidentification functions that extend pydicom/deid's recipe syntax. These functions are injected into the recipe as action arguments (e.g., `REPLACE (0020,000d) func:generate_hmacuid`) and executed by the pipeline for tags requiring advanced deidentification ([§6](#6-deidentification-recipe-creation-pipeline-stage-3---4)). The main custom functions are: `func:generate_hmacuid`, `func:generate_hmacdate_shift`, `func:clean_descriptors_with_llm`, `func:generate_patient_id`.
+Luwak supports custom deidentification functions that extend pydicom/deid's recipe syntax. These functions are injected into the recipe as action arguments (e.g., `REPLACE (0020,000d) func:generate_hmacuid`) and executed by the pipeline for tags requiring advanced deidentification ([§6](#6-deidentification-recipe-creation-pipeline-stage-4---5)). The main custom functions are: `func:generate_hmacuid`, `func:generate_hmacdate_shift`, `func:clean_descriptors_with_llm`, `func:generate_patient_id`.
 
 In the following we detail the purpose and description of each Luwak's action.
 
@@ -762,7 +806,7 @@ When the `bypassCleanDescriptorsLlm` configuration option is set to `true`, the 
 REPLACE (0008,0012) func:set_fixed_datetime
 ```
 **Current limitations**
-- These dummy values will be assigned to all the patients, all series and all studies. This might create issues to 4D data loading and some DICOM viewer. This action is specified only for the Basic Profile, so if you don't want to have these issues, combine the profile with other options that keep/or shift the dates consistently (see [§6](#6-deidentification-recipe-creation-pipeline-stage-3---4) ).
+- These dummy values will be assigned to all the patients, all series and all studies. This might create issues to 4D data loading and some DICOM viewer. This action is specified only for the Basic Profile, so if you don't want to have these issues, combine the profile with other options that keep/or shift the dates consistently (see [§6](#6-deidentification-recipe-creation-pipeline-stage-4---5) ).
 
 #### 5.3.9 SQ Keep with Review Flag `func:sq_keep_original_with_review`
 
@@ -991,6 +1035,7 @@ Here are the available actions for this option:
 
 **Notes**
 - Private tags can have several VR for the same tag, hence it is possible that the action of `func:generate_hmacuid` and `func:generate_hmacdate_shift` could be prescribed to VRs which are not `UI` or `DA`/`DT`. This is handled by the deidentification process directly, by issuing a warning (see [§6.4.1](#641-translation-logic-by-action)).
+- TCIA provides a list of safe private tags specifying the VR, which can have multiple values, for each safe tag. No check is implemented in luwak to ascertain that the private tags listed as safe in the private_tags_template have a VR included in those listed by TCIA for that specific tag.
 
 **Reference:** 
 - DICOM PS3.15 Appendix E.3.10 - Safe Private Attributes
@@ -1032,7 +1077,7 @@ If specified paths don't exist, default templates are used with a warning logged
 
 ---
 
-## 6. Deidentification Recipe Creation (pipeline stage 3 - 4)
+## 6. Deidentification Recipe Creation (pipeline stage 4 - 5)
 
 ### 6.1 Recipe Builder Overview
 The `anonymization_recipe_builder.py` module generates DEID recipe (check https://pydicom.github.io/deid/getting-started/dicom-config/ for more info on DEID) files by processing the CSV tags templates based on selected deidentification profiles.
@@ -1321,7 +1366,7 @@ ADD RecognizableVisualFeatures NO
 ```
 REMOVE (0012,0064)
 ```
-This tag is removed from the data in case some pre-deidentification was already applied to the data. The tag is injected to the data again only after the entire deidentification process is complete ([§7](#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-5)).
+This tag is removed from the data in case some pre-deidentification was already applied to the data. The tag is injected to the data again only after the entire deidentification process is complete ([§7](#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6)).
 
 ### 6.5 Action Priority Rules
 
@@ -1509,11 +1554,11 @@ Luwak produces several output files during the deidentification pipeline, each s
 
 **10. Deface Mask Database (`deface_mask.db`)**
   - Location: As configured in the optional `analysisCacheFolder` (if not specified: private mapping folder, temporary); only created when `saveDefaceMasks.primary` is non-empty
-  - Content: SQLite database caching per-patient, per-study, per-`FrameOfReferenceUID` defacing masks (stored as NRRD file paths) to avoid redundant ML inference for series sharing the same spatial reference frame
+  - Content: SQLite database storing per-patient, per-study, per-`FrameOfReferenceUID` CT face masks (as NRRD file paths) for projection and resampling onto co-registered PET series sharing the same spatial reference frame
   - Generation: Created and updated during the defacing stage by `DefaceMaskDatabase`
   - Persistence: Removed after processing unless `analysisCacheFolder` is specified
   - Thread-safe: Uses WAL mode with serialised writes for concurrent access
-  - See [§4.1.10](#4110-deface-mask-caching) for details on mask caching logic
+  - See [§4.1.9](#419-petct-defacing-via-ct-mask-projection) for details on PET/CT defacing logic
 
 #### Export Logic
 The export of metadata and mappings is performed in a streaming, memory-efficient manner. After each series is processed, results are immediately written to the corresponding output files. The `MetadataExporter` class manages all export operations, including incremental appending and finalization of CSV and Parquet files, and movement of NRRD volumes.
@@ -1594,11 +1639,11 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 |--------|------|---------|-------------|
 | `excludedTagsFromParquet` | array | ["(7FE0,0010)"] | List of DICOM tags to exclude from Parquet export (accepts integer, hex string, or bracketed formats) |
 
-**Deface Mask Caching Options:**
+**PET/CT Defacing Options:**
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `saveDefaceMasks.primary` | array | [] | List of DICOM modalities (e.g., `["CT"]`) for which deface mask caching is enabled. Luwak selects one *primary* series per `(patient, study, FrameOfReferenceUID, modality)` group — the one with the largest spatial coverage and finest voxel resolution — runs ML defacing on it, and stores the resulting mask. Subsequent series in the same group reuse the cached mask, avoiding redundant ML inference. When empty or absent, caching is disabled and all series are defaced independently. See [§4.1.10](#4110-deface-mask-caching). |
+| `saveDefaceMasks.primary` | array | [] | Enables PET/CT defacing via CT mask projection. Only `["CT"]` is currently supported. When set, Luwak runs the AI face segmentation on the CT series, stores the resulting face mask, and resamples it onto any PET series sharing the same `(patient, study, FrameOfReferenceUID)` — selecting the CT mask whose `AcquisitionDateTime` (0008,002A) is closest to the PET acquisition date/time for optimal geometric alignment. When empty or absent, PET/CT mask projection is disabled and all series are defaced independently. See [§4.1.9](#419-petct-defacing-via-ct-mask-projection). |
 
 #### 9.1.3 Example Configuration
 
@@ -1802,10 +1847,10 @@ Luwak follows an object-oriented design with clear separation of concerns:
   - `get_stats()` - Database statistics
 
 **`DefacePriorityElector`**
-- **Purpose:** Elect the *primary* series for each `(patient, study, FrameOfReferenceUID, modality)` group and sort the full series list so the primary series is processed first
+- **Purpose:** Elect the *primary* CT series for each PET series in a (patient, study, FrameOfReferenceUID)` group and sort the full series list so the primary series are processed first
 - **Key Responsibilities:**
   - Group series by spatial reference frame
-  - Select the series with the best spatial coverage and resolution as primary
+  - Select the CT series whose `AcquisitionDateTime` (0008,002A) is closest to the PET acquisition date/time within the same `(patient, study, FrameOfReferenceUID)` group, prior to resampling and mask reapplication
   - Return the sorted list for efficient pipeline ordering
 - **Key Methods:**
   - `elect_and_sort(all_series)` - Returns the sorted series list with primary series first per group
@@ -2212,7 +2257,7 @@ Use `retrieve_tags.py` script as documented in [§5](#5-metadata-deideintificati
 
 ## Appendix C: Basic Application Confidentiality Profile Recipe
 
-This appendix provides the complete list of DICOM tags processed by the Basic Application Confidentiality Profile, showing the specific actions applied to each tag. This table represents the actual recipe file generated by Luwak's anonymization recipe builder when the Basic Profile is selected (see [§5.4.1](#541-basic-application-confidentiality-profile---action-mapping-logic) and [§6](#6-deidentification-recipe-creation-pipeline-stage-3---4)).
+This appendix provides the complete list of DICOM tags processed by the Basic Application Confidentiality Profile, showing the specific actions applied to each tag. This table represents the actual recipe file generated by Luwak's anonymization recipe builder when the Basic Profile is selected (see [§5.4.1](#541-basic-application-confidentiality-profile---action-mapping-logic) and [§6](#6-deidentification-recipe-creation-pipeline-stage-4---5)).
 
 ### C.1 Recipe Format
 
@@ -2906,5 +2951,5 @@ In addition to the tag-specific actions listed above, the recipe includes these 
 - This table represents the Basic Application Confidentiality Profile without additional retention options
 - When combined with retention options (UIDs, dates, device identity, etc.), some actions may be overridden (see [§5.4](#54-profileoptions-description))
 - Actions marked with `#REPLACE (tag) SEQUENCE NEEDS REVIEW` are commented out in the recipe and require manual review
-- The actual recipe file is generated by `anonymization_recipe_builder.py` (see [§6](#6-deidentification-recipe-creation-pipeline-stage-3---4))
+- The actual recipe file is generated by `anonymization_recipe_builder.py` (see [§6](#6-deidentification-recipe-creation-pipeline-stage-4---5))
 

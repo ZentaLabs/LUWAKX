@@ -9,7 +9,7 @@ Key Components:
 - _collect_actions_for_row: Helper function to process template rows (simplified)
 
 See conformance documentation for details:
-https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-3---4
+https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-4---5
 """
 
 import os
@@ -230,7 +230,7 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
 
         # Remove DeidentificationMethodCodeSequence if exists from previous runs. It will be added 
         # again later at the end of the series deidentification.
-        # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-5
+        # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6
         outfile.write(f"# DeidentificationMethodCodeSequence\n")
         outfile.write(f"REMOVE (0012,0064)\n")
 

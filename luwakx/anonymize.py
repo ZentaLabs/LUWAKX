@@ -503,7 +503,7 @@ class LuwakAnonymizer:
             - Invalid recipe types: Treated as custom recipe filenames
             
         See conformance documentation:
-        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-3---4
+        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-4---5
         """
         # Import DeidRecipe here, after deid has been set up
         from deid.config import DeidRecipe
