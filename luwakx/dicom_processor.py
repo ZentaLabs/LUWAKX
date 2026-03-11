@@ -1286,8 +1286,8 @@ class DicomProcessor:
                 continue
             
             try:
-                # Read the DICOM file (pixel data not needed — only tag injection)
-                ds = pydicom.dcmread(path, stop_before_pixels=True)
+                # Read the DICOM file
+                ds = pydicom.dcmread(path, stop_before_pixels=False)
                 
                 # Inject the DeidentificationMethodCodeSequence with all recipe items
                 ds.DeidentificationMethodCodeSequence = sequence_items
