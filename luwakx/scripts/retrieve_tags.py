@@ -781,7 +781,7 @@ def generate_basic_profile(final_df, doc_refs_dict):
                         doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#532-remove, Same action as TCIA - https://wiki.cancerimagingarchive.net/display/Public/Submission+and+De-identification+Overview")
                     else:
                         df.at[idx, 'Basic Prof.'] = 'func:sq_keep_original_with_review'
-                        doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action")
+                        doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#539-sq-keep-with-review-flag-funcsq_keep_original_with_review")
                 # Note: Same action as KitwareMedical/dicomanonymizer - https://github.com/KitwareMedical/dicom-anonymizer
                 else:
                     df.at[idx, 'Basic Prof.'] = 'replace'

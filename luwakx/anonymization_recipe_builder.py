@@ -14,10 +14,93 @@ https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deide
 
 import os
 import csv
+import re
 import struct
 from typing import List, Optional
 
 from luwak_logger import get_logger
+
+
+# Map recipe names to their label prefix in the "Documentation References" column
+_RECIPE_TO_RATIONALE_LABEL = {
+    'basic_profile': 'Basic',
+    'retain_uid': 'Retain UIDs',
+    'retain_device_id': 'Retain Device ID',
+    'retain_institution_id': 'Retain Institution ID',
+    'retain_patient_chars': 'Retain Patient Characteristics',
+    'retain_long_full_dates': 'Retain Full Dates',
+    'retain_long_modified_dates': 'Retain Modified Dates',
+    'clean_descriptors': 'Clean Descriptors',
+    'clean_structured_content': 'Clean Structured Content',
+    'clean_graphics': 'Clean Graphics',
+}
+
+
+def _find_contributing_recipe(row, final_action, recipes_to_process, recipe_column_map):
+    """Return the first recipe in recipes_to_process whose column value equals final_action."""
+    for recipe in recipes_to_process:
+        if recipe not in recipe_column_map:
+            continue
+        col = recipe_column_map[recipe]
+        if row.get(col, '').strip() == final_action:
+            return recipe
+    return None
+
+
+def _extract_rationale_for_label(doc_refs, label):
+    """Return the text after 'label:' in the pipe-separated Documentation References string."""
+    for part in doc_refs.split('|'):
+        part = part.strip()
+        if part.lower().startswith(label.lower() + ':'):
+            return part[len(label) + 1:].strip()
+    return ''
+
+
+def _lookup_tag_by_keyword(keyword):
+    """Resolve a DICOM keyword to (tag_str, tag_name) using pydicom.
+
+    Returns ('(GGGG,EEEE)', tag_name) when the keyword is known, or
+    ('*', keyword) when it is not found or pydicom is unavailable.
+    """
+    try:
+        from pydicom.datadict import tag_for_keyword, get_entry
+        tag_int = tag_for_keyword(keyword)
+        if tag_int is not None:
+            entry = get_entry(tag_int)
+            tag_str = f"({(tag_int >> 16):04X},{(tag_int & 0xFFFF):04X})"
+            tag_name = entry[2]  # human-readable name
+            return tag_str, tag_name
+    except Exception:
+        pass
+    return '*', keyword
+
+
+def _parse_action_from_recipe_line(line):
+    """Extract the recipe action keyword (KEEP, REMOVE, REPLACE, BLANK, JITTER) from a recipe line.
+    
+    For commented-out lines (clean_manually / manual_review) the leading '#' is stripped
+    before matching so the intended directive is still returned.
+    """
+    stripped = line.strip().lstrip('#').strip()
+    m = re.match(r'^(KEEP|REMOVE|REPLACE|BLANK|JITTER)\b', stripped)
+    return m.group(1) if m else ''
+
+
+def _parse_replacement_from_recipe_line(line):
+    """Extract replacement value from a REPLACE or JITTER recipe line.
+
+    The tag field may contain spaces when a private creator string is used,
+    e.g. (0009,"FDMS 1.0",05).  Using \\S+ to skip the tag would stop at
+    the first space inside the creator, corrupting the captured replacement
+    value.  Instead we match the tag as everything inside the outermost
+    (...) pair (non-greedy, stops at first ')'), followed by optional
+    nested __N__(...) segments, before consuming the replacement value.
+    """
+    m = re.match(
+        r'(?:REPLACE|JITTER)\s+(?:\(.*?\)(?:__\w+__\(.*?\))*|ALL)\s+(.*)',
+        line.strip(),
+    )
+    return m.group(1).strip() if m else ''
 
 
 def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: Optional[dict] = None) -> Optional[str]:
@@ -96,8 +179,11 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
     
     # Output recipe file path
     output_file = os.path.join(recipe_folder, "deid.dicom.recipe")
+    output_csv = os.path.join(recipe_folder, "deid.dicom.recipe.csv")
 
-    with open(output_file, 'w') as outfile:
+    with open(output_file, 'w') as outfile, open(output_csv, 'w', newline='', encoding='utf-8') as csv_out:
+        csv_writer = csv.DictWriter(csv_out, fieldnames=['Tag', 'Tag Name', 'Action', 'Replacement Value', 'Rationale'])
+        csv_writer.writeheader()
         outfile.write("FORMAT dicom\n\n%header\n\n")
         with open(input_standard_template, 'r') as csvfile:
             reader = csv.DictReader(csvfile)
@@ -137,8 +223,11 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                 if not actions:
                     continue
                 
-                # Determine final action based on priority rules (original logic)
-                final_action = _determine_final_action(actions, vr)
+                # Determine final action based on priority rules (original logic).
+                # source_action is the raw CSV value that won the priority check;
+                # it may differ from final_action when func:clean_descriptors_with_llm
+                # is translated to 'remove' or 'manual_review' based on VR.
+                final_action, source_action = _determine_final_action(actions, vr)
                 
                 # Write action based on the final determined action (original logic)
                 line = f"{comment}\n"
@@ -209,30 +298,93 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     logger.error(f"Unrecognized final action '{final_action}' for tag {tag} with VR={vr}")
                     continue  # Skip unrecognized actions
                 outfile.write(line)
+                # The "Private Attributes" row has no real tag address and is
+                # written as REMOVE ALL func:is_tag_private.  Record it in the
+                # CSV as a wildcard entry only when that directive was actually
+                # written (i.e. final_action is 'remove' for that row), then
+                # skip the normal rationale lookup.
+                if name.lower() == 'private attributes' and final_action == 'remove':
+                    contributing_recipe = _find_contributing_recipe(
+                        row, source_action, recipes_to_process, recipe_column_map
+                    )
+                    _pa_rationale = ''
+                    if contributing_recipe:
+                        _pa_label = _RECIPE_TO_RATIONALE_LABEL.get(contributing_recipe, '')
+                        if _pa_label:
+                            _pa_rationale = _extract_rationale_for_label(
+                                row.get('Documentation References', ''), _pa_label
+                            )
+                    csv_writer.writerow({
+                        'Tag': '*',
+                        'Tag Name': 'Private tags (wildcard)',
+                        'Action': 'REMOVE',
+                        'Replacement Value': 'ALL func:is_tag_private',
+                        'Rationale': _pa_rationale,
+                    })
+                    continue
+                # Write corresponding row to summary CSV.
+                # Use source_action (the CSV column value that won priority) rather
+                # than final_action so that derived actions like 'remove' coming from
+                # func:clean_descriptors_with_llm are attributed to the correct profile.
+                contributing_recipe = _find_contributing_recipe(
+                    row, source_action, recipes_to_process, recipe_column_map
+                )
+                rationale = ''
+                if contributing_recipe:
+                    label = _RECIPE_TO_RATIONALE_LABEL.get(contributing_recipe, '')
+                    if label:
+                        doc_refs = row.get('Documentation References', '')
+                        rationale = _extract_rationale_for_label(doc_refs, label)
+                csv_writer.writerow({
+                    'Tag': tag,
+                    'Tag Name': name,
+                    'Action': _parse_action_from_recipe_line(line),
+                    'Replacement Value': _parse_replacement_from_recipe_line(line),
+                    'Rationale': rationale,
+                })
         
+        _directives_ref = 'https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives'
+
         # Add PatientIdentityRemoved if basic_profile is in the recipe list (original logic)
         if 'basic_profile' in recipes_to_process:
             outfile.write("ADD PatientIdentityRemoved YES\n")
+            _tag, _name = _lookup_tag_by_keyword('PatientIdentityRemoved')
+            csv_writer.writerow({'Tag': _tag, 'Tag Name': _name, 'Action': 'ADD', 'Replacement Value': 'YES', 'Rationale': _directives_ref})
+
             # Remove all curve data/overlay data/overlay comments tags
             # See "If basic_profile is selected" paragraph in: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
             # TOCHECK : are these tags supposed to be removed always and
             # not only if the basic profile is requested? if yes move the line below outside if block
             outfile.write(f"REMOVE ALL func:is_curve_or_overlay_tag\n")
+            csv_writer.writerow({'Tag': '*', 'Tag Name': 'Curve and Overlay tags (wildcard)', 'Action': 'REMOVE', 'Replacement Value': 'ALL func:is_curve_or_overlay_tag', 'Rationale': _directives_ref})
+
             # Set DeidentificationMethod based on examples from RSNA anonymizer:
             # ds.DeidentificationMethod = "RSNA DICOM ANONYMIZER"  # (0012,0063)
             outfile.write("ADD DeidentificationMethod LUWAK_ANONYMIZER\n")
+            _tag, _name = _lookup_tag_by_keyword('DeidentificationMethod')
+            csv_writer.writerow({'Tag': _tag, 'Tag Name': _name, 'Action': 'ADD', 'Replacement Value': 'LUWAK_ANONYMIZER', 'Rationale': _directives_ref})
+
             if 'retain_long_full_dates' not in recipes_to_process and 'retain_long_modified_dates' not in recipes_to_process:
                 outfile.write("ADD LongitudinalTemporalInformationModified REMOVED\n")
+                _tag, _name = _lookup_tag_by_keyword('LongitudinalTemporalInformationModified')
+                csv_writer.writerow({'Tag': _tag, 'Tag Name': _name, 'Action': 'ADD', 'Replacement Value': 'REMOVED', 'Rationale': _directives_ref})
+
         if 'retain_long_full_dates' in recipes_to_process:
             outfile.write("ADD LongitudinalTemporalInformationModified UNMODIFIED\n")
+            _tag, _name = _lookup_tag_by_keyword('LongitudinalTemporalInformationModified')
+            csv_writer.writerow({'Tag': _tag, 'Tag Name': _name, 'Action': 'ADD', 'Replacement Value': 'UNMODIFIED', 'Rationale': _directives_ref})
         elif 'retain_long_modified_dates' in recipes_to_process:
             outfile.write("ADD LongitudinalTemporalInformationModified MODIFIED\n")
+            _tag, _name = _lookup_tag_by_keyword('LongitudinalTemporalInformationModified')
+            csv_writer.writerow({'Tag': _tag, 'Tag Name': _name, 'Action': 'ADD', 'Replacement Value': 'MODIFIED', 'Rationale': _directives_ref})
 
         # Remove DeidentificationMethodCodeSequence if exists from previous runs. It will be added 
         # again later at the end of the series deidentification.
         # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6
         outfile.write(f"# DeidentificationMethodCodeSequence\n")
         outfile.write(f"REMOVE (0012,0064)\n")
+        _, _dcs_name = _lookup_tag_by_keyword('DeidentificationMethodCodeSequence')
+        csv_writer.writerow({'Tag': '(0012,0064)', 'Tag Name': _dcs_name, 'Action': 'REMOVE', 'Replacement Value': '', 'Rationale': 'https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6'})
 
         # Handle private tags
         # See "Private tag handling" paragraph in: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
@@ -265,8 +417,16 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                         logger.warning(f"Unrecognized action '{action}' for private tag ({group},\"{private_creator}\",{element}), skipping.")
                         continue  # Skip unrecognized actions
                     outfile.write(line)
+                    csv_writer.writerow({
+                        'Tag': f"({group},\"{private_creator}\",{element})",
+                        'Tag Name': name,
+                        'Action': _parse_action_from_recipe_line(line),
+                        'Replacement Value': _parse_replacement_from_recipe_line(line),
+                        'Rationale': 'TCIA (The Cancer Imaging Archive) Private Tag Knowledge Base (https://wiki.cancerimagingarchive.net/download/attachments/3539047/TCIAPrivateTagKB-02-01-2024-formatted.csv?version=2&modificationDate=1707174689263&api=v2)',
+                    })
 
     logger.info(f"Recipe generated: {output_file}")
+    logger.info(f"Summary CSV generated: {output_csv}")
     return output_file
 
 
@@ -278,42 +438,51 @@ def _determine_final_action(actions, vr):
         vr: DICOM Value Representation (VR) of the tag
         
     Returns:
-        str: The final action to apply based on priority
+        tuple[str, str]: (final_action, source_action) where
+          - final_action is the recipe directive to write
+          - source_action is the raw CSV column value that drove this decision,
+            used to look up the contributing profile for rationale attribution.
+            These differ only when func:clean_descriptors_with_llm is translated
+            to 'remove' or 'manual_review' based on VR.
     
     See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#65-action-priority-rules
     """
     # If any action is 'keep', final action is 'keep'
     if 'keep' in actions:
-        return 'keep'
+        return 'keep', 'keep'
     elif 'func:generate_hmacdate_shift' in actions:
-        return 'func:generate_hmacdate_shift'
+        return 'func:generate_hmacdate_shift', 'func:generate_hmacdate_shift'
     elif 'func:generate_hmacuid' in actions:
-        return 'func:generate_hmacuid'
+        return 'func:generate_hmacuid', 'func:generate_hmacuid'
     elif 'func:clean_descriptors_with_llm' in actions:
+        # source_action stays 'func:clean_descriptors_with_llm' even when the
+        # final directive is derived as 'manual_review' or 'remove', so the
+        # rationale is attributed to the clean_descriptors profile, not to
+        # whichever other profile happens to carry 'remove'.
         if vr == 'SQ':
             # For sequences, we need manual review
-            return 'manual_review'
+            return 'manual_review', 'func:clean_descriptors_with_llm'
         elif vr in ['OB', 'OW', 'OF', 'UN']:
-            return 'remove'
+            return 'remove', 'func:clean_descriptors_with_llm'
         else:
-            return 'func:clean_descriptors_with_llm'
+            return 'func:clean_descriptors_with_llm', 'func:clean_descriptors_with_llm'
     elif 'replace' in actions:
-        return 'replace'
+        return 'replace', 'replace'
     elif 'func:check_patient_age' in actions:
-        return 'func:check_patient_age'
+        return 'func:check_patient_age', 'func:check_patient_age'
     elif 'func:set_fixed_datetime' in actions:
-        return 'func:set_fixed_datetime'
+        return 'func:set_fixed_datetime', 'func:set_fixed_datetime'
     elif 'clean_manually' in actions:
-        return 'clean_manually'
+        return 'clean_manually', 'clean_manually'
     elif 'blank' in actions:
-        return 'blank'
+        return 'blank', 'blank'
     elif 'func:sq_keep_original_with_review' in actions:
-        return 'func:sq_keep_original_with_review'
+        return 'func:sq_keep_original_with_review', 'func:sq_keep_original_with_review'
     elif 'remove' in actions:
-        return 'remove'
+        return 'remove', 'remove'
     # Otherwise, take the first non-empty action from the priority order
     else:
-        return actions[0]
+        return actions[0], actions[0]
 
 
 def _collect_actions_for_row(row, recipes_to_process, recipe_column_map):

@@ -1397,9 +1397,13 @@ Examples of these tests are:
 
 ### 6.6 Generated Recipe File Format
 
-Output file: `deid.dicom.recipe`
+Output files: `deid.dicom.recipe`, `deid.dicom.recipe.csv`
 
-The recipe builder generates a DEID-format recipe file containing all tag-level actions determined by the selected deidentification profiles and options. A complete reference table showing all tags processed by the Basic Application Confidentiality Profile recipe is provided in [Appendix C](#appendix-c-basic-application-confidentiality-profile-recipe).
+The recipe builder generates two files:
+
+- **`deid.dicom.recipe`** — A DEID-format recipe file containing all tag-level actions determined by the selected deidentification profiles and options. This is the input consumed by the deid library's `replace_identifiers()` function during metadata deidentification. A complete reference table showing all tags processed by the Basic Application Confidentiality Profile recipe is provided in [Appendix C](#appendix-c-basic-application-confidentiality-profile-recipe).
+
+- **`deid.dicom.recipe.csv`** — A human-readable summary CSV mirroring every directive in the recipe file. Each row records the tag address, tag name, action keyword (e.g., `KEEP`, `REMOVE`, `REPLACE`, `BLANK`, `JITTER`), replacement value (where applicable), and the rationale linking the decision back to the contributing deidentification profile and conformance documentation. The rationale is extracted from the `Documentation References` column of the tag template CSVs, using the label associated with the profile that drove the final action. When the source action is `func:clean_descriptors_with_llm` but the final action is derived as `remove` or `manual_review` (see [§6.4.1](#641-translation-logic-by-action)), the rationale is still attributed to the `clean_descriptors` profile. Additional directives (e.g., `ADD PatientIdentityRemoved`, `REMOVE ALL func:is_curve_or_overlay_tag`) are included as separate rows with a reference to [§6.4.2](#642-additional-recipe-directives).
 
 **Example content:**
 ```
@@ -1518,6 +1522,13 @@ Luwak produces several output files during the deidentification pipeline, each s
   - Content: Generated deidentification recipe file in deid format, specifying all tag-level transformations to be applied
   - Generation: Created during recipe generation stage (pipeline stage 3) by `anonymization_recipe_builder.py` based on selected profiles and options
   - Purpose: Input file for deid library's `replace_identifiers()` function during metadata deidentification
+  - Persistence: Retained after processing for audit and reproducibility purposes
+
+**6b. Recipe Summary CSV (`deid.dicom.recipe.csv`)**
+  - Location: Same folder as `deid.dicom.recipe` (recipes folder)
+  - Content: Human-readable CSV summarising every directive in the recipe file. Columns: `Tag`, `Tag Name`, `Action`, `Replacement Value`, `Rationale`. The rationale links each directive back to the contributing deidentification profile and the relevant section of this conformance document.
+  - Generation: Created alongside `deid.dicom.recipe` by `anonymization_recipe_builder.py`
+  - Purpose: Audit trail and documentation of the applied deidentification decisions
   - Persistence: Retained after processing for audit and reproducibility purposes
 
 **7. Patient UID Database (`patient_uid.db`)**
@@ -2031,7 +2042,8 @@ outputPrivateMappingFolder/
             └── image.nrrd (if defacing performed)
 
 recipesFolder/
-└── deid.dicom.recipe
+├── deid.dicom.recipe
+└── deid.dicom.recipe.csv
 
 analysisCacheFolder/ (if specified in config)
 ├── patient_uid.db
