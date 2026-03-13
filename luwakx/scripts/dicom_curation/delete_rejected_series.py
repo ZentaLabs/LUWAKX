@@ -10,7 +10,7 @@ This script:
 
 Usage:
     python delete_rejected_series.py <output_folder> <base_dicom_folder>
-    
+
 Example:
     python delete_rejected_series.py ./plot_output ./clean_dicom_data
 """
@@ -30,39 +30,39 @@ def find_metadata_files(output_folder):
 def process_metadata_file(metadata_path, base_dicom_folder, dry_run=False):
     """
     Process a single metadata.json file and delete rejected series.
-    
+
     Checks folder-level flag first:
     - If keep_folder_series is False, deletes all files regardless of individual flags
     - If keep_folder_series is True, checks individual keep_series flags
-    
+
     Returns:
         tuple: (deleted_files, rejected_series_info)
     """
     deleted_files = []
     rejected_series = []
-    
+
     with open(metadata_path, 'r') as f:
         metadata = json.load(f)
-    
+
     base_path = Path(base_dicom_folder)
-    
+
     # Check folder-level flag (default to True if not present for backward compatibility)
     keep_folder = metadata.get('keep_folder_series', True)
-    
+
     # Process each plot entry (skip the keep_folder_series key itself)
     for plot_name, plot_info in metadata.items():
         # Skip the folder-level flag key
         if plot_name == 'keep_folder_series':
             continue
-        
+
         # Ensure plot_info is a dictionary (metadata entry)
         if not isinstance(plot_info, dict):
             continue
-        
+
         # Determine if this series should be deleted
         should_delete = False
         deletion_reason = ""
-        
+
         if not keep_folder:
             # Folder marked for deletion - delete all series in this folder
             should_delete = True
@@ -71,7 +71,7 @@ def process_metadata_file(metadata_path, base_dicom_folder, dry_run=False):
             # Individual series marked for deletion
             should_delete = True
             deletion_reason = "series marked for deletion (keep_series=false)"
-        
+
         if should_delete:
             # This series should be deleted
             plot_filename = plot_info.get('plot_filename', f'{plot_name}.png')
@@ -80,7 +80,7 @@ def process_metadata_file(metadata_path, base_dicom_folder, dry_run=False):
             series_desc = plot_info.get('series_description', 'No Description')
             modality = plot_info.get('modality', 'Unknown')
             file_paths = plot_info.get('file_paths', [])
-            
+
             rejected_series.append({
                 'plot_name': plot_name,
                 'plot_filename': plot_filename,
@@ -92,11 +92,11 @@ def process_metadata_file(metadata_path, base_dicom_folder, dry_run=False):
                 'metadata_location': str(metadata_path.parent),
                 'deletion_reason': deletion_reason
             })
-            
+
             # Delete each file
             for rel_path in file_paths:
                 file_path = base_path / rel_path
-                
+
                 if file_path.exists():
                     if not dry_run:
                         try:
@@ -108,7 +108,7 @@ def process_metadata_file(metadata_path, base_dicom_folder, dry_run=False):
                         deleted_files.append(str(file_path))
                 else:
                     print(f"  Warning: File not found: {file_path}")
-    
+
     return deleted_files, rejected_series
 
 
@@ -120,35 +120,35 @@ def main():
         print("  base_dicom_folder  : Base folder where DICOM files are stored")
         print("  --dry-run         : (Optional) Show what would be deleted without actually deleting")
         sys.exit(1)
-    
+
     output_folder = sys.argv[1]
     base_dicom_folder = sys.argv[2]
     dry_run = '--dry-run' in sys.argv
-    
+
     if dry_run:
         print("=" * 80)
         print("DRY RUN MODE - No files will be deleted")
         print("=" * 80)
-    
+
     # Find all metadata files
     print(f"\nSearching for metadata.json files in: {output_folder}")
     metadata_files = find_metadata_files(output_folder)
     print(f"Found {len(metadata_files)} metadata.json file(s)")
-    
+
     if not metadata_files:
         print("No metadata files found. Exiting.")
         return
-    
+
     # Process each metadata file
     all_deleted_files = []
     all_rejected_series = []
-    
+
     for metadata_path in metadata_files:
         print(f"\nProcessing: {metadata_path.parent.relative_to(output_folder)}")
         deleted_files, rejected_series = process_metadata_file(
             metadata_path, base_dicom_folder, dry_run
         )
-        
+
         if rejected_series:
             print(f"  Found {len(rejected_series)} rejected series:")
             for series_info in rejected_series:
@@ -157,22 +157,22 @@ def main():
                 print(f"      Series UID: {series_info['series_uid']}")
                 print(f"      Reason: {series_info['deletion_reason']}")
                 print(f"      Files to delete: {series_info['file_count']}")
-        
+
         all_deleted_files.extend(deleted_files)
         all_rejected_series.extend(rejected_series)
-    
+
     # Summary
     print("\n" + "=" * 80)
     print("SUMMARY")
     print("=" * 80)
     print(f"Total rejected series: {len(all_rejected_series)}")
     print(f"Total files {'that would be' if dry_run else ''} deleted: {len(all_deleted_files)}")
-    
+
     # Create deletion log
     if all_deleted_files and not dry_run:
         log_filename = f"deleted_files_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         log_path = Path(output_folder) / log_filename
-        
+
         with open(log_path, 'w') as f:
             f.write(f"Deletion Log - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Base DICOM folder: {base_dicom_folder}\n")
@@ -182,7 +182,7 @@ def main():
             f.write("\n" + "=" * 80 + "\n")
             f.write("REJECTED SERIES:\n")
             f.write("=" * 80 + "\n\n")
-            
+
             for series_info in all_rejected_series:
                 f.write(f"Plot filename: {series_info['plot_filename']}\n")
                 f.write(f"Plot key: {series_info['plot_name']}\n")
@@ -194,20 +194,20 @@ def main():
                 f.write(f"Files deleted: {series_info['file_count']}\n")
                 f.write(f"Location: {series_info['metadata_location']}\n")
                 f.write("-" * 80 + "\n\n")
-            
+
             f.write("\n" + "=" * 80 + "\n")
             f.write("DELETED FILES:\n")
             f.write("=" * 80 + "\n\n")
-            
+
             for file_path in all_deleted_files:
                 f.write(f"{file_path}\n")
-        
+
         print(f"\nDeletion log saved to: {log_path}")
-    
+
     if dry_run:
         print("\nDRY RUN complete. Run without --dry-run to actually delete files.")
     else:
-        print(f"\n✓ Deletion complete!")
+        print(f"\n(SUCCESS) Deletion complete!")
 
 
 if __name__ == '__main__':

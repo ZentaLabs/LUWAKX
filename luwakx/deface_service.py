@@ -20,16 +20,16 @@ from luwak_logger import log_project_stacktrace
 
 class DefaceService:
     """Handles visual feature defacing for medical images.
-    
+
     This service manages face detection and pixelation using ML models,
     working with DICOM series to remove identifiable visual features.
-    
+
     Attributes:
         config: Configuration dictionary (read-only)
         logger: Logger instance
         external_mask_paths: List of paths to external mask files
     """
-    
+
     def __init__(self, config: Dict[str, Any], logger, deface_mask_db=None):
         """Initialize DefaceService.
 
@@ -68,51 +68,51 @@ class DefaceService:
         # Track series counter for external mask indexing
         self._series_counter = 0
 
-        # Cached defacer module – loaded once on the first series to avoid
+        # Cached defacer module - loaded once on the first series to avoid
         # re-executing module-level moosez initialisation code on every series.
         self._defacer = None
-    
+
     def process_series(self, series: DicomSeries) -> Dict[str, Any]:
         """Process (deface) a single DICOM series.
-        
+
         NOTE: This method trusts the caller's decision that defacing is needed.
         ProcessingPipeline._needs_defacing() makes the business logic decision.
         This service just performs the technical operation.
-        
+
         Args:
             series: DicomSeries to process (assumed to need defacing)
-            
+
         Returns:
             dict: Result dictionary containing:
                 - 'nrrd_image_path': Path to image.nrrd (original volume with faces)
                 - 'nrrd_defaced_path': Path to image_defaced.nrrd (defaced volume)
                 - 'defaced_dicom_files': List of defaced DICOM file paths
-                
+
         See conformance documentation:
         https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#41-clean-recognizable-visual-features-defacing----pipeline-stage-3
         """
         import pydicom
-        
+
         try:
             import SimpleITK
         except ImportError:
             self.logger.error("SimpleITK is required for defacing but not installed")
             raise
-        
+
         series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
         self.logger.info(f"DefaceService: Defacing series {series_display}")
-        
+
         # Get organized files for this series
         organized_files = series.get_organized_files()
         if not organized_files:
             self.logger.warning(f"No organized files found for series {series.original_series_uid}")
             return self._copy_without_defacing(series)
-        
+
         # Create worker-specific temp directory for NRRD processing
         # Note: defaced_base_path already contains the complete UID hierarchy
         series_temp_dir = series.defaced_base_path
         os.makedirs(series_temp_dir, exist_ok=True)
-        
+
         if self._defacer is None:
             try:
                 # Load defacer module once and cache it on the instance to avoid
@@ -129,13 +129,13 @@ class DefaceService:
                 self.logger.error(f"Failed to load defacer module: {e}")
                 return self._copy_without_defacing(series)
         defacer = self._defacer
-        
+
         # Get metadata from series (already loaded during series creation - no file re-reading!)
-        modality = series.modality        
+        modality = series.modality
         self.logger.private(
             f"Defacing series {series.original_series_uid} with modality {modality}"
         )
-        
+
         # Load DICOM series as 3D volume
         reader = SimpleITK.ImageSeriesReader()
         try:
@@ -151,17 +151,17 @@ class DefaceService:
             log_project_stacktrace(self.logger, e)
             self.logger.error(f"Failed to load DICOM series as volume: {e}")
             return self._copy_without_defacing(series)
-        
+
         # Apply face detection/segmentation strategy
         #
         # Strategies (highest priority first):
         #   1. Test-time external mask  (testOptions.useExistingMaskDefacer)
-        #   2. Primary candidate        → run ML, save mask to DB
-        #   3. All other series         → run ML normally, no DB interaction
+        #   2. Primary candidate        -> run ML, save mask to DB
+        #   3. All other series         -> run ML normally, no DB interaction
         #
         # DefacePriorityElector determines the best series per (patient, study,
         # FrameOfReferenceUID, modality) group *before* the defacer runs, so
-        # the primary is already the optimal candidate — no comparison or
+        # the primary is already the optimal candidate - no comparison or
         # overwrite logic is needed when persisting its mask.
         save_mask_after_ml = False
 
@@ -174,7 +174,7 @@ class DefaceService:
                 self._series_counter += 1
 
             elif series.is_primary_deface_candidate:
-                # Strategy 2: Primary candidate – run ML and mark for DB persistence.
+                # Strategy 2: Primary candidate - run ML and mark for DB persistence.
                 # No DB lookup needed: by definition no better mask exists yet.
                 self.logger.info(
                     f"Series is primary deface candidate for modality={modality}; "
@@ -197,7 +197,7 @@ class DefaceService:
             log_project_stacktrace(self.logger, e)
             self.logger.error(f"Failed to generate face mask: {e}")
             return self._copy_without_defacing(series)
-        
+
         # Apply pixelation to create defaced volume
         try:
             image_defaced = defacer.pixelate_face(image, image_face_segmentation, target_block_size_mm=self.physical_block_size_mm)
@@ -206,11 +206,11 @@ class DefaceService:
             log_project_stacktrace(self.logger, e)
             self.logger.error(f"Failed to pixelate faces: {e}")
             return self._copy_without_defacing(series)
-        
+
         # Save NRRD volumes to temp directory
         nrrd_image_path = os.path.join(series_temp_dir, "image.nrrd")
         nrrd_defaced_path = os.path.join(series_temp_dir, "image_defaced.nrrd")
-        
+
         nrrd_mask_path = os.path.join(series_temp_dir, "mask.nrrd")
 
         try:
@@ -235,7 +235,7 @@ class DefaceService:
         # We iterate over all files (any order is fine) and extract each slice from the
         # defaced 3D volume using the slice's own DICOM spatial metadata
         # (ImagePositionPatient / ImageOrientationPatient / PixelSpacing).
-        # This approach guarantees that the pixel data written to each file 
+        # This approach guarantees that the pixel data written to each file
         # matches its spatial location.
         defaced_dicom_files = []
 
@@ -245,10 +245,10 @@ class DefaceService:
         # Log whether axis-aligned or general orientation extraction will be used (check once for the series)
         _first_ds = pydicom.dcmread(gdcm_sorted_files[0])
         _iop_first = [float(x) for x in _first_ds.ImageOrientationPatient]
-        del _first_ds  # full pydicom Dataset no longer needed — free it before the slice loop
+        del _first_ds  # full pydicom Dataset no longer needed - free it before the slice loop
         _axis_aligned = self._is_volume_axis_aligned(_iop_first)
         if _axis_aligned:
-            self.logger.info(f"Volume has axis-aligned with the world (LPS) coordinate axes") 
+            self.logger.info(f"Volume has axis-aligned with the world (LPS) coordinate axes")
         else:
             self.logger.warning(f"Volume has axis not aligned with the world (LPS) coordinate axes, check final defacing result, this option is not tested")
 
@@ -257,7 +257,7 @@ class DefaceService:
                 ds = pydicom.dcmread(original_file_path)
 
                 # Extract the defaced 2D slice that corresponds to this DICOM file's
-                # physical position/orientation — independent of file order.
+                # physical position/orientation - independent of file order.
                 ipp = [float(x) for x in ds.ImagePositionPatient]
                 iop = [float(x) for x in ds.ImageOrientationPatient]
                 pixel_spacing = [float(x) for x in ds.PixelSpacing]
@@ -291,7 +291,7 @@ class DefaceService:
                 dicom_file = organized_to_dicom_file.get(original_file_path)
                 if dicom_file:
                     dicom_file.set_defaced_path(defaced_file_path)
-                    
+
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
@@ -321,16 +321,16 @@ class DefaceService:
             except NameError:
                 pass
             _gc.collect()
-        
+
         series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
         self.logger.info(
             f"Defacing completed for series {series_display}: "
             f"{len(defaced_dicom_files)} files processed"
         )
-        
+
         # Mark defacing as successful
         series.defacing_succeeded = True
-        
+
         # Return paths for caller to handle final placement
         return {
             'nrrd_image_path': nrrd_image_path,
@@ -338,7 +338,7 @@ class DefaceService:
             'nrrd_mask_path': nrrd_mask_path,
             'defaced_dicom_files': defaced_dicom_files
         }
-    
+
     @staticmethod
     def _is_volume_axis_aligned(iop) -> bool:
         """Check if the DICOM slice is aligned with the world (LPS) coordinate axes.
@@ -360,7 +360,7 @@ class DefaceService:
         col_cosines_aligned = any(np.allclose(np.abs(col_cosines), axis, atol=1e-5) for axis in axes)
 
         return row_cosines_aligned and col_cosines_aligned
-    
+
 
     @staticmethod
     def _extract_slice_from_volume(volume, ipp, iop, pixel_spacing, rows: int, cols: int) -> np.ndarray:
@@ -369,7 +369,7 @@ class DefaceService:
         Uses ExtractImageFilter when the volume is axis-aligned (fast, lossless) and
         ResampleImageFilter for arbitrary orientation acquisitions.
 
-        For the axis-aligned path, the slice index is computed directly. 
+        For the axis-aligned path, the slice index is computed directly.
         The 3rd column of the direction matrix gives the slice axis direction
         in world space. Since the volume is axis-aligned, this direction is parallel to
         exactly one world axis k. The slice index is then:
@@ -379,7 +379,7 @@ class DefaceService:
             slice_index    = round((ipp[k] - origin[k]) / slice_step)
 
         Args:
-            volume: SimpleITK.Image (3D) — the defaced volume
+            volume: SimpleITK.Image (3D) - the defaced volume
             ipp: ImagePositionPatient (list/tuple of 3 floats)
             iop: ImageOrientationPatient (list/tuple of 6 floats)
             pixel_spacing: PixelSpacing (list/tuple of 2 floats, [row_spacing, col_spacing])
@@ -413,7 +413,7 @@ class DefaceService:
 
             extractor = SimpleITK.ExtractImageFilter()
             size = list(volume.GetSize())
-            size[2] = 0  # collapse z → 2D output
+            size[2] = 0  # collapse z -> 2D output
             extractor.SetSize(size)
             extractor.SetIndex([0, 0, slice_index])
             slice_2d = extractor.Execute(volume)
@@ -423,11 +423,11 @@ class DefaceService:
             # TODO: Test this path with appropriate data, then remove the warning logged if validated
             # Build a 2D reference image with the exact geometry of the DICOM slice
             # and resample the 3D volume onto it. SimpleITK's ResampleImageFilter
-            # handles the full 3D→2D transform internally.
+            # handles the full 3D->2D transform internally.
             row_spacing = float(pixel_spacing[0])
             col_spacing = float(pixel_spacing[1])
 
-            # SimpleITK 2D direction is the upper-left 2×2 sub-matrix (row-major)
+            # SimpleITK 2D direction is the upper-left 2x2 sub-matrix (row-major)
             direction_2d = (
                 row_cosines[0], row_cosines[1],
                 col_cosines[0], col_cosines[1]
@@ -486,7 +486,7 @@ class DefaceService:
         if not cached:
             return None
 
-        # mask_path in the DB is relative to private_folder — reconstruct absolute.
+        # mask_path in the DB is relative to private_folder - reconstruct absolute.
         abs_mask_path = os.path.join(self.private_folder, cached['mask_path'])
         if not os.path.exists(abs_mask_path):
             self.logger.warning(f"Cached deface mask file not found: {abs_mask_path}")
@@ -591,41 +591,41 @@ class DefaceService:
 
     def _copy_without_defacing(self, series: DicomSeries) -> Dict[str, Any]:
         """Copy files without defacing when defacing fails or is not applicable.
-        
+
         Args:
             series: DicomSeries to copy
-            
+
         Returns:
             dict: Result dictionary with empty NRRD paths
         """
         series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
         self.logger.info(f"Copying files without defacing for series {series_display}")
-        
+
         organized_files = series.get_organized_files()
         # Note: defaced_base_path already contains the complete UID hierarchy
         defaced_folder = series.defaced_base_path
         os.makedirs(defaced_folder, exist_ok=True)
-        
+
         # Build mapping from organized_path to DicomFile for efficient lookup
         organized_to_dicom_file = {f.organized_path: f for f in series.files if f.organized_path is not None}
-        
+
         defaced_files = []
         for original_file_path in organized_files:
             try:
                 defaced_file_path = os.path.join(defaced_folder, os.path.basename(original_file_path))
                 shutil.copy2(original_file_path, defaced_file_path)
                 defaced_files.append(defaced_file_path)
-                
+
                 # Update DicomFile object using direct mapping
                 dicom_file = organized_to_dicom_file.get(original_file_path)
                 if dicom_file:
                     dicom_file.set_defaced_path(defaced_file_path)
-                        
+
             except Exception as e:
                 tb = traceback.extract_tb(e.__traceback__)
                 log_project_stacktrace(self.logger, e)
                 self.logger.warning(f"Failed to copy file {original_file_path}: {e}")
-        
+
         return {
             'nrrd_image_path': None,
             'nrrd_defaced_path': None,

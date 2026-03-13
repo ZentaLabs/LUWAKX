@@ -570,7 +570,7 @@ class LuwakAnonymizer:
             1. Get DICOM files from input folder
             2. Create anonymization recipe
             3. Create PipelineCoordinator with service architecture
-            4. Execute processing pipeline (organize → deface → anonymize)
+            4. Execute processing pipeline (organize -> deface -> anonymize)
             5. Collect results from all workers
             6. Export UID mappings, metadata, and NRRD files
             

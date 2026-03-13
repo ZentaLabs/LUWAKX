@@ -260,7 +260,7 @@ class DefaceMaskDatabase:
             frame_of_reference_uid: DICOM FrameOfReferenceUID.
             modality: DICOM Modality string.
             mask_path: Absolute path to the NRRD mask file.
-            spatial_volume_cm3: Spatial volume covered by the mask in cm³.
+            spatial_volume_cm3: Spatial volume covered by the mask in cubic centimeters.
             min_voxel_size_mm: Smallest voxel dimension in mm (used as a
                                resolution proxy; lower is better).
             spacing: SimpleITK spacing tuple/list [sx, sy, sz] in mm.

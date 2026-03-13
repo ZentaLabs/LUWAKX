@@ -49,7 +49,7 @@ class DeidProgressHandler:
         self.last_log_time = time.time()
         self.last_logged_percent = 0
         self.pbar = None
-        # Optional ReviewFlagCollector – receives VR-format warnings caught from deid/pydicom.
+        # Optional ReviewFlagCollector - receives VR-format warnings caught from deid/pydicom.
         self.review_collector = review_collector
         # SOPInstanceUID of the file currently being processed; updated before each
         # replace_identifiers() call so warnings can be attributed to the right instance.

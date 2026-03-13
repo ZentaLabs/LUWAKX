@@ -5,8 +5,8 @@ This module provides the DefacePriorityElector class which is responsible for:
   (patient, study, FrameOfReferenceUID, modality) group.
 - Reordering the series list so that within each group the primary series
   always precedes the non-primary members, which is a hard requirement for
-  the mask-caching pipeline (the primary must be processed—and its mask
-  persisted—before the non-primaries attempt to look up a cached mask).
+  the mask-caching pipeline (the primary must be processed - and its mask
+  persisted - before the non-primaries attempt to look up a cached mask).
 
 This concern is intentionally separated from DicomSeriesFactory (construction)
 and from DefaceService (defacing execution).
@@ -73,7 +73,7 @@ class DefacePriorityElector:
         def _election_key(s: DicomSeries) -> tuple:
             return (s.spatial_volume_cm3 or 0, -(s.min_voxel_size_mm or float('inf')))
 
-        # ── Pass 1: split series into candidate groups and non-candidates ─
+        # Pass 1: split series into candidate groups and non-candidates 
         # Candidates are grouped by (patient, study, FOR, modality) and the
         # running primary series per group is tracked simultaneously
         candidate_groups: Dict[Tuple, List[DicomSeries]] = defaultdict(list)
@@ -96,7 +96,7 @@ class DefacePriorityElector:
             else:
                 non_candidates.append(s)
 
-        # ── Pass 2: mark primary series, log, and rebuild ordered list ─────────
+        # Pass 2: mark primary series, log, and rebuild ordered list 
         # Iterate over groups: mark the elected primary series,
         # emit it first, then append the remaining group members in their
         # original order.  Non-candidates are appended at the end; their
@@ -113,7 +113,7 @@ class DefacePriorityElector:
                     f"Primary deface candidate  study={study_uid!r} "
                     f"FOR={for_uid!r} modality={modality}: "
                     f"series {primary.original_series_uid} "
-                    f"(volume={primary.spatial_volume_cm3:.3f} cm³, "
+                    f"(volume={primary.spatial_volume_cm3:.3f} cm3, "
                     f"min_voxel={primary.min_voxel_size_mm:.2f} mm)"
                 )
             else:

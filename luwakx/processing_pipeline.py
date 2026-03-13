@@ -230,14 +230,14 @@ class ProcessingPipeline:
                 
                 completed += 1
                 if self.logger:
-                    self.logger.info(f"✓ Completed: {series_display}")
+                    self.logger.info(f"(SUCCESS) Completed: {series_display}")
                 
             except Exception as e:
                 series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
                 failed += 1
                 series.processing_status = ProcessingStatus.FAILED
                 if self.logger:
-                    self.logger.error(f"✗ Failed: {series_display}: {e}")
+                    self.logger.error(f"(ERROR) Failed: {series_display}: {e}")
                 # Record the series-level failure in the review flags CSV so that
                 # reviewers can see which series failed and why.  tag_group and
                 # tag_element are '*' because the failure is not attributable to a
@@ -424,12 +424,12 @@ class ProcessingPipeline:
             # Calculate relative path for structure mirroring
             rel_path = os.path.relpath(series.output_base_path, self.output_directory)
             
-            # Destination: image.nrrd → private folder with same structure
+            # Destination: image.nrrd -> private folder with same structure
             private_folder = self.config.get('outputPrivateMappingFolder', '')
             nrrd_image_dst = os.path.join(private_folder, rel_path, "image.nrrd")
             os.makedirs(os.path.dirname(nrrd_image_dst), exist_ok=True)
             
-            # Destination: image_defaced.nrrd → public output
+            # Destination: image_defaced.nrrd -> public output
             nrrd_defaced_dst = os.path.join(series.output_base_path, "image_defaced.nrrd")
             os.makedirs(os.path.dirname(nrrd_defaced_dst), exist_ok=True)
             
@@ -447,8 +447,8 @@ class ProcessingPipeline:
             
             if self.logger:
                 self.logger.info(f"Moved NRRD files for series {series.anonymized_series_uid}")
-                self.logger.private(f"  image.nrrd → {nrrd_image_dst}")
-                self.logger.private(f"  image_defaced.nrrd → {nrrd_defaced_dst}")
+                self.logger.private(f"  image.nrrd -> {nrrd_image_dst}")
+                self.logger.private(f"  image_defaced.nrrd -> {nrrd_defaced_dst}")
         except Exception as e:
             if self.logger:
                 series_display = os.path.basename(series.output_base_path) if series.output_base_path else series.original_series_uid

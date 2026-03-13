@@ -344,8 +344,8 @@ class MetadataExporter:
                         private_mapping_folder: str) -> None:
         """Move NRRD files from temp locations to final destinations.
         
-        - image.nrrd → private_folder/series_structure/ (identifiable)
-        - image_defaced.nrrd → output_directory/series_structure/ (anonymized)
+        - image.nrrd -> private_folder/series_structure/ (identifiable)
+        - image_defaced.nrrd -> output_directory/series_structure/ (anonymized)
         
         Args:
             all_series: List of all processed DicomSeries
@@ -384,11 +384,11 @@ class MetadataExporter:
                 # Calculate relative path for structure mirroring
                 rel_path = os.path.relpath(series_output_path, output_directory)
                 
-                # Destination: image.nrrd → private folder with same structure
+                # Destination: image.nrrd -> private folder with same structure
                 nrrd_image_dst = os.path.join(private_mapping_folder, rel_path, "image.nrrd")
                 os.makedirs(os.path.dirname(nrrd_image_dst), exist_ok=True)
                 
-                # Destination: image_defaced.nrrd → public output
+                # Destination: image_defaced.nrrd -> public output
                 # Note: series_output_path directory already created in organize stage
                 nrrd_defaced_dst = os.path.join(series_output_path, "image_defaced.nrrd")
                 

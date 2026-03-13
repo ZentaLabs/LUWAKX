@@ -200,14 +200,14 @@ class PipelineCoordinator:
         metadata_path = os.path.join(private_folder, 'metadata.parquet')
         
         if os.path.exists(uid_mappings_path):
-            self.logger.info(f"✓ UID mappings available: {uid_mappings_path}")
+            self.logger.info(f"(SUCCESS) UID mappings available: {uid_mappings_path}")
         else:
-            self.logger.warning(f"✗ UID mappings file not found: {uid_mappings_path}")
+            self.logger.warning(f"(ERROR) UID mappings file not found: {uid_mappings_path}")
         
         if os.path.exists(metadata_path):
-            self.logger.info(f"✓ Metadata available: {metadata_path}")
+            self.logger.info(f"(SUCCESS) Metadata available: {metadata_path}")
         else:
-            self.logger.warning(f"✗ Metadata file not found: {metadata_path}")
+            self.logger.warning(f"(ERROR) Metadata file not found: {metadata_path}")
     
     def _concatenate_csv_files(self, input_files: List[str], output_file: str) -> None:
         """Concatenate multiple CSV files into one (streaming).
@@ -312,7 +312,7 @@ class PipelineCoordinator:
         all_series = factory.create_series_from_files(dicom_files)
 
         # Elect primary deface candidates and reorder so each primary precedes
-        # its group members – required for mask-caching to work correctly.
+        # its group members - required for mask-caching to work correctly.
         best_modalities = [m.upper() for m in config.get('saveDefaceMasks', {}).get('primary', [])]
         if best_modalities:
             elector = DefacePriorityElector(best_modalities=best_modalities, logger=logger)

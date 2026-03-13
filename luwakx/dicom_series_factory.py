@@ -161,7 +161,7 @@ class DicomSeriesFactory:
                         'frame_of_reference_uid': frame_of_reference_uid,
                     }
 
-                    # Spatial ranking tags – only when the defacing priority feature
+                    # Spatial ranking tags - only when the defacing priority feature
                     # is active.  All tags are available with stop_before_pixels=True.
                     if _needs_deface_priority:
                         rows = int(getattr(ds, 'Rows', 0) or 0)
@@ -213,10 +213,10 @@ class DicomSeriesFactory:
             metadata = series_metadata[grouping_key]
 
             # Factory decides which class to instantiate:
-            #   DefacePrioritySeries  – when spatial ranking is needed (saveDefaceMasks
+            #   DefacePrioritySeries  - when spatial ranking is needed (saveDefaceMasks
             #                           lists at least one modality); carries spatial
             #                           metrics computed from DICOM header values.
-            #   DicomSeries           – default for all other cases.
+            #   DicomSeries           - default for all other cases.
             if _needs_deface_priority:
                 series = DefacePrioritySeries(
                     original_patient_id=patient_id,

@@ -252,7 +252,7 @@ class DicomProcessor:
         if self.review_collector:
             pending = len(self.review_collector._flags)
             self.logger.debug(
-                f"DicomProcessor: series {series_display} completed — "
+                f"DicomProcessor: series {series_display} completed - "
                 f"{pending} review-flag key(s) pending in collector"
             )
         self.logger.debug(f"DicomProcessor: Completed series {series_display}")
@@ -263,7 +263,7 @@ class DicomProcessor:
 
     def _first_occurrence(self, tag_group: str, tag_element: str, reason: str,
                           fallback_key: str) -> bool:
-        """Dedup guard – True on the first occurrence of (tag, reason) within this series.
+        """Dedup guard - True on the first occurrence of (tag, reason) within this series.
 
         When a review_collector is present, delegates to
         ``review_collector.is_first_flag()`` so the collector buffer is the single
@@ -1235,12 +1235,12 @@ class DicomProcessor:
             recipes_list = [recipes_list]
         
         # Check if defacing was actually performed (for clean_recognizable_visual_features)
-        # See conformance documentation (§7.2 - "Conditionally includes defacing code"):
+        # See conformance documentation (sec.7.2 - "Conditionally includes defacing code"):
         # https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#72-implementation
         defacing_performed = getattr(self.series, 'defacing_succeeded', False)
         
         # Build sequence items for all matching recipes
-        # Maps recipe profiles to DICOM CID 7050 codes (§7.3):
+        # Maps recipe profiles to DICOM CID 7050 codes (sec.7.3):
         # https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#73-code-mapping
         sequence_items = []
         for recipe_name in recipes_list:
@@ -1261,7 +1261,7 @@ class DicomProcessor:
                 self.logger.debug(f"Recipe '{recipe_name}' has no CID 7050 mapping, skipping")
         
         # Sort sequence items by code value (numerical order)
-        # See conformance documentation (§7.2 - "Sorts sequence items"):
+        # See conformance documentation (sec.7.2 - "Sorts sequence items"):
         # https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#72-implementation
         sequence_items.sort(key=lambda item: item.CodeValue)
         
@@ -1361,7 +1361,7 @@ class DicomProcessor:
         # Force garbage collection to free memory immediately
         gc.collect()
 
-        # ── deid @cache leak fix ───────────────────────────────────────────
+        #  deid @cache leak fix 
         # deid.dicom.fields._get_fields_inner is decorated with
         # @functools.cache (unbounded).  It is keyed by id(FileDataset), so
         # every slice processed during this series is pinned in the cache
@@ -1371,7 +1371,7 @@ class DicomProcessor:
             from deid.dicom.fields import _get_fields_inner
             _get_fields_inner.cache_clear()
         except (ImportError, AttributeError):
-            pass  # deid not installed or API changed – silently skip
+            pass  # deid not installed or API changed - silently skip
 
         if self.logger:
             self.logger.debug(f"Cleared memory for series")

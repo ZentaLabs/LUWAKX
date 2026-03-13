@@ -1,32 +1,32 @@
-"""Review Flag Collector – in-memory buffer of tags requiring manual review.
+"""Review Flag Collector - in-memory buffer of tags requiring manual review.
 
 During anonymization, `DicomProcessor` encounters situations where a tag could not
 be processed automatically as intended (e.g. VR mismatch, LLM found no PHI and kept
 the original value).  This module collects structured records of those situations
-in memory and returns them – series by series – as plain row dicts via
+in memory and returns them - series by series - as plain row dicts via
 ``flush_series()``.  The caller (``MetadataExporter``) is responsible for
 persisting those rows to disk, following the same pattern used for UID mappings
 and DICOM metadata.
 
 CSV columns (see ``ReviewFlagCollector.CSV_COLUMNS``):
 
-    anonymized_patient_id   – anonymized patient identifier
-    anonymized_study_uid    – anonymized study UID
-    anonymized_series_uid   – anonymized series UID
-    instance_uid            – SOPInstanceUID of the flagged instance, or ``*`` when every
+    anonymized_patient_id   - anonymized patient identifier
+    anonymized_study_uid    - anonymized study UID
+    anonymized_series_uid   - anonymized series UID
+    instance_uid            - SOPInstanceUID of the flagged instance, or ``*`` when every
                               instance in the series has the *same* original value for the tag
-    tag_group               – DICOM tag group  (4-char hex, e.g. "0008")
-    tag_element             – DICOM tag element (4-char hex, e.g. "103E")
-    attribute_name          – human-readable attribute name (keyword when available)
-    keyword                 – pydicom keyword (e.g. "SeriesDescription")
-    vr                      – Value Representation as stored in the file (e.g. "LO")
-    vm                      – Value Multiplicity (int count for this instance)
-    reason                  – machine-readable flag reason (see constants below)
-    original_value          – raw value before anonymization
-    keep                    – 1 = original value was kept, 0 = tag was removed / replaced
-    value                   – the actual output value (empty string when removed)
-    override_keep           – *user-fillable* (leave blank; luwak never writes this)
-    override_value          – *user-fillable* (leave blank; luwak never writes this)
+    tag_group               - DICOM tag group  (4-char hex, e.g. "0008")
+    tag_element             - DICOM tag element (4-char hex, e.g. "103E")
+    attribute_name          - human-readable attribute name (keyword when available)
+    keyword                 - pydicom keyword (e.g. "SeriesDescription")
+    vr                      - Value Representation as stored in the file (e.g. "LO")
+    vm                      - Value Multiplicity (int count for this instance)
+    reason                  - machine-readable flag reason (see constants below)
+    original_value          - raw value before anonymization
+    keep                    - 1 = original value was kept, 0 = tag was removed / replaced
+    value                   - the actual output value (empty string when removed)
+    override_keep           - *user-fillable* (leave blank; luwak never writes this)
+    override_value          - *user-fillable* (leave blank; luwak never writes this)
 """
 
 import re
@@ -44,7 +44,7 @@ class ReviewFlagCollector:
     Typical usage::
 
         collector.set_series_context(patient_id, study_uid, series_uid)
-        # … custom functions call collector.add_flag(…) …
+        # ... custom functions call collector.add_flag(...) ...
         rows = collector.flush_series()   # returns collapsed rows, clears buffer
         exporter.append_series_review_flags(review_flags_file, rows)
 
@@ -83,7 +83,7 @@ class ReviewFlagCollector:
             specific tag.
     """
 
-    # ── Reason codes ──────────────────────────────────────────────────────────
+    #  Reason codes ---------------------------------------------------------
     REASON_VR_MISMATCH              = "VR_MISMATCH_OPERATION"
     REASON_LLM_VERIFIED_CLEAN       = "LLM_VERIFIED_CLEAN"
     REASON_VR_FORMAT_INVALID        = "VR_FORMAT_INVALID"
@@ -92,7 +92,7 @@ class ReviewFlagCollector:
     REASON_PATIENT_DB_UNAVAILABLE   = "PATIENT_DB_UNAVAILABLE"
     REASON_SERIES_FAILED            = "SERIES_FAILED"
 
-    # ── CSV schema ────────────────────────────────────────────────────────────
+    #  CSV schema -----------------------------------------------------------
     CSV_COLUMNS: List[str] = [
         "anonymized_patient_id",
         "anonymized_study_uid",
@@ -112,7 +112,7 @@ class ReviewFlagCollector:
         "override_value",
     ]
 
-    # ─────────────────────────────────────────────────────────────────────────
+    # -----------------------------------------------------------------------
 
     @staticmethod
     def _sanitize(value: str) -> str:
@@ -144,7 +144,7 @@ class ReviewFlagCollector:
             "anonymized_series_uid": "",
         }
 
-    # ── Series lifecycle ──────────────────────────────────────────────────────
+    #  Series lifecycle 
 
     def set_series_context(
         self,
@@ -214,7 +214,7 @@ class ReviewFlagCollector:
             self._flags[key] = []
         self._flags[key].append(entry)
 
-    # ── Flush ─────────────────────────────────────────────────────────────────
+    #  Flush 
 
     def flush_series(self) -> List[Dict[str, Any]]:
         """Collapse instance-level entries and return CSV rows for the current series.
@@ -240,7 +240,7 @@ class ReviewFlagCollector:
             unique_original_values = {e["original_value"] for e in entries}
 
             if len(unique_original_values) == 1:
-                # All instances have the same value – collapse.
+                # All instances have the same value - collapse.
                 rows.append({
                     **self._series_ctx,
                     "instance_uid":  "*",
@@ -258,7 +258,7 @@ class ReviewFlagCollector:
                     "override_value": "",
                 })
             else:
-                # Different values per instance – one row per unique (uid, value) pair.
+                # Different values per instance - one row per unique (uid, value) pair.
                 seen: set = set()
                 for entry in entries:
                     dedup_key = (entry["sop_instance_uid"], entry["original_value"])

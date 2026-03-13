@@ -45,7 +45,7 @@ class DicomSeries:
         series_description: Series description from DICOM metadata
         series_number: Series number from DICOM metadata
         modality: Imaging modality (CT, MR, etc.)
-        frame_of_reference_uid: DICOM FrameOfReferenceUID (0020,0052) – groups series
+        frame_of_reference_uid: DICOM FrameOfReferenceUID (0020,0052) - groups series
             that share the same physical coordinate space
 
         # Defacing role flag (always False here; overridden by DefacePrioritySeries)
@@ -106,7 +106,7 @@ class DicomSeries:
         # share the same physical coordinate space.  Always populated by the factory.
         self.frame_of_reference_uid: Optional[str] = None
 
-        # Defacing role flag – always False on the base class.
+        # Defacing role flag - always False on the base class.
         # DefacePrioritySeries overrides this and the factory sets it to True for
         # the elected primary candidate in each (patient, FOR, modality) group.
         self.is_primary_deface_candidate: bool = False
@@ -447,8 +447,8 @@ class DefacePrioritySeries(DicomSeries):
     instance per group after all objects are created.
 
     Attributes:
-        spatial_volume_cm3: Bounding-box volume of the 3D volume in cm³
-            (Rows × Cols × n_slices × PixelSpacing[0] × PixelSpacing[1] × SliceThickness ÷ 1000).
+        spatial_volume_cm3: Bounding-box volume of the 3D volume in cm3
+            (Rows x Cols x n_slices x PixelSpacing[0] x PixelSpacing[1] x SliceThickness / 1000).
             ``None`` when any required header value is missing or zero.
         min_voxel_size_mm: Smallest voxel dimension in mm (resolution proxy;
             lower is finer).  ``None`` when header values are missing.
