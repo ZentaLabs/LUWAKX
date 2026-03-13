@@ -28,7 +28,7 @@ class PatientUIDDatabase:
         
         Args:
             db_path: Path to SQLite database file
-            patient_id_prefix: Prefix for generated patient IDs (e.g., "Zenta")
+            patient_id_prefix: Prefix for generated patient IDs (e.g., "Patient")
             project_hash_root: Optional project identifier for isolation
         """
         self.db_path = db_path

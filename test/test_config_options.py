@@ -150,12 +150,12 @@ class TestConfigOptions(unittest.TestCase):
         self.assertEqual(anonymizer.config["physicalFacePixelationSizeMm"], 12.3)
 
     def test_patient_id_prefix_default(self):
-        # When not specified, should default to 'Zenta'
+        # When not specified, should default to 'Patient'
         config_path = self.make_config()
         anonymizer = LuwakAnonymizer(config_path)
         # Check that patient_uid_db is initialized with default prefix
         self.assertIsNotNone(anonymizer.patient_uid_db)
-        self.assertEqual(anonymizer.patient_uid_db.patient_id_prefix, "Zenta")
+        self.assertEqual(anonymizer.patient_uid_db.patient_id_prefix, "Patient")
 
     def test_patient_uid_database_path(self):
         # Test relative path resolution for persistent analysis cache folder

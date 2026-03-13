@@ -46,8 +46,8 @@
     "patientIdPrefix": {
       "type": "string",
       "description": "Prefix for sequential patient IDs (e.g., 'Zenta' generates 'Zenta00', 'Zenta01', etc.).",
-      "default": "Zenta",
-      "examples": ["Zenta", "PATIENT"]
+      "default": "Patient",
+      "examples": ["Patient", "Anonymous"]
     },
     "maxDateShiftDays": {
       "type": "integer",

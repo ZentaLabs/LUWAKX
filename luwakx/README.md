@@ -25,6 +25,7 @@ Create a JSON configuration file with the following structure:
 ```json
 {
   "inputFolder": "/path/to/input/dicom/files",
+  "patientIdPrefix": "Patient",
   "outputDeidentifiedFolder": "/path/to/output/deidentified",
   "outputPrivateMappingFolder": "/path/to/output/privateMapping",
   "recipesFolder": "/path/to/output/recipes",
@@ -258,6 +259,7 @@ result = anonymizer.anonymize()
 ```json
 {
   "inputFolder": "/data/dicom_files",
+  "patientIdPrefix": "Pt",
   "outputDeidentifiedFolder": "/data/anonymized",
   "outputPrivateMappingFolder": "/data/anonymized/privateMapping",
   "recipesFolder": "./recipes",

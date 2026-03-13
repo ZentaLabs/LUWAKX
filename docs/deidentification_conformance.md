@@ -1612,7 +1612,7 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 |--------|------|---------|-------------|
 | `projectHashRoot` | string | "myproject2025" | Root hash for deterministic anonymization across project (required for HMAC-based anonymization) |
 | `maxDateShiftDays` | integer | 1095 | Maximum days for date shifting (3 years default) |
-| `patientIdPrefix` | string | "Zenta" | Prefix for generated patient IDs (e.g., "Zenta000001") |
+| `patientIdPrefix` | string | "Patient" | Prefix for generated patient IDs (e.g., "Patient000001") |
 | `physicalFacePixelationSizeMm` | number | 8.5 | Physical block size (in mm) for face pixelation during defacing. |
 | `selectedModalities` | array | [] | List of DICOM modalities to include in processing. If empty or not set, all modalities are included. Example: `["MR", "CT"]` |
 
