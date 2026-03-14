@@ -210,10 +210,10 @@ class PatientUIDDatabase:
                     next_seq = last_seq + 1
                 except (ValueError, IndexError):
                     # Fallback if parsing fails
-                    next_seq = 0
+                    next_seq = 1
             else:
                 # First patient in this project
-                next_seq = 0
+                next_seq = 1
             
             # Format with zero-padding (e.g., "000000", "000001", ...)
             new_patient_id = f"{self.patient_id_prefix}{next_seq:06d}"
