@@ -292,7 +292,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 output_file = output_files[i]
                 
                 self.assertTrue(os.path.exists(output_file), f"Anonymized file {output_file} not found")
-                self.logger.info(f"Successfully matched: {input_filename} → {os.path.basename(output_file)}")
+                self.logger.info(f"Successfully matched: {input_filename} -> {os.path.basename(output_file)}")
         finally:
             os.unlink(config_path)
             self.logger.info("Test completed and config cleaned up")
@@ -340,7 +340,7 @@ class TestAnonymizeScript(unittest.TestCase):
                     anonymized_uid = anonymized_uids[uid_name]
                     self.assertIsNotNone(anonymized_uid, f"Anonymized file missing {uid_name}")
                     self.assertNotEqual(original_uid, anonymized_uid, f"{uid_name} was not changed during anonymization for file {file}")
-                    self.logger.info(f"✓ {uid_name}: {original_uid} → {anonymized_uid} (file: {file})")
+                    self.logger.info(f"✓ {uid_name}: {original_uid} -> {anonymized_uid} (file: {file})")
             self.logger.info("UID generation batch test completed and config cleaned up")
         finally:
             os.unlink(config_path)
@@ -470,7 +470,7 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check that the SeriesDate has been shifted correctly
             self.assertEqual(anonymized_ds.SeriesDate, expected_shifted_date_str,
                         f"SeriesDate should be shifted by {expected_shift_days} days: expected '{expected_shifted_date_str}', got '{anonymized_ds.SeriesDate}'")
-            self.logger.info(f"✓ SeriesDate shifted: {original_series_date} → {anonymized_ds.SeriesDate} (shift: -{expected_shift_days} days)")
+            self.logger.info(f"✓ SeriesDate shifted: {original_series_date} -> {anonymized_ds.SeriesDate} (shift: -{expected_shift_days} days)")
         finally:
             os.unlink(config_path)
             self.logger.info("Date shift test completed and config cleaned up")
@@ -519,7 +519,7 @@ class TestAnonymizeScript(unittest.TestCase):
             # The value parameter should be the recipe string, not the original value
             fixed_da = processor.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_da_field, original_ds)
             self.assertEqual(fixed_da, "00010101", f"DA fixed should be '00010101', got '{fixed_da}'")
-            self.logger.info(f"✓ DA (Date) VR: {mock_da_field.element.value} → {fixed_da}")
+            self.logger.info(f"✓ DA (Date) VR: {mock_da_field.element.value} -> {fixed_da}")
             
             # Test DT (DateTime) VR
             self.logger.info("Testing DT (DateTime) VR...")
@@ -533,7 +533,7 @@ class TestAnonymizeScript(unittest.TestCase):
             fixed_dt = processor.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_dt_field, original_ds)
             expected_dt = "00010101010101.000000+0000"
             self.assertEqual(fixed_dt, expected_dt, f"DT fixed should be '{expected_dt}', got '{fixed_dt}'")
-            self.logger.info(f"✓ DT (DateTime) VR: {mock_dt_field.element.value} → {fixed_dt}")
+            self.logger.info(f"✓ DT (DateTime) VR: {mock_dt_field.element.value} -> {fixed_dt}")
             
             # Test TM (Time) VR
             self.logger.info("Testing TM (Time) VR...")
@@ -547,7 +547,7 @@ class TestAnonymizeScript(unittest.TestCase):
             fixed_tm = processor.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_tm_field, original_ds)
             expected_tm = "000000.00"
             self.assertEqual(fixed_tm, expected_tm, f"TM fixed should be '{expected_tm}', got '{fixed_tm}'")
-            self.logger.info(f"✓ TM (Time) VR: {mock_tm_field.element.value} → {fixed_tm}")
+            self.logger.info(f"✓ TM (Time) VR: {mock_tm_field.element.value} -> {fixed_tm}")
             self.logger.info("All fixed datetime generation tests passed!")
             self.logger.info(f"    - DA (Date): '{fixed_da}'")
             self.logger.info(f"    - DT (DateTime): '{fixed_dt}'")
@@ -703,7 +703,7 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check that the AcquisitionDate has been shifted correctly
             self.assertEqual(anonymized_ds.AcquisitionDate, expected_shifted_date_str,
                         f"AcquisitionDate should be shifted by {expected_shift_days} days: expected '{expected_shifted_date_str}', got '{anonymized_ds.AcquisitionDate}'")
-            self.logger.info(f"✓ AcquisitionDate modified: {original_acquisition_date} → {anonymized_ds.AcquisitionDate} (shift: -{expected_shift_days} days)")
+            self.logger.info(f"✓ AcquisitionDate modified: {original_acquisition_date} -> {anonymized_ds.AcquisitionDate} (shift: -{expected_shift_days} days)")
             
             self.assertEqual(anonymized_ds.LongitudinalTemporalInformationModified, 'MODIFIED',
                         f"LongitudinalTemporalInformationModified should be 'MODIFIED': expected 'MODIFIED', got '{anonymized_ds.LongitudinalTemporalInformationModified}'")
@@ -743,10 +743,10 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymized_ds = pydicom.dcmread(expected_output_path)
             # Check that the RequestedProcedureDescription has been cleaned (tag should be removed)
             self.assertNotIn('RequestedProcedureDescription', anonymized_ds, f"Unexpected tag RequestedProcedureDescription found in file {expected_output_path}.")
-            self.logger.info(f"RequestedProcedureDescription cleaned: {original_value} → removed")
+            self.logger.info(f"RequestedProcedureDescription cleaned: {original_value} -> removed")
             self.assertEqual(anonymized_ds['PerformedProcedureStepDescription'].value, original_ds['PerformedProcedureStepDescription'].value,
                         "PerformedProcedureStepDescription should be empty: expected {original_ds['PerformedProcedureStepDescription'].value}, got {anonymized_ds['PerformedProcedureStepDescription'].value}")
-            self.logger.info(f"PerformedProcedureStepDescription cleaned: {original_ds['PerformedProcedureStepDescription'].value} → {anonymized_ds['PerformedProcedureStepDescription'].value}")
+            self.logger.info(f"PerformedProcedureStepDescription cleaned: {original_ds['PerformedProcedureStepDescription'].value} -> {anonymized_ds['PerformedProcedureStepDescription'].value}")
         finally:
             os.unlink(config_path)
             self.logger.info("Basic profile + clean descriptors test completed and config cleaned up")
@@ -930,7 +930,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 else:
                     # First time seeing this original patient ID
                     patient_id_mapping[original_patient_id] = anonymized_patient_id
-                    self.logger.info(f"✓ Patient ID anonymized: {original_patient_id} → {anonymized_patient_id} (file: {file})")
+                    self.logger.info(f"✓ Patient ID anonymized: {original_patient_id} -> {anonymized_patient_id} (file: {file})")
             
             # Log summary
             self.logger.info(f"Patient ID generation batch test completed:")
@@ -975,7 +975,7 @@ class TestAnonymizeScript(unittest.TestCase):
             processor.series = mock_series
 
 
-            # 60Y: under threshold → keep original
+            # 60Y: under threshold -> keep original
             mock_field_60 = type('MockField', (), {
                 'element': type('MockElement', (), {
                     'VR': 'AS',
@@ -987,7 +987,7 @@ class TestAnonymizeScript(unittest.TestCase):
             self.assertEqual(result_60, "060Y", f"60Y should be kept as '060Y', got '{result_60}'")
             self.logger.info(f"\u2713 PatientAge 060Y \u2192 {result_60} (kept)")
 
-            # 89Y: at threshold boundary → keep original
+            # 89Y: at threshold boundary -> keep original
             mock_field_89 = type('MockField', (), {
                 'element': type('MockElement', (), {
                     'VR': 'AS',
@@ -999,7 +999,7 @@ class TestAnonymizeScript(unittest.TestCase):
             self.assertEqual(result_89, "089Y", f"89Y should be kept as '089Y', got '{result_89}'")
             self.logger.info(f"\u2713 PatientAge 089Y \u2192 {result_89} (kept)")
 
-            # 91Y: over threshold → cap to 90Y
+            # 91Y: over threshold -> cap to 90Y
             mock_field_91 = type('MockField', (), {
                 'element': type('MockElement', (), {
                     'VR': 'AS',
@@ -1011,7 +1011,7 @@ class TestAnonymizeScript(unittest.TestCase):
             self.assertEqual(result_91, "090Y", f"91Y should be capped to '90Y', got '{result_91}'")
             self.logger.info(f"\u2713 PatientAge 091Y \u2192 {result_91} (capped to 90Y)")
 
-            # Empty value → return empty string
+            # Empty value -> return empty string
             mock_field_empty = type('MockField', (), {
                 'element': type('MockElement', (), {
                     'VR': 'AS',
@@ -1048,9 +1048,9 @@ class TestAnonymizeScript(unittest.TestCase):
 
         # (filename, age set on input file, expected age in output)
         test_cases = [
-            ("age_60.dcm", "060Y", "060Y"),  # 60Y <= 89 → kept
-            ("age_89.dcm", "089Y", "089Y"),  # 89Y == 89 → kept
-            ("age_91.dcm", "091Y", "090Y"),   # 91Y > 89 → capped to 90Y
+            ("age_60.dcm", "060Y", "060Y"),  # 60Y <= 89 -> kept
+            ("age_89.dcm", "089Y", "089Y"),  # 89Y == 89 -> kept
+            ("age_91.dcm", "091Y", "090Y"),   # 91Y > 89 -> capped to 90Y
         ]
 
         for filename, input_age, _ in test_cases:

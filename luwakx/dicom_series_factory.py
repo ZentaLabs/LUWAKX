@@ -8,7 +8,7 @@ file reading to a single pass and manages patient UID pre-computation.
 import os
 from typing import Any, Dict, List, Set, Tuple
 import pydicom
-from dicom_series import DicomSeries, DefacePrioritySeries, PathTooLongError
+from dicom_series import DicomSeries, PathTooLongError
 from dicom_file import DicomFile
 
 
@@ -100,11 +100,11 @@ class DicomSeriesFactory:
         
         self.logger.info(f"Creating series from {len(dicom_files)} DICOM files")
 
-        # Whether to read spatial ranking tags and create DefacePrioritySeries objects.
-        # Gated here so the factory only incurs the extra tag-reading cost when the
-        # saveDefaceMasks feature is actually requested.
-        _needs_deface_priority: bool = bool(
-            self.config.get('saveDefaceMasks', {}).get('primary', [])
+        # Whether to read AcquisitionDateTime for PET/CT temporal pairing.
+        # Active whenever the deface recipe is configured, regardless of any
+        # saveDefaceMasks option, because pairing is automatic.
+        _needs_deface_priority: bool = (
+            'clean_recognizable_visual_features' in self.config.get('recipes', [])
         )
 
         # Single-pass read: precompute patients AND group series simultaneously
@@ -164,19 +164,27 @@ class DicomSeriesFactory:
                     # Spatial ranking tags - only when the defacing priority feature
                     # is active.  All tags are available with stop_before_pixels=True.
                     if _needs_deface_priority:
-                        rows = int(getattr(ds, 'Rows', 0) or 0)
-                        columns = int(getattr(ds, 'Columns', 0) or 0)
-                        raw_ps = getattr(ds, 'PixelSpacing', None)
-                        pixel_spacing = (
-                            [float(raw_ps[0]), float(raw_ps[1])]
-                            if raw_ps and len(raw_ps) >= 2
-                            else [1.0, 1.0]
-                        )
-                        slice_thickness = float(getattr(ds, 'SliceThickness', 1.0) or 1.0)
-                        meta['rows']            = rows
-                        meta['columns']         = columns
-                        meta['pixel_spacing']   = pixel_spacing
-                        meta['slice_thickness'] = slice_thickness
+                        # AcquisitionDateTime (0008,002A) for PET/CT temporal pairing.
+                        # Fall back to AcquisitionDate (0008,0022) + AcquisitionTime (0008,0032)
+                        # when the combined DT attribute is absent (common in older equipment).
+                        try:
+                            acq_dt = str(getattr(ds, 'AcquisitionDateTime', '') or '')
+                            if not acq_dt:
+                                acq_date = str(getattr(ds, 'AcquisitionDate', '') or '')
+                                acq_time = str(getattr(ds, 'AcquisitionTime', '') or '')
+                                acq_dt = (acq_date + acq_time) if acq_date else ''
+                        except Exception as e:
+                            self.logger.warning(
+                                f"Could not read AcquisitionDateTime/Date/Time tags"
+                                f"for a series with (modality={modality!r}): no pairing CT/PET will be available"
+                                f"for this series: {e}."
+                            )
+                            self.logger.private(
+                                f"Could not read AcquisitionDateTime/Date/Time tags"
+                                f"for series {series_uid!r} (modality={modality!r}): {e}."
+                            )
+                            acq_dt = ''
+                        meta['acquisition_datetime'] = acq_dt
 
                     series_metadata[grouping_key] = meta
                 
@@ -195,10 +203,7 @@ class DicomSeriesFactory:
                         'frame_of_reference_uid': '',
                     }
                     if _needs_deface_priority:
-                        unknown_meta['rows']            = 0
-                        unknown_meta['columns']         = 0
-                        unknown_meta['pixel_spacing']   = [1.0, 1.0]
-                        unknown_meta['slice_thickness'] = 1.0
+                        unknown_meta['acquisition_datetime'] = ''
                     series_metadata[unknown_key] = unknown_meta
                 series_groups[unknown_key].append(file_path)
         
@@ -212,39 +217,22 @@ class DicomSeriesFactory:
             patient_id, patient_name, birthdate, study_uid, series_uid = grouping_key
             metadata = series_metadata[grouping_key]
 
-            # Factory decides which class to instantiate:
-            #   DefacePrioritySeries  - when spatial ranking is needed (saveDefaceMasks
-            #                           lists at least one modality); carries spatial
-            #                           metrics computed from DICOM header values.
-            #   DicomSeries           - default for all other cases.
-            if _needs_deface_priority:
-                series = DefacePrioritySeries(
-                    original_patient_id=patient_id,
-                    original_patient_name=patient_name,
-                    original_patient_birthdate=birthdate,
-                    original_study_uid=study_uid,
-                    original_series_uid=series_uid,
-                    rows=metadata.get('rows', 0),
-                    columns=metadata.get('columns', 0),
-                    n_slices=len(files),
-                    pixel_spacing=metadata.get('pixel_spacing', [1.0, 1.0]),
-                    slice_thickness=metadata.get('slice_thickness', 1.0),
-                )
-            else:
-                series = DicomSeries(
-                    original_patient_id=patient_id,
-                    original_patient_name=patient_name,
-                    original_patient_birthdate=birthdate,
-                    original_study_uid=study_uid,
-                    original_series_uid=series_uid,
-                )
+            series = DicomSeries(
+                original_patient_id=patient_id,
+                original_patient_name=patient_name,
+                original_patient_birthdate=birthdate,
+                original_study_uid=study_uid,
+                original_series_uid=series_uid,
+            )
 
             # Set series-level metadata (stored once, accessible everywhere)
             series.series_description    = metadata['series_description']
             series.series_number         = metadata['series_number']
             series.modality              = metadata['modality']
             series.frame_of_reference_uid = metadata.get('frame_of_reference_uid', '')
-            
+            if _needs_deface_priority:
+                series.acquisition_datetime = metadata.get('acquisition_datetime', '')
+
             # Generate anonymized UIDs if patient_uid_db is available
             if self.patient_uid_db and patient_id != 'unknown':
                 try:
@@ -281,16 +269,35 @@ class DicomSeriesFactory:
                                 self.output_directory, fallback_folder
                             )
                     else:
-                        self.logger.warning(
+                        self.logger.private (
                             f"Could not find patient mapping for {patient_id}, "
                             f"skipping UID-based path generation"
                         )
+                        self.logger.warning (
+                            f"Could not find patient mapping for a patient, "
+                            f"skipping UID-based path generation"
+                        )
+
                 except Exception as e:
                     self.logger.warning(
                         f"Error generating anonymized UIDs for series: {e}, "
                         f"skipping UID-based path generation"
                     )
             
+            # Warn (with anonymized IDs) when no acquisition datetime is available.
+            # Emitted here — after generate_anonymized_uids() — so the log message
+            # uses anonymized identifiers rather than the raw original UIDs.
+            if _needs_deface_priority and not series.acquisition_datetime:
+                self.logger.warning(
+                    f"No AcquisitionDateTime for "
+                    f"patient={series.anonymized_patient_id!r} "
+                    f"study={series.anonymized_study_uid!r} "
+                    f"series={series.anonymized_series_uid!r} "
+                    f"(modality={series.modality!r}). "
+                    f"If this is a PET series, temporal CT pairing will fall back "
+                    f"to the first available CT and defacing may not be applied."
+                )
+
             # Create and add DicomFile objects with sequential naming
             files.sort()  # Ensure consistent ordering
             for idx, file_path in enumerate(files, start=1):

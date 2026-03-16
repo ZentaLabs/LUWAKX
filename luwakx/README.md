@@ -58,6 +58,7 @@ Create a JSON configuration file with the following structure:
 - **`excludedTagsFromParquet`**: List of DICOM tags to exclude from Parquet export (default: ["(7FE0,0010)"])
 - **`logLevel`**: Logging level - PRIVATE, DEBUG, INFO, WARNING, ERROR (default: "INFO")
 - **`physicalFacePixelationSizeMm`**: Physical block size (in mm) for face pixelation during defacing (default: 8.5)
+- **`saveDefaceMasks`**: Controls face mask persistence across runs (boolean, default: `false`). When `true`, every series that runs ML inference saves its face mask to the private mapping folder and the database persists after the run, enabling full re-run cache hits. When `false` (default), only CT masks paired with a PET series are kept for the duration of the run. PET/CT pairing is **automatic** when the `clean_recognizable_visual_features` recipe is active.
 - **`keepTempFiles`**: If `true`, temporary directories created during processing (`temp_organized_input`, `temp_defaced_organized`) are retained after the workflow completes. Useful for step-by-step validation of the deidentification pipeline. (default: false)
 - **`selectedModalities`**: List of DICOM modalities to include in processing. If empty or not set, all modalities are included. Example: `["MR", "CT"]` (default: empty)
 
@@ -141,7 +142,8 @@ LuwakX supports multiple anonymization profiles that can be used individually or
   - If PHI/PII is detected in a descriptor, the corresponding DICOM element is deleted from the file and replaced with an empty value
 
 - **`clean_recognizable_visual_features`**: Uses ML-based defacing for images
-  - Applies defacing to CT images to remove recognizable features
+  - Applies defacing to CT images to remove recognizable facial features using AI models
+  - **PET/CT automatic pairing**: when a PET series shares a `FrameOfReferenceUID` with a CT series in the same study, the CT face mask is resampled onto the PET geometry automatically — no ML runs on PET
   - Uses specialized models to detect and anonymize faces
 
 
@@ -306,7 +308,7 @@ The PRIVATE log level (level 5) is a custom log level that captures sensitive in
 
 - **Original DICOM element values** before anonymization
 - **Patient identifiers** (PatientID, PatientName, PatientBirthDate) used for processing
-- **UID mappings** showing original → anonymized transformations
+- **UID mappings** showing original -> anonymized transformations
 - **Date shift calculations** showing computed offset values
 - **Private tag contents** before removal
 

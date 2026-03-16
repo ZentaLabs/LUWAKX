@@ -169,8 +169,12 @@ class LuwakAnonymizer:
         # Initialize deface mask database (if saveDefaceMasks.primary is non-empty)
         self.deface_mask_db = None
         self.persistent_deface_mask_db = False  # Track if db should persist
-        best_modalities = self.config.get('saveDefaceMasks', {}).get('primary', [])
-        if best_modalities:
+        # Deface mask DB is required whenever the deface recipe is active:
+        # it stores PET/CT pairings (needed for mask projection even without any
+        # explicit saveDefaceMasks config) and, when mode='all', caches every mask
+        # for re-run efficiency.
+        _deface_active = 'clean_recognizable_visual_features' in self.config.get('recipes', [])
+        if _deface_active:
             try:
                 project_hash_root = self.config.get('projectHashRoot', '')
                 cache_folder = self.config.get('analysisCacheFolder')
@@ -186,12 +190,21 @@ class LuwakAnonymizer:
                     else:
                         self.logger.info("No existing deface mask database - will create new")
                 else:
-                    # Temporary: stored in private mapping folder; removed after run
+                    # Stored in private mapping folder.
                     mask_db_folder = self.config.get('outputPrivateMappingFolder')
                     mask_db_file = os.path.join(mask_db_folder, 'deface_mask.db')
-                    self.logger.debug(
-                        "Using temporary deface mask database (will be deleted after run)"
-                    )
+                    if self.config.get('saveDefaceMasks', False):
+                        # User explicitly requested mask persistence: keep DB.
+                        self.persistent_deface_mask_db = True
+                        self.logger.debug(
+                            "Using deface mask database in private mapping folder (persistent, saveDefaceMasks=true)"
+                        )
+                    else:
+                        # DB only needed for PET/CT pairing within this run;
+                        # discard DB (and mask files) at the end.
+                        self.logger.debug(
+                            "Using temporary deface mask database (will be deleted after run)"
+                        )
 
                 self.deface_mask_db = DefaceMaskDatabase(
                     db_path=mask_db_file,
@@ -199,8 +212,9 @@ class LuwakAnonymizer:
                 )
                 stats = self.deface_mask_db.get_stats()
                 self.logger.info(
-                    f"Deface mask database initialized for modalities {best_modalities}: "
-                    f"{stats['total_masks']} cached mask(s)"
+                    f"Deface mask database initialized: "
+                    f"{stats['total_masks']} cached mask(s), "
+                    f"{stats['total_pairings']} pairing(s)"
                 )
                 self.logger.debug(f"Deface mask database file: {mask_db_file}")
 
@@ -210,7 +224,7 @@ class LuwakAnonymizer:
                 self.persistent_deface_mask_db = False
         else:
             self.logger.info(
-                "Deface mask caching disabled: 'saveDefaceMasks.primary' is empty or absent"
+                "Deface mask database not created: 'clean_recognizable_visual_features' recipe is not active"
             )
 
         # Setup deid repository before any operations that need it
@@ -417,6 +431,7 @@ class LuwakAnonymizer:
         self.config['inputFolder'] = input_folder
         self.config['outputDeidentifiedFolder'] = output_directory
         self.config['outputPrivateMappingFolder'] = private_map_folder
+        self.config['configDir'] = config_dir
         # Recipes folder should be a subfolder inside the output directory
         #recipes_folder = os.path.join(output_directory, os.path.basename(recipes_folder))
         self.config['recipesFolder'] = recipes_folder
@@ -680,9 +695,29 @@ class LuwakAnonymizer:
                     f"Deface mask database final stats: {stats['total_masks']} cached mask(s)"
                 )
                 mask_db_path = self.deface_mask_db.db_path
+
+                if not self.persistent_deface_mask_db:
+                    # Collect all NRRD mask files written to the private folder
+                    # before closing the DB (the paths are stored relative to
+                    # private_folder so we can reconstruct absolute paths).
+                    private_folder = self.config.get('outputPrivateMappingFolder', '')
+                    mask_nrrd_paths = [
+                        os.path.join(private_folder, rel)
+                        for rel in self.deface_mask_db.get_all_mask_paths()
+                    ]
+
                 self.deface_mask_db.close()
 
                 if not self.persistent_deface_mask_db:
+                    # Delete NRRD mask files first.
+                    for mask_file in mask_nrrd_paths:
+                        try:
+                            if os.path.exists(mask_file):
+                                os.remove(mask_file)
+                                self.logger.debug(f"Removed temporary mask file: {mask_file}")
+                        except Exception as _e:
+                            self.logger.warning(f"Could not remove temporary mask file {mask_file}: {_e}")
+                    # Then delete the DB file itself.
                     if os.path.exists(mask_db_path):
                         os.remove(mask_db_path)
                         self.logger.debug("Temporary deface mask database cleaned up")

@@ -312,10 +312,15 @@ class PipelineCoordinator:
         all_series = factory.create_series_from_files(dicom_files)
 
         # Elect primary deface candidates and reorder so each primary precedes
-        # its group members - required for mask-caching to work correctly.
-        best_modalities = [m.upper() for m in config.get('saveDefaceMasks', {}).get('primary', [])]
-        if best_modalities:
-            elector = DefacePriorityElector(best_modalities=best_modalities, logger=logger)
+        # its group members - required for PET/CT mask projection to work correctly.
+        # The elector always runs when the deface recipe is active; CT is the
+        # hardcoded primary modality (no user config required).
+        if 'clean_recognizable_visual_features' in config.get('recipes', []):
+            elector = DefacePriorityElector(
+                best_modalities=['CT'],
+                logger=logger,
+                deface_mask_db=deface_mask_db,
+            )
             all_series = elector.elect_and_sort(all_series)
 
         # Create and return coordinator with created series

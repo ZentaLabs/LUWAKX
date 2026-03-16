@@ -380,7 +380,8 @@ class ProcessingPipeline:
         """
         if self.logger:
             series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
-            self.logger.info(f"Defacing {series_display} at {series.defaced_base_path}")
+            defaced_rel = os.path.relpath(series.defaced_base_path, self.output_directory)
+            self.logger.info(f"Defacing {series_display} at {defaced_rel}")
         
         # Create defaced directory structure (path already set in add_series)
         os.makedirs(series.defaced_base_path, exist_ok=True)
@@ -406,8 +407,7 @@ class ProcessingPipeline:
         """
         nrrd_image_src = deface_result.get('nrrd_image_path')
         nrrd_defaced_src = deface_result.get('nrrd_defaced_path')
-        nrrd_mask_src = deface_result.get('nrrd_mask_path')
-        
+
         if not nrrd_image_src or not nrrd_defaced_src:
             return
         
@@ -436,11 +436,7 @@ class ProcessingPipeline:
             # Move files
             shutil.move(nrrd_image_src, nrrd_image_dst)
             shutil.move(nrrd_defaced_src, nrrd_defaced_dst)
-            if nrrd_mask_src and os.path.exists(nrrd_mask_src):
-                nrrd_mask_dst = os.path.join(private_folder, rel_path, "mask.nrrd")
-                shutil.move(nrrd_mask_src, nrrd_mask_dst)
-                series.metadata['nrrd_mask_path'] = nrrd_mask_dst
-            
+
             # Store final paths in metadata for reference
             series.metadata['nrrd_image_path'] = nrrd_image_dst
             series.metadata['nrrd_defaced_path'] = nrrd_defaced_dst
@@ -488,12 +484,16 @@ class ProcessingPipeline:
         if 'clean_recognizable_visual_features' not in self.config.get('recipes', []):
             return False
         
-        # Check if modality is CT (defacing currently only for CT)
+        # Check if modality is CT (ML-based defacing)
         if series.modality and series.modality.upper() == "CT":
             return True
         
+        # PET with a paired primary CT: mask projection
+        if series.primary_ct_series is not None:
+            return True
+        
         series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
-        self.logger.info(f"Skipping defacing for non-CT modality: {series_display}")
+        self.logger.info(f"Skipping defacing for non-CT/non-paired modality: {series_display}")
         return False
         
     def process_defacing(self) -> None:

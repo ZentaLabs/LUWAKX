@@ -9,7 +9,7 @@ import os
 import shutil
 import traceback
 import importlib.util
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -47,15 +47,18 @@ class DefaceService:
         # Optional deface-mask database (None when feature is not configured)
         self.deface_mask_db = deface_mask_db
 
-        # Modalities for which mask caching is requested
-        # (driven by config: saveDefaceMasks.primary = ["CT", "MR", ...])
-        self.best_modalities: list = [
-            m.upper()
-            for m in config.get('saveDefaceMasks', {}).get('primary', [])
-        ]
+        # When saveDefaceMasks is true every series that runs ML inference gets its
+        # mask saved to the private folder and the DB persists after the run,
+        # enabling full re-run cache hits.  When false (default) only primary CT
+        # candidates (those serving a paired PET) persist their mask - just long
+        # enough to project it onto the PET within the same run.
+        self.save_all_masks: bool = bool(config.get('saveDefaceMasks', False))
 
         # Private mapping folder is used to store persisted mask NRRD files
         self.private_folder: str = config.get('outputPrivateMappingFolder', '')
+
+        # Config directory used to format log paths as relative paths
+        self._config_dir: str = config.get('configDir', '')
 
         # Configuration for defacing strategy
         self.external_mask_paths = config.get('testOptions', {}).get('useExistingMaskDefacer', [])
@@ -71,6 +74,15 @@ class DefaceService:
         # Cached defacer module - loaded once on the first series to avoid
         # re-executing module-level moosez initialisation code on every series.
         self._defacer = None
+
+    def _rel_path(self, path: str) -> str:
+        """Return *path* relative to the config file directory for log messages."""
+        if self._config_dir and path:
+            try:
+                return os.path.relpath(path, self._config_dir)
+            except ValueError:
+                pass  # On Windows, relpath raises ValueError across drives
+        return path
 
     def process_series(self, series: DicomSeries) -> Dict[str, Any]:
         """Process (deface) a single DICOM series.
@@ -100,12 +112,12 @@ class DefaceService:
             raise
 
         series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
-        self.logger.info(f"DefaceService: Defacing series {series_display}")
+        self.logger.info(f"DefaceService: Defacing {series_display}")
 
         # Get organized files for this series
         organized_files = series.get_organized_files()
         if not organized_files:
-            self.logger.warning(f"No organized files found for series {series.original_series_uid}")
+            self.logger.warning(f"No organized files found for series {series.anonymized_series_uid}")
             return self._copy_without_defacing(series)
 
         # Create worker-specific temp directory for NRRD processing
@@ -156,13 +168,10 @@ class DefaceService:
         #
         # Strategies (highest priority first):
         #   1. Test-time external mask  (testOptions.useExistingMaskDefacer)
-        #   2. Primary candidate        -> run ML, save mask to DB
-        #   3. All other series         -> run ML normally, no DB interaction
-        #
-        # DefacePriorityElector determines the best series per (patient, study,
-        # FrameOfReferenceUID, modality) group *before* the defacer runs, so
-        # the primary is already the optimal candidate - no comparison or
-        # overwrite logic is needed when persisting its mask.
+        #   2. PET paired with a CT     -> project cached CT mask, no ML
+        #   3. All other series:
+        #      3a. Cached mask in DB    -> reuse from a previous run, no ML
+        #      3b. ML inference         -> run model; save if primary CT or mode='all'
         save_mask_after_ml = False
 
         try:
@@ -173,27 +182,85 @@ class DefaceService:
                 image_face_segmentation = defacer.prepare_face_mask(image, modality, mask_path)
                 self._series_counter += 1
 
-            elif series.is_primary_deface_candidate:
-                # Strategy 2: Primary candidate - run ML and mark for DB persistence.
-                # No DB lookup needed: by definition no better mask exists yet.
+            elif series.primary_ct_series is not None:
+                # Strategy 2: PET paired with a CT primary.
+                # Retrieve the CT face mask from the database, resample it onto this
+                # series' geometry (same FrameOfReferenceUID guarantees spatial
+                # co-registration), and apply pixelation directly - no ML inference.
+                ct_mask_path = self._get_ct_mask_for_pet(series)
+                if ct_mask_path is None:
+                    self.logger.warning(
+                        f"CT face mask not yet available for secondary series "
+                        f"{series.anonymized_series_uid!r} "
+                        f"(primary CT: {series.primary_ct_series.anonymized_series_uid!r}); "
+                        f"falling back to copy without defacing."
+                    )
+                    return self._copy_without_defacing(series)
+
                 self.logger.info(
-                    f"Series is primary deface candidate for modality={modality}; "
-                    f"running ML defacing."
+                    f"Projecting CT face mask onto secondary series "
+                    f"(modality={modality}): {self._rel_path(ct_mask_path)}"
                 )
-                image_face_segmentation = defacer.prepare_face_mask(image, modality)
-                cleanup_gpu_memory()
-                self.logger.debug("GPU memory cleaned up after face detection")
-                save_mask_after_ml = True
+                # SimpleITK reads compressed NRRD automatically.
+                ct_mask_image = SimpleITK.ReadImage(ct_mask_path)
+
+                # Resample CT mask onto target series geometry using nearest-neighbour
+                # interpolation (mask is binary - continuous interpolation would blur edges).
+                resampler = SimpleITK.ResampleImageFilter()
+                resampler.SetReferenceImage(image)
+                resampler.SetInterpolator(SimpleITK.sitkNearestNeighbor)
+                resampler.SetDefaultPixelValue(0)
+                image_face_segmentation = resampler.Execute(ct_mask_image)
+
+                if self.save_all_masks:
+                    try:
+                        self._persist_mask_to_db(series, image_face_segmentation, image)
+                    except Exception as e:
+                        log_project_stacktrace(self.logger, e)
+                        self.logger.warning(f"Failed to persist resampled PET face mask to database: {e}")
 
             else:
-                # Strategy 3: Non-primary or untracked modality.
-                # Run ML defacing normally; do not persist the mask.
-                image_face_segmentation = defacer.prepare_face_mask(image, modality)
-                cleanup_gpu_memory()
-                self.logger.debug("GPU memory cleaned up after face detection")
+                # Strategy 3: CT-only or standalone modality.
+                # 3a: Check DB cache - reuse a mask saved during a *previous run of
+                #     this exact series*.  Cache hit is only valid when the stored
+                #     ct_series_instance_uid matches this series' UID, guaranteeing
+                #     identical geometry (no resampling needed).  Any other cached
+                #     entry (different source series) is ignored and
+                #     ML inference runs fresh.
+                cached_mask_path = self._get_cached_mask_path(series)
+                if cached_mask_path is not None:
+                    # Exact per-series hit: geometry is guaranteed identical.
+                    self.logger.info(
+                        f"Reusing cached face mask for series "
+                        f"{series.anonymized_series_uid!r}: {self._rel_path(cached_mask_path)}"
+                    )
+                    image_face_segmentation = SimpleITK.ReadImage(cached_mask_path)
 
+                if cached_mask_path is None:
+                    # 3b: Run ML inference.
+                    self.logger.info(
+                        f"Running ML defacing for series {series.anonymized_series_uid!r} "
+                        f"(modality={modality})"
+                    )
+                    image_face_segmentation = defacer.prepare_face_mask(image, modality)
+                    cleanup_gpu_memory()
+                    self.logger.debug("GPU memory cleaned up after face detection")
+                    # Persist mask if this CT serves a paired PET, or saveDefaceMasks=true.
+                    if series.is_primary_deface_candidate or self.save_all_masks:
+                        save_mask_after_ml = True
+
+        except RuntimeError as e:
+            # RuntimeError is raised by prepare_face_mask when the ML model
+            # returns no segmentation or an all-zero mask.  This is expected
+            # for series that do not contain a face/head region (e.g. chest CT).
+            # Copy without defacing and flag for manual review.
+            self.logger.warning(
+                f"No face detected in series {series.anonymized_series_uid!r} "
+                f"({e}). Series copied without defacing please verify manually "
+                f"that it contains no facial features."
+            )
+            return self._copy_without_defacing(series)
         except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
             self.logger.error(f"Failed to generate face mask: {e}")
             return self._copy_without_defacing(series)
@@ -216,8 +283,7 @@ class DefaceService:
         try:
             SimpleITK.WriteImage(image, nrrd_image_path)
             SimpleITK.WriteImage(image_defaced, nrrd_defaced_path)
-            SimpleITK.WriteImage(image_face_segmentation, nrrd_mask_path, useCompression=True)
-            self.logger.debug(f"Saved NRRD volumes to {series_temp_dir}")
+            self.logger.debug(f"Saved NRRD volumes to {self._rel_path(series_temp_dir)}")
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
@@ -335,7 +401,6 @@ class DefaceService:
         return {
             'nrrd_image_path': nrrd_image_path,
             'nrrd_defaced_path': nrrd_defaced_path,
-            'nrrd_mask_path': nrrd_mask_path,
             'defaced_dicom_files': defaced_dicom_files
         }
 
@@ -421,66 +486,112 @@ class DefaceService:
         else:
             # --- General path: arbitrary orientation ---
             # TODO: Test this path with appropriate data, then remove the warning logged if validated
-            # Build a 2D reference image with the exact geometry of the DICOM slice
-            # and resample the 3D volume onto it. SimpleITK's ResampleImageFilter
-            # handles the full 3D->2D transform internally.
+            # Build a thin 3D reference image (depth=1) with the exact geometry of
+            # the DICOM slice and resample the 3D volume onto it.
+            # A 2D reference cannot be used here: ResampleImageFilter requires the
+            # reference and the input to share the same dimensionality, and passing a
+            # 2D reference for a 3D volume causes "Expected vector of length 3 but only
+            # got 2 elements" inside SimpleITK's transform pipeline.
             row_spacing = float(pixel_spacing[0])
             col_spacing = float(pixel_spacing[1])
 
-            # SimpleITK 2D direction is the upper-left 2x2 sub-matrix (row-major)
-            direction_2d = (
-                row_cosines[0], row_cosines[1],
-                col_cosines[0], col_cosines[1]
+            # Normal vector = cross product of row and column cosines.
+            normal = np.cross(row_cosines, col_cosines)
+
+            # Full 3×3 direction matrix stored row-major as SimpleITK expects.
+            # Columns of D are the world-space unit vectors for i (col index),
+            # j (row index), and k (slice/normal) axes respectively.
+            direction_3d = (
+                row_cosines[0], col_cosines[0], normal[0],
+                row_cosines[1], col_cosines[1], normal[1],
+                row_cosines[2], col_cosines[2], normal[2],
             )
 
-            slice_ref = SimpleITK.Image([cols, rows], volume.GetPixelID())
-            slice_ref.SetSpacing([col_spacing, row_spacing])
+            slice_ref = SimpleITK.Image([cols, rows, 1], volume.GetPixelID())
+            slice_ref.SetSpacing([col_spacing, row_spacing, 1.0])
             slice_ref.SetOrigin(ipp_arr.tolist())
-            slice_ref.SetDirection(direction_2d)
+            slice_ref.SetDirection(direction_3d)
 
             resampler = SimpleITK.ResampleImageFilter()
             resampler.SetReferenceImage(slice_ref)
             resampler.SetInterpolator(SimpleITK.sitkLinear)
             resampler.SetDefaultPixelValue(0)
-            extracted = resampler.Execute(volume)
-            return SimpleITK.GetArrayFromImage(extracted)
+            extracted_3d = resampler.Execute(volume)
 
-    def _get_cached_mask_path(self, series: DicomSeries) -> Optional[str]:
-        """Return the path of a cached mask for this series, or ``None``.
+            # Collapse the singleton k-dimension to return a 2D array.
+            extractor = SimpleITK.ExtractImageFilter()
+            size = list(extracted_3d.GetSize())
+            size[2] = 0  # collapse z -> 2D output
+            extractor.SetSize(size)
+            extractor.SetIndex([0, 0, 0])
+            return SimpleITK.GetArrayFromImage(extractor.Execute(extracted_3d))
 
-        Only called for non-primary series.  Because the factory guarantees
-        that the primary candidate for each (patient, FrameOfReferenceUID,
-        modality) group is processed before the others, a mask is already in
-        the database when this method is called for any non-primary series in
-        the same group.
+    def _get_ct_mask_for_pet(self, series: DicomSeries) -> Optional[str]:
+        """Return the absolute path to the cached CT face mask for a secondary series.
 
-        For modalities not listed in ``saveDefaceMasks.primary``, or when no DB is
-        configured, returns ``None`` immediately so the caller falls through to
-        plain ML processing.
+        Queries ``deface_series_pairing`` for the row whose ``pet_series_uid``
+        matches this series.  The row is written by
+        :class:`DefacePriorityElector` before processing starts, and
+        ``mask_path`` is filled in by :meth:`_persist_mask_to_db` once the CT
+        mask has been computed.
 
         Args:
-            series: The non-primary series about to be defaced.
+            series: The secondary series (e.g. PET) whose CT primary mask is needed.
 
         Returns:
-            Absolute path to the cached NRRD mask file, or ``None``.
+            Absolute path to the NRRD mask file, or ``None`` when the pairing
+            row is absent, mask_path is still NULL, or the file no longer exists.
+        """
+        if self.deface_mask_db is None:
+            return None
+
+        if series.primary_ct_series is None:
+            return None
+
+        pairing = self.deface_mask_db.get_pairing(
+            study_instance_uid     = series.original_study_uid,
+            frame_of_reference_uid = series.frame_of_reference_uid or '',
+            pet_series_uid         = series.original_series_uid,
+        )
+
+        if not pairing or not pairing.get('mask_path'):
+            return None
+
+        abs_mask_path = os.path.join(self.private_folder, pairing['mask_path'])
+        if not os.path.exists(abs_mask_path):
+            self.logger.warning(
+                f"Cached CT face mask file not found on disk: {abs_mask_path}"
+            )
+            return None
+
+        return abs_mask_path
+
+    def _get_cached_mask_path(self, series: DicomSeries) -> Optional[str]:
+        """Return the absolute path of a previously-saved mask for this series, or ``None``.
+
+        Looks up ``deface_mask_cache`` by
+        (cache_key, modality, ct_series_instance_uid) — an exact per-series match.
+        Returns ``None`` when no DB is configured, no matching entry exists, or
+        the file is missing on disk.
+
+        Args:
+            series: The series about to be defaced.
+
+        Returns:
+            Absolute path string, or ``None``.
         """
         if self.deface_mask_db is None:
             return None
 
         modality = (series.modality or '').upper()
-        if modality not in self.best_modalities:
-            return None
-
-        if not series.frame_of_reference_uid:
-            return None
-
         cached = self.deface_mask_db.get_primary_mask(
             series.original_patient_id,
             series.original_patient_name,
             series.original_patient_birthdate,
             series.original_study_uid,
-            series.frame_of_reference_uid,
+            series.frame_of_reference_uid or '',
             modality,
+            ct_series_instance_uid=series.original_series_uid,
         )
 
         if not cached:
@@ -489,7 +600,7 @@ class DefaceService:
         # mask_path in the DB is relative to private_folder - reconstruct absolute.
         abs_mask_path = os.path.join(self.private_folder, cached['mask_path'])
         if not os.path.exists(abs_mask_path):
-            self.logger.warning(f"Cached deface mask file not found: {abs_mask_path}")
+            self.logger.warning(f"Cached deface mask file not found on disk: {self._rel_path(abs_mask_path)}")
             return None
         return abs_mask_path
 
@@ -557,12 +668,12 @@ class DefaceService:
         mask_filename = f"deface_mask_{modality}.nrrd"
         mask_path = os.path.join(mask_dir, mask_filename)
 
-        SimpleITK.WriteImage(mask_image, mask_path)
-        self.logger.info(f"Saved deface mask: {mask_path}")
+        SimpleITK.WriteImage(mask_image, mask_path, useCompression=True)
 
         # Store the path relative to private_folder so the DB is portable
         # (moving the private mapping folder does not break cached entries).
         mask_path_db = os.path.relpath(mask_path, self.private_folder)
+        self.logger.info(f"Saved deface mask: {mask_path_db}")
 
         # Collect image geometry for future resampling
         spacing   = list(source_image.GetSpacing())
@@ -570,24 +681,43 @@ class DefaceService:
         direction = list(source_image.GetDirection())
         for_uid   = series.frame_of_reference_uid or ''
 
+        # Write one row to deface_mask_cache (keyed on patient/study/FOR/modality).
         self.deface_mask_db.upsert_mask(
-            patient_id            = series.original_patient_id,
-            patient_name          = series.original_patient_name,
-            birthdate             = series.original_patient_birthdate,
-            study_instance_uid    = series.original_study_uid,
-            frame_of_reference_uid= for_uid,
-            modality              = modality,
-            mask_path             = mask_path_db,
-            # spatial_volume_cm3 / min_voxel_size_mm live on DefacePrioritySeries;
-            # use getattr so the signature stays DicomSeries without coupling.
-            spatial_volume_cm3    = getattr(series, 'spatial_volume_cm3', None) or 0.0,
-            min_voxel_size_mm     = getattr(series, 'min_voxel_size_mm',  None) or 0.0,
-            spacing               = spacing,
-            origin                = origin,
-            direction             = direction,
-            anonymized_patient_id = series.anonymized_patient_id,
-            anonymized_study_uid  = series.anonymized_study_uid,
+            patient_id             = series.original_patient_id,
+            patient_name           = series.original_patient_name,
+            birthdate              = series.original_patient_birthdate,
+            study_instance_uid     = series.original_study_uid,
+            frame_of_reference_uid = for_uid,
+            modality               = modality,
+            mask_path              = mask_path_db,
+            spacing                = spacing,
+            origin                 = origin,
+            direction              = direction,
+            anonymized_patient_id  = series.anonymized_patient_id,
+            anonymized_study_uid   = series.anonymized_study_uid,
+            ct_series_instance_uid = series.original_series_uid,
         )
+
+        # Update deface_series_pairing rows for every PET paired with this CT.
+        # The pairing rows were written by DefacePriorityElector before
+        # processing started; we now fill in mask_path + mask_written_at.
+        pairings = self.deface_mask_db.get_pairings_for_ct(
+            study_instance_uid     = series.original_study_uid,
+            frame_of_reference_uid = for_uid,
+            ct_series_uid          = series.original_series_uid,
+        )
+        for pairing in pairings:
+            self.deface_mask_db.update_pairing_mask_path(
+                study_instance_uid     = series.original_study_uid,
+                frame_of_reference_uid = for_uid,
+                pet_series_uid         = pairing['pet_series_uid'],
+                mask_path              = mask_path_db,
+            )
+        if pairings:
+            self.logger.private(
+                f"Updated mask_path in {len(pairings)} pairing row(s) for "
+                f"CT {series.original_series_uid!r}"
+            )
 
     def _copy_without_defacing(self, series: DicomSeries) -> Dict[str, Any]:
         """Copy files without defacing when defacing fails or is not applicable.

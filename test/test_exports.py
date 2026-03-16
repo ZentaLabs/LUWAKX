@@ -215,7 +215,7 @@ class TestExports(unittest.TestCase):
                                            f"Anonymized {uid_name} is missing in mapping file")
                         self.assertNotEqual(original_uid, mapped_anonymized,
                                           f"Anonymized {uid_name} should be different from original")
-                        self.logger.info(f"✓ {uid_name}: {original_uid} → {mapped_anonymized}")
+                        self.logger.info(f"✓ {uid_name}: {original_uid} -> {mapped_anonymized}")
                 
                 self.logger.info("UID mapping CSV file creation test completed successfully")
         

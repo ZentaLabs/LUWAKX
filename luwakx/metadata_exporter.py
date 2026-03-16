@@ -378,7 +378,7 @@ class MetadataExporter:
                 # Get series output path structure
                 series_output_path = series.output_base_path
                 if not series_output_path:
-                    self.logger.warning(f"No output path for series {series.original_series_uid}")
+                    self.logger.warning(f"No output path for series {series.anonymized_series_uid}")
                     continue
                 
                 # Calculate relative path for structure mirroring

@@ -95,7 +95,7 @@ Luwak uses the [DEID library](https://github.com/pydicom/deid) for DICOM header 
 - `generate_hmacdate_shift` - HMAC-based deterministic date shifting
 - `clean_descriptors_with_llm` - LLM-based PHI detection in free-text/annotation tags
 - `set_fixed_datetime` - Fixed epoch datetime replacement
-- `check_patient_age` - Patient age retention with HIPAA-compliant capping (>89Y → 090Y)
+- `check_patient_age` - Patient age retention with HIPAA-compliant capping (>89Y -> 090Y)
 - `sq_keep_original_with_review` - Sequence retention with structured review flag emission
 - `is_tag_private` - Private tag identification for removal
 - `is_curve_or_overlay_tag` - Curve/overlay data identification for removal
@@ -175,12 +175,12 @@ The defacing pipeline processes DICOM series through four main stages while main
 **Implementation:** `DefaceService._is_volume_axis_aligned()`, `DefaceService._extract_slice_from_volume()`
 
 #### 4.1.3 Modality Support
-- **CT (Computed Tomography):** Fully supported with modality-specific AI models
-- **PET (Positron Emission Tomography):** Partially supported, depending on the availability of a co-registered CT:
-  - **PET/CT (co-registered CT available):** This option is under development (https://github.com/ZentaLabs/luwak/issues/31): When a PET series shares a `FrameOfReferenceUID` with a CT series in the same study, Luwak runs the AI face segmentation on the CT, resamples the resulting face mask onto the PET geometry, and applies the pixelation step directly on the PET volume. No ML model is executed on the PET data itself. See [§4.1.9](#4110-petct-defacing-via-ct-mask-projection) for full implementation details.
+- **CT (Computed Tomography):** Fully supported with modality-specific AI models.
+- **PET (Positron Emission Tomography):** Supported automatically when a co-registered CT is available in the same study and `FrameOfReferenceUID`:
+  - **PET/CT (co-registered CT available):** When the `clean_recognizable_visual_features` recipe is active, Luwak automatically detects PET series that share a `FrameOfReferenceUID` with a CT series in the same study. The AI face segmentation model runs on the CT only; the resulting mask is resampled onto the PET geometry and applied directly — no ML inference on the PET data. No extra configuration is required. See [§4.1.8](#418-petct-defacing-via-ct-mask-projection) for full implementation details.
   - **Standalone PET (no co-registered CT):** Support via a dedicated PET face segmentation model is planned for a future release (https://github.com/ZentaLabs/luwak/issues/31).
-- **MR (Magnetic Resonance):** Planned for future implementation
-- **Other modalities:** Not currently supported for defacing
+- **MR (Magnetic Resonance):** Planned for future implementation.
+- **Other modalities:** Not currently supported for defacing.
 
 #### 4.1.4 Configuration
 
@@ -207,12 +207,12 @@ This parameter controls the resolution of pixelation blocks. Larger values provi
 #### 4.1.5 Conditional Processing
 Defacing is only performed when:
 1. `clean_recognizable_visual_features` profile is selected in recipes
-2. Modality is CT (currently only CT is supported; PET support in progress, MR support planned)
+2. Modality is CT **or** the series is a PET series whose `primary_ct_series` has been set by `DefacePriorityElector` (i.e., a co-registered CT exists in the same study and `FrameOfReferenceUID`)
 
 **Decision Logic:** `ProcessingPipeline._needs_defacing()`
 
 **Behavior when defacing is not needed:**
-- If defacing is not needed (modality is not CT or profile not selected), the defacing stage is skipped entirely
+- If defacing is not needed (modality is neither CT nor paired PET, or profile not selected), the defacing stage is skipped entirely
 - Files remain in organized directory and are read directly for metadata deidentification
 - No files are copied to defaced directory
 
@@ -228,37 +228,26 @@ Defacing is only performed when:
 - Only included if defacing was successfully performed
 - Absent if defacing was skipped or failed
 
-#### 4.1.7 Output Artifacts
-For each defaced series:
-- `image.nrrd` - Original 3D volume (temporary, for validation)
-- `image_defaced.nrrd` - Defaced 3D volume (temporary)
-- `*.dcm` - Defaced DICOM files (final output)
-
-Temporary NRRD files are stored in `defaced_base_path` during processing.
-
-#### 4.1.8 Performance Considerations
+#### 4.1.7 Performance Considerations
 - GPU acceleration recommended for AI face detection.
 - Memory cleanup after each series to prevent GPU OOM.
 - Typical processing time with GPU: 30-90 seconds per series (Linux, Ubuntu), 3 minutes (MacOS ARM).
 
-#### 4.1.9 PET/CT Defacing via CT Mask Projection
+#### 4.1.8 PET/CT Defacing via CT Mask Projection
 
 For PET/CT studies, Luwak implements PET defacing by projecting the CT-derived face mask onto the PET geometry rather than running a separate ML model on the PET data. This approach exploits the spatial co-registration intrinsic to PET/CT acquisitions: the CT face segmentation model runs once, its output mask is stored, and that mask is resampled onto any PET series sharing the same `FrameOfReferenceUID` within the same study. This avoids redundant ML inference and ensures anatomically consistent face pixelation across both the CT and PET volumes.
 
 **Implementation Modules:** `luwakx/deface_mask_database.py`, `luwakx/deface_priority_elector.py`
 
-##### 4.1.9.1 CT Primary Series Selection
+##### 4.1.8.1 CT Primary Series Selection
 
-Before processing begins, `DefacePriorityElector.elect_and_sort()` identifies, for each PET series, a *primary* CT series within the same `(patient, study, FrameOfReferenceUID)` group that will serve as the source of the face mask.
+Before processing begins, `DefacePriorityElector.elect_and_sort()` identifies, for each PET series, a *primary* CT series within the same `(patient, study, FrameOfReferenceUID)` group that will serve as the source of the face mask. This pairing runs automatically whenever the `clean_recognizable_visual_features` recipe is active — no extra configuration is required.
 
-When a PET series shares the same `(patient, study, FrameOfReferenceUID)` with one or more CT series, `DefacePriorityElector` selects the CT series whose `AcquisitionDateTime` (0008,002A) is closest to the PET `AcquisitionDateTime`. This acquisition date/time proximity criterion ensures the most temporally — and therefore geometrically — aligned CT scan is chosen for the mask resampling step.
+For each PET series, `DefacePriorityElector` selects the CT series whose `AcquisitionDateTime` (0008,002A) is closest to that individual PET series' `AcquisitionDateTime`. This per-PET proximity criterion ensures the most temporally — and therefore geometrically — aligned CT scan is chosen for the mask resampling step. `AcquisitionDateTime` is read from tag (0008,002A), falling back to `AcquisitionDate` (0008,0022) + `AcquisitionTime` (0008,0032) when the combined attribute is absent.
 
-The selected primary CT series is placed first in the processing order so that its face mask is computed before any associated PET series are processed.
+The selected primary CT series is placed first in the processing order so that its face mask is computed before any associated PET series are processed. The pairing is recorded in the `deface_series_pairing` table of `DefaceMaskDatabase`; the `mask_path` column is filled in once the CT mask has been computed.
 
-This nask selection and reusage happens only when `saveDefaceMasks.primary` option is enabled.
-When the option is absent, PET/CT mask projection is fully disabled and all series are defaced independently (only CT modalities for the moment).
-
-##### 4.1.9.2 Mask Database
+##### 4.1.8.2 Mask Database
 
 `DefaceMaskDatabase` is a thread-safe SQLite database that stores the segmentation mask (as an NRRD file path) computed for each primary series. The database key is a SHA-256 hash of:
 
@@ -272,30 +261,62 @@ The study UID is included in the key so masks are scoped to a single study and a
 - If `analysisCacheFolder` is configured, `deface_mask.db` persists across runs.
 - Otherwise, it is created in the private mapping folder and deleted after processing.
 
-##### 4.1.9.3 PET Series Defacing via Projected CT Mask
+##### 4.1.8.3 PET Series Defacing via Projected CT Mask
 
 For each PET series paired with a primary CT series in the same group:
 1. The CT face mask whose `AcquisitionDateTime` (0008,002A) is closest to the PET series acquisition date/time is retrieved from the mask database (relevant when multiple CT masks exist for the same `FrameOfReferenceUID`).
 2. The selected CT mask is resampled onto the PET series geometry using the PET spatial metadata (origin, direction, spacing).
 3. The pixelation step is applied to the PET volume using the resampled mask.
 
-##### 4.1.9.4 Configuration
+##### 4.1.8.4 Configuration
+
+PET/CT mask projection requires no extra configuration: it runs automatically whenever the `clean_recognizable_visual_features` recipe is active and a CT series shares the same `(patient, study, FrameOfReferenceUID)` with a PET series.
+
+The optional `saveDefaceMasks` boolean (default: `false`) controls mask persistence beyond the current run:
 
 ```json
 {
-  "saveDefaceMasks": {
-    "primary": ["CT"]
-  }
+  "saveDefaceMasks": true
 }
 ```
 
-The `primary` array lists the modality for which CT mask projection onto co-registered PET series is enabled. Only `["CT"]` is currently supported. When the array is empty or the key is absent, PET/CT defacing via mask projection is fully disabled and each series is defaced independently. See [§9.1.2](#912-optional-configuration-options) for full option documentation.
+When `true`, every series that runs ML inference has its face mask saved to the private mapping folder and the database persists after the run, enabling full re-run cache hits for all modalities. When `false` (default), only the CT masks paired with a PET series are kept for the duration of the run (just long enough to project onto the PET). See [§9.1.2](#912-optional-configuration-options) for full option documentation.
+
+#### 4.1.9 Output Artifacts
+For each defaced series:
+- `image.nrrd` - Original 3D volume (temporary, for validation)
+- `image_defaced.nrrd` - Defaced 3D volume (temporary)
+- `*.dcm` - Defaced DICOM files (final output)
+
+Temporary NRRD files (`image.nrrd`, `image_defaced.nrrd`) are stored in `defaced_base_path` during processing and moved to the private mapping folder after the series completes.
+
+**Face mask files (`deface_mask_<modality>.nrrd`):**
+
+A compressed NRRD mask file is written to the private mapping folder — mirroring the series output path structure — and recorded in `DefaceMaskDatabase`. The mask file is saved when **either** of the following conditions is met:
+
+| Condition | When it applies |
+|-----------|-----------------|
+| CT is paired with a PET (`series.is_primary_deface_candidate = True`) | Always, regardless of `saveDefaceMasks`; the mask must persist long enough to be projected onto the PET within the same run |
+| `saveDefaceMasks: true` in config | Every series that runs ML inference gets its mask saved |
+
+**File location:**
+```
+<outputPrivateMappingFolder>/<rel_series_path>/deface_mask_<modality>.nrrd
+```
+where `<rel_series_path>` mirrors the anonymized output directory structure (e.g. `<patientID>/<studyUID>/<seriesUID>/`).
+
+**Examples:**
+- `deface_mask_CT.nrrd` — saved for a CT that is primary candidate for a paired PET, or when `saveDefaceMasks: true`
+- `deface_mask_PT.nrrd` — saved only when `saveDefaceMasks: true` (PET mask derived from CT projection)
+
+When `saveDefaceMasks: false` (default) and no PET pairing is detected, no mask file is written.
 
 #### 4.1.10 Current limitations
-- Defacing is supported only for CT modality.
+- Defacing via ML is supported only for CT modality. PET defacing is supported via CT mask projection when a co-registered CT is available in the same study (see [§4.1.8](#418-petct-defacing-via-ct-mask-projection)); standalone PET and MR are not yet supported (planned for PET https://github.com/ZentaLabs/luwak/issues/31).
+- When the MOOSE model returns no segmentation (e.g., the volume does not contain a head/face region), the series is copied without defacing and flagged for manual review. This can occur for chest CTs or other non-head volumes.
 - The time/resource consuming AI model will run even when no face is included in the data, because we can't rely on BodyPartExamined correct labeling. For the future we plan to develop a functionality to determine from a coronal 2D slice whether the head is present and skip this step accordingly.
-- No modification on non-face data has been observed from the defacing model so far, but care must be taken to check the defacing result after each deidentification project. 
-- The defacer does not modify ears region, there is ongoing discussion to include this part of the face in the future (https://github.com/ZentaLabs/luwak/issues/71).
+- No modification on non-face data has been observed from the defacing model so far, but care must be taken to check the defacing result after each deidentification project.
+- The defacer does not modify the ears region; there is ongoing discussion to include this part of the face in the future (https://github.com/ZentaLabs/luwak/issues/71).
 
 ### 4.2 Clean Pixel Data Option
 
@@ -1401,7 +1422,7 @@ Output files: `deid.dicom.recipe`, `deid.dicom.recipe.csv`
 
 The recipe builder generates two files:
 
-- **`deid.dicom.recipe`** — A DEID-format recipe file containing all tag-level actions determined by the selected deidentification profiles and options. This is the input consumed by the deid library's `replace_identifiers()` function during metadata deidentification. A complete reference table showing all tags processed by the Basic Application Confidentiality Profile recipe is provided in [Appendix C](#appendix-c-basic-application-confidentiality-profile-recipe).
+- **`deid.dicom.recipe`** — A DEID-format recipe file containing all tag-level actions determined by the selected deidentification profiles and options. This is the input consumed by the deid library's `replace_identifiers()` function during metadata deidentification. A complete reference table showing all tags processed by the Basic Application Confidentiality Profile recipe is provided in [Appendix C](#appendix-c-basic-application-confidentiality-profile-recipe) (available [online](https://github.com/ZentaLabs/luwak/blob/main/docs/deidentification_conformance.md#appendix-c-basic-application-confidentiality-profile-recipe)).
 
 - **`deid.dicom.recipe.csv`** — A human-readable summary CSV mirroring every directive in the recipe file. Each row records the tag address, tag name, action keyword (e.g., `KEEP`, `REMOVE`, `REPLACE`, `BLANK`, `JITTER`), replacement value (where applicable), and the rationale linking the decision back to the contributing deidentification profile and conformance documentation. The rationale is extracted from the `Documentation References` column of the tag template CSVs, using the label associated with the profile that drove the final action. When the source action is `func:clean_descriptors_with_llm` but the final action is derived as `remove` or `manual_review` (see [§6.4.1](#641-translation-logic-by-action)), the rationale is still attributed to the `clean_descriptors` profile. Additional directives (e.g., `ADD PatientIdentityRemoved`, `REMOVE ALL func:is_curve_or_overlay_tag`) are included as separate rows with a reference to [§6.4.2](#642-additional-recipe-directives).
 
@@ -1564,12 +1585,12 @@ Luwak produces several output files during the deidentification pipeline, each s
   - Implementation: `luwakx/review_flag_collector.py`, `luwakx/metadata_exporter.py`
 
 **10. Deface Mask Database (`deface_mask.db`)**
-  - Location: As configured in the optional `analysisCacheFolder` (if not specified: private mapping folder, temporary); only created when `saveDefaceMasks.primary` is non-empty
-  - Content: SQLite database storing per-patient, per-study, per-`FrameOfReferenceUID` CT face masks (as NRRD file paths) for projection and resampling onto co-registered PET series sharing the same spatial reference frame
+  - Location: As configured in the optional `analysisCacheFolder` (if not specified: private mapping folder, temporary); created whenever the `clean_recognizable_visual_features` recipe is active and PET/CT pairs are detected, or when `saveDefaceMasks` is `true`
+  - Content: Two tables - `deface_mask_cache` (per-series CT face masks as NRRD file paths keyed by patient/study/FOR/modality/series UID) and `deface_series_pairing` (CT-PET pairing records with `mask_path` filled once the CT mask is computed)
   - Generation: Created and updated during the defacing stage by `DefaceMaskDatabase`
   - Persistence: Removed after processing unless `analysisCacheFolder` is specified
   - Thread-safe: Uses WAL mode with serialised writes for concurrent access
-  - See [§4.1.9](#419-petct-defacing-via-ct-mask-projection) for details on PET/CT defacing logic
+  - See [§4.1.8](#418-petct-defacing-via-ct-mask-projection) for details on PET/CT defacing logic
 
 #### Export Logic
 The export of metadata and mappings is performed in a streaming, memory-efficient manner. After each series is processed, results are immediately written to the corresponding output files. The `MetadataExporter` class manages all export operations, including incremental appending and finalization of CSV and Parquet files, and movement of NRRD volumes.
@@ -1654,7 +1675,7 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `saveDefaceMasks.primary` | array | [] | Enables PET/CT defacing via CT mask projection. Only `["CT"]` is currently supported. When set, Luwak runs the AI face segmentation on the CT series, stores the resulting face mask, and resamples it onto any PET series sharing the same `(patient, study, FrameOfReferenceUID)` — selecting the CT mask whose `AcquisitionDateTime` (0008,002A) is closest to the PET acquisition date/time for optimal geometric alignment. When empty or absent, PET/CT mask projection is disabled and all series are defaced independently. See [§4.1.9](#419-petct-defacing-via-ct-mask-projection). |
+| `saveDefaceMasks` | boolean | false | Controls face mask persistence across runs. When `true`, every series that runs ML inference has its mask saved to the private mapping folder and the database persists after the run, enabling full re-run cache hits. When `false` (default), only CT masks paired with a PET series are kept — just long enough to project onto the PET within the same run. PET/CT pairing itself is **automatic** whenever the `clean_recognizable_visual_features` recipe is active and requires no extra config. See [§4.1.8](#418-petct-defacing-via-ct-mask-projection). |
 
 #### 9.1.3 Example Configuration
 
@@ -1872,38 +1893,38 @@ Luwak follows an object-oriented design with clear separation of concerns:
 1. Configuration Loading (LuwakAnonymizer)
    ↓
 2. Directory Scanning (DicomSeriesFactory)
-   → Creates DicomSeries objects with DicomFile objects
+   -> Creates DicomSeries objects with DicomFile objects
    ↓
 3. Recipe Generation (anonymization_recipe_builder)
-   → Generates deid.dicom.recipe
+   -> Generates deid.dicom.recipe
    ↓
 4. Pipeline Coordination (PipelineCoordinator)
-   → Distributes series across workers
-   → Manages shared resources (UID DB, LLM cache, recipe)
-   → DefacePriorityElector: elect primary series per (patient, study, FrameOfRef, modality) group (if saveDefaceMasks enabled)
+   -> Distributes series across workers
+   -> Manages shared resources (UID DB, LLM cache, recipe)
+   -> DefacePriorityElector: elect primary CT per (patient, study, FrameOfRef) group and pair with PET series (automatic when deface recipe is active); reorders series so each CT primary is processed before its paired PETs
    ↓
 5. Pipeline Processing (ProcessingPipeline) - per worker
-   → For each DicomSeries:
+   -> For each DicomSeries:
       a. Organization Stage
-         → Copy files to organized temp structure
+         -> Copy files to organized temp structure
       b. Defacing Stage (optional)
-         → DefaceService: Volume reconstruction → ML defacing (or mask reuse) → DICOM export
-         → DefaceMaskDatabase: Cache/retrieve primary mask per spatial reference frame
+         -> DefaceService: Volume reconstruction -> ML defacing (or mask reuse) -> DICOM export
+         -> DefaceMaskDatabase: Cache/retrieve primary mask per spatial reference frame
       c. Anonymization Stage
-         → DicomProcessor: Apply recipe → Custom functions → Write files
-         → ReviewFlagCollector: Buffer tags requiring manual review
+         -> DicomProcessor: Apply recipe -> Custom functions -> Write files
+         -> ReviewFlagCollector: Buffer tags requiring manual review
       d. Injection Stage
-         → Add DeidentificationMethodCodeSequence
+         -> Add DeidentificationMethodCodeSequence
       e. Export Stage
-         → MetadataExporter: Stream UID mappings, metadata, and review flags
+         -> MetadataExporter: Stream UID mappings, metadata, and review flags
    ↓
 6. Result Aggregation (PipelineCoordinator)
-   → Finalize exports and verify files
+   -> Finalize exports and verify files
    ↓
 7. Cleanup
-   → Remove temp directories
-   → Close databases
-   → Delete temp UID/mask databases (if configured)
+   -> Remove temp directories
+   -> Close databases
+   -> Delete temp UID/mask databases (if configured)
 ```
 
 #### 9.2.4 Threading and Parallelization
@@ -2035,7 +2056,7 @@ outputPrivateMappingFolder/
 ├── metadata.parquet
 ├── review_flags.csv
 ├── patient_uid.db (if persistent database configured)
-├── deface_mask.db (if saveDefaceMasks.primary non-empty and analysisCacheFolder not set)
+├── deface_mask.db (if deface recipe active with PET/CT pairs, or saveDefaceMasks=true, and analysisCacheFolder not set)
 └── {AnonymizedPatientID}/
     └── {HashedAnonymizedStudyUID}/
         └── {HashedAnonymizedSeriesUID}/
@@ -2048,7 +2069,7 @@ recipesFolder/
 analysisCacheFolder/ (if specified in config)
 ├── patient_uid.db
 ├── llm_cache.db (if descriptor cleaning used)
-└── deface_mask.db (if saveDefaceMasks.primary non-empty)
+└── deface_mask.db (if deface recipe active with PET/CT pairs, or saveDefaceMasks=true)
 ```
 
 **Directory Naming Convention:**

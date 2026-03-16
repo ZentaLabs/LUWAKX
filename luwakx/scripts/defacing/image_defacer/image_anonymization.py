@@ -21,6 +21,11 @@ def prepare_face_mask(image: SimpleITK.Image | None = None, modality: str | None
         image_face_segmentation = SimpleITK.ReadImage(face_segmentation_path, SimpleITK.sitkUInt8)
     elif image and modality:
         mask, _ = moose(image, f"clin_{modality.lower()}_face")
+        if not mask:
+            raise RuntimeError(
+                f"moose returned no segmentation for model 'clin_{modality.lower()}_face'. "
+                "The volume may not contain a face/head region."
+            )
         image_face_segmentation = mask[0]
     else:
         raise ValueError("Either the path or image and modality must be provided.")
@@ -91,7 +96,13 @@ def keep_largest_component(label_image: SimpleITK.Image) -> SimpleITK.Image:
     stats = SimpleITK.LabelShapeStatisticsImageFilter()
     stats.Execute(label_image_connected_components)
 
-    largest_label = max((label for label in stats.GetLabels()), key=lambda l: stats.GetPhysicalSize(l))
+    labels = stats.GetLabels()
+    if not labels:
+        raise RuntimeError(
+            "Face segmentation mask contains no foreground voxels. "
+            "The volume may not contain a face/head region."
+        )
+    largest_label = max(labels, key=lambda l: stats.GetPhysicalSize(l))
     largest_component_mask = SimpleITK.Equal(label_image_connected_components, largest_label)
     label_image_largest_component = SimpleITK.Cast(largest_component_mask, label_image.GetPixelID())
 

@@ -115,18 +115,18 @@ Ensure your `analyze_config.json` is configured with all the options you want to
   Config: [{"value": "LOCALIZER", "reason": "..."}, {"value": "Scout", "reason": "..."}]
   
   ✓ EXCLUDED (exact matches):
-    - "LOCALIZER"                    → matches "LOCALIZER" exactly
-    - "localizer"                    → matches "LOCALIZER" (case-insensitive)
-    - "  LOCALIZER  "                → matches "LOCALIZER" (whitespace stripped)
-    - "Scout"                        → matches "Scout" exactly
+    - "LOCALIZER"                    -> matches "LOCALIZER" exactly
+    - "localizer"                    -> matches "LOCALIZER" (case-insensitive)
+    - "  LOCALIZER  "                -> matches "LOCALIZER" (whitespace stripped)
+    - "Scout"                        -> matches "Scout" exactly
   
   ✗ NOT EXCLUDED (not exact matches):
-    - "3-Plane Localizer"            → no exact match
-    - "Scout View Axial"             → no exact match
-    - "CT Dose Report Series"        → no exact match
-    - "LOCALIZER_THORAX"             → no exact match
-    - "pre_localizer_scan"           → no exact match
-    - "LOCA"                         → no exact match
+    - "3-Plane Localizer"            -> no exact match
+    - "Scout View Axial"             -> no exact match
+    - "CT Dose Report Series"        -> no exact match
+    - "LOCALIZER_THORAX"             -> no exact match
+    - "pre_localizer_scan"           -> no exact match
+    - "LOCA"                         -> no exact match
   ```
 
 - **`excluded_image_types`**: List of dictionaries to match against the DICOM **ImageType** tag using **case-insensitive substring matching with AND logic within patterns and OR logic between patterns**.
@@ -155,15 +155,15 @@ Ensure your `analyze_config.json` is configured with all the options you want to
   ImageType in DICOM file:
   
   ✓ EXCLUDED (contains both DERIVED and MIP):
-    - ["DERIVED", "SECONDARY", "MIP", "AVERAGE"]    → both found
-    - ["ORIGINAL", "DERIVED", "MIP"]                → both found
-    - ["MIP", "DERIVED"]                            → both found (order doesn't matter)
-    - ["derived", "mip"]                            → both found (case-insensitive)
+    - ["DERIVED", "SECONDARY", "MIP", "AVERAGE"]    -> both found
+    - ["ORIGINAL", "DERIVED", "MIP"]                -> both found
+    - ["MIP", "DERIVED"]                            -> both found (order doesn't matter)
+    - ["derived", "mip"]                            -> both found (case-insensitive)
   
   ✗ NOT EXCLUDED (missing at least one):
-    - ["DERIVED", "PRIMARY", "AXIAL"]               → missing "MIP"
-    - ["ORIGINAL", "PRIMARY", "MIP"]                → missing "DERIVED"
-    - ["ORIGINAL", "PRIMARY", "AXIAL"]              → missing both
+    - ["DERIVED", "PRIMARY", "AXIAL"]               -> missing "MIP"
+    - ["ORIGINAL", "PRIMARY", "MIP"]                -> missing "DERIVED"
+    - ["ORIGINAL", "PRIMARY", "AXIAL"]              -> missing both
   ```
   
   Empty array `[]` means no exclusion by image type.
@@ -477,7 +477,7 @@ python analyze_graphics_structured_content.py analyze_config.json
 
 **What this script does:**
 - Recursively scans all DICOM files in `input_folder`
-- Groups files by Patient → Study → Series
+- Groups files by Patient -> Study -> Series
 - Detects reference images (with different orientations, excluding only single-file outliers)
 - Checks for DICOM tags specified in `tags_to_check` config (e.g., OverlayData, BurnedInAnnotation, ContentSequence, etc.)
 - Excludes series based on:
@@ -588,7 +588,7 @@ python plot_pixel_data.py analyze_config.json
 
 **What this script does:**
 - Scans remaining DICOM files in `input_folder`
-- Groups files by Patient → Study → Series
+- Groups files by Patient -> Study -> Series
 - **Dimension-based splitting**: If a series contains files with different image dimensions (Rows × Columns), it is split into separate sub-series, each with consistent dimensions. Each dimension group gets its own projection plots. This handles cases where a series incorrectly contains images of different sizes.
 - For each series (or dimension group within a series), computes projection images:
   - **MIP** (Maximum Intensity Projection) - shows brightest pixels
@@ -597,7 +597,7 @@ python plot_pixel_data.py analyze_config.json
   - **First/Mean** - for SC/OT modalities
 - Detects overlay data and checks for tags specified in `tags_to_check` config
 - **Conditional folder creation**: Creates separate folders for CurveData/OverlayData only if those specific tags are present in `tags_to_check` config. All other tags (like ContentSequence, etc.) are grouped together in a RegularData folder.
-- Organizes plots by: SOP Class UID → Photometric Interpretation → Tag Type (OverlayData, CurveData, or RegularData)
+- Organizes plots by: SOP Class UID -> Photometric Interpretation -> Tag Type (OverlayData, CurveData, or RegularData)
 - Creates `metadata.json` in each folder with series information (including series_number) and file paths
 
 **Outputs:**

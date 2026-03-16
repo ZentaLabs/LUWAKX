@@ -33,8 +33,8 @@ It can either generate a new face mask automatically or use an existing mask tha
 
 ## Output Files
 
-- **Defaced image** → `<input_name>_defaced.nii.gz`
-- **Face mask (optional)** → `<input_name>_face_mask.nii.gz` (if `--save_face_mask` is set and no mask was provided)
+- **Defaced image** -> `<input_name>_defaced.nii.gz`
+- **Face mask (optional)** -> `<input_name>_face_mask.nii.gz` (if `--save_face_mask` is set and no mask was provided)
 
 ---
 
