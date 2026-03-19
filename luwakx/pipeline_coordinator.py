@@ -6,6 +6,7 @@ by distributing series across multiple workers.
 """
 
 import os
+from collections import defaultdict
 from typing import Any, Dict, List
 from processing_pipeline import ProcessingPipeline
 from dicom_series import DicomSeries
@@ -116,6 +117,14 @@ class PipelineCoordinator:
         #   - a deface group: one elected primary CT followed by its paired PETs
         #   - a single independent series
         # Within each chunk the order from elect_and_sort is preserved.
+
+        # Pre-build lookup: CT series UID -> list of dependent PET series
+        ct_to_pets: dict = defaultdict(list)
+        for series in self.all_series:
+            ct = getattr(series, 'primary_ct_series', None)
+            if ct is not None:
+                ct_to_pets[ct.original_series_uid].append(series)
+
         assigned: set = set()       # series UIDs already placed in a chunk
         chunks: list = []           # each entry: (file_count, [series, ...])
 
@@ -125,14 +134,12 @@ class PipelineCoordinator:
                 continue
 
             if getattr(series, 'is_primary_deface_candidate', False):
-                # Collect this CT and every PET that points to it.
+                # Collect this CT and its dependent PETs.
                 group = [series]
                 assigned.add(uid)
-                for other in self.all_series:
-                    if (getattr(other, 'primary_ct_series', None) is not None
-                            and other.primary_ct_series.original_series_uid == uid):
-                        group.append(other)
-                        assigned.add(other.original_series_uid)
+                for pet in ct_to_pets.get(uid, []):
+                    group.append(pet)
+                    assigned.add(pet.original_series_uid)
                 total_files = sum(s.get_file_count() for s in group)
                 chunks.append((total_files, group))
             else:
