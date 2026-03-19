@@ -518,7 +518,7 @@ class TestAnonymizeScript(unittest.TestCase):
 
             # The value parameter should be the recipe string, not the original value
             fixed_da = processor.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_da_field, original_ds)
-            self.assertEqual(fixed_da, "00010101", f"DA fixed should be '00010101', got '{fixed_da}'")
+            self.assertEqual(fixed_da, "19000101", f"DA fixed should be '19000101', got '{fixed_da}'")
             self.logger.info(f"✓ DA (Date) VR: {mock_da_field.element.value} -> {fixed_da}")
             
             # Test DT (DateTime) VR
@@ -531,7 +531,7 @@ class TestAnonymizeScript(unittest.TestCase):
             })()
             
             fixed_dt = processor.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_dt_field, original_ds)
-            expected_dt = "00010101010101.000000+0000"
+            expected_dt = "19000101000000.000000+0000"
             self.assertEqual(fixed_dt, expected_dt, f"DT fixed should be '{expected_dt}', got '{fixed_dt}'")
             self.logger.info(f"✓ DT (DateTime) VR: {mock_dt_field.element.value} -> {fixed_dt}")
             
@@ -583,7 +583,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 
                 self.assertIsNotNone(output_file, f"Anonymized file {file} not found in output directory")
                 anonymized_ds = pydicom.dcmread(output_file)
-                self.assertEqual(anonymized_ds['00080020'].value, "00010101", f"DA fixed should be '00010101', got '{anonymized_ds['00080020'].value}' (file: {file})")
+                self.assertEqual(anonymized_ds['00080020'].value, "19000101", f"DA fixed should be '19000101', got '{anonymized_ds['00080020'].value}' (file: {file})")
                 self.logger.info(f"✓ StudyDate (DA): {anonymized_ds['00080020'].value} (file: {file})")
                 self.assertEqual(anonymized_ds['00080030'].value, "000000.00", f"TM fixed should be '000000.00', got '{anonymized_ds['00080030'].value}' (file: {file})")
                 self.logger.info(f"✓ StudyTime (TM): {anonymized_ds['00080030'].value} (file: {file})")

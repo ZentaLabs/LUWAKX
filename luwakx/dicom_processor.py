@@ -770,8 +770,8 @@ class DicomProcessor:
             str: fixed date/time value based on VR type
             
         VR-specific Output:
-            - DA (Date): Returns "00010101" (January 1, year 1)
-            - DT (DateTime): Returns "00010101010101.000000+0000"
+            - DA (Date): Returns "19000101" (January 1, year 1900)
+            - DT (DateTime): Returns "19000101000000.000000+0000"
             - TM (Time): Returns "000000.00"
             
         See conformance documentation:
@@ -784,24 +784,24 @@ class DicomProcessor:
             keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
             
             if vr == 'DA':  # Date format: YYYYMMDD
-                self.logger.debug(f"Setting fixed date for tag {tag_str} ({keyword_str}) to '00010101'.")
+                self.logger.debug(f"Setting fixed date for tag {tag_str} ({keyword_str}) to '19000101'.")
                 if hasattr(field, 'element') and hasattr(field.element, 'value'):
                     self.logger.private(
                         f"Setting fixed date for tag {tag_str} ({keyword_str}) "
-                        f"with value {field.element.value} to '00010101'."
+                        f"with value {field.element.value} to '19000101'."
                     )
-                return "00010101"
+                return "19000101"
             elif vr == 'DT':  # DateTime format: YYYYMMDDHHMMSS.FFFFFF&ZZXX
                 self.logger.debug(
                     f"Setting fixed datetime for tag {tag_str} ({keyword_str}) "
-                    f"to '00010101010101.000000+0000'."
+                    f"to '19000101000000.000000+0000'."
                 )
                 if hasattr(field, 'element') and hasattr(field.element, 'value'):
                     self.logger.private(
                         f"Setting fixed datetime for tag {tag_str} ({keyword_str}) "
-                        f"with value {field.element.value} to '00010101010101.000000+0000'."
+                        f"with value {field.element.value} to '19000101000000.000000+0000'."
                     )
-                return "00010101010101.000000+0000"
+                return "19000101000000.000000+0000"
             elif vr == 'TM':  # Time format: HHMMSS.FFFFFF
                 self.logger.debug(f"Setting fixed time for tag {tag_str} ({keyword_str}) to '000000.00'.")
                 if hasattr(field, 'element') and hasattr(field.element, 'value'):

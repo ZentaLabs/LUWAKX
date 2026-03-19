@@ -338,6 +338,10 @@ class DefaceService:
                 # Apply inverse scaling to get back to raw stored values
                 raw_pixels = ((slice_2d - rescale_intercept) / rescale_slope).round().astype(ds.pixel_array.dtype)
                 ds.PixelData = raw_pixels.tobytes()
+                # DICOM PS3.5 §8.2: PixelData VR must be OW when BitsAllocated > 8.
+                # pydicom may default to OB; correct it explicitly for 16-bit images.
+                if getattr(ds, 'BitsAllocated', 8) > 8:
+                    ds[0x7FE00010].VR = 'OW'
 
                 # If the original file used a compressed transfer syntax, the raw
                 # pixel bytes we just assigned are NOT encapsulated, so pydicom would

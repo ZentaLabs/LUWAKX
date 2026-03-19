@@ -812,13 +812,13 @@ When the `bypassCleanDescriptorsLlm` configuration option is set to `true`, the 
 
 #### 5.3.8 Fixed DateTime `func:set_fixed_datetime`
 
-**Purpose:** Set date/time tags to fixed epoch values. Used to remove temporal information while maintaining DICOM compliance. These replacement values are the same as the ones used in KitwareMedical/dicomanonymizer.
+**Purpose:** Set date/time tags to fixed epoch values. Used to remove temporal information while maintaining DICOM compliance.
 **Example:** Dates in `basic_profile`.
 
 **Method:**
 - Replaces date/time values based on the tag's Value Representation (VR):
-  - DA (Date): Returns "00010101" (January 1, year 1)
-  - DT (DateTime): Returns "00010101010101.000000+0000" (January 1, year 1, 01:01:01 AM UTC)
+  - DA (Date): Returns "19000101" (January 1, year 1900)
+  - DT (DateTime): Returns "19000101000000.000000+0000" (January 1, year 1900, 00:00:00 UTC)
   - TM (Time): Returns "000000.00" (00:00:00)
 - Check: For unknown VR types, returns the original value with a warning
 
