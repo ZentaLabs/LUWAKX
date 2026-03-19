@@ -484,34 +484,47 @@ class DicomProcessor:
         if hasattr(field, 'element') and hasattr(field.element, 'VR'):
             field_vr = str(field.element.VR)
         
-        if field_vr != 'UI':
+        if field_vr not in ('UI', 'LO'):
             tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
             keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
-            _orig = str(field.element.value)
+            # Avoid serialising raw binary data into the review CSV for blob VR types
+            _is_binary_vr = field_vr in ('OB', 'OW', 'UN')
+            _orig = f'<binary {field_vr} data>' if _is_binary_vr else str(getattr(field.element, 'value', ''))
             _fp = self._flag_params(field, dicom)
-            if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
-                                      ReviewFlagCollector.REASON_VR_MISMATCH,
-                                      f"replaceuid_{tag_str}_{keyword_str}"):
-                series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
-                self.logger.warning(
-                    f"Tag {tag_str} ({keyword_str}) has VR={field_vr}, which cannot have UID replacement applied. "
-                    f"UID replacement only applies to VR type UI. Please verify this tag manually. "
-                    f"Series: {series_info}"
+
+            # Tag has a VR incompatible with UID replacement: attempt removal.
+            try:
+                del dicom[field.element.tag]
+                self.logger.debug(
+                    f"Removed tag {tag_str} ({keyword_str}) with VR={field_vr}: "
+                    f"VR is incompatible with UID replacement."
                 )
-            # Record in review CSV (called every time, not gated by dedup, to track all instances)
-            if self.review_collector:
-                try:
-                    self.review_collector.add_flag(
-                        reason         = ReviewFlagCollector.REASON_VR_MISMATCH,
-                        original_value = _orig,
-                        keep           = 1,
-                        output_value   = _orig,
-                        **_fp,
+                return None
+            except Exception as remove_err:
+                # Removal failed (e.g. tag is nested inside a sequence).
+                # Warn once per tag/series and record every instance in the review CSV.
+                if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                          ReviewFlagCollector.REASON_VR_MISMATCH,
+                                          f"replaceuid_{tag_str}_{keyword_str}"):
+                    series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+                    self.logger.warning(
+                        f"Tag {tag_str} ({keyword_str}) has VR={field_vr}, which is incompatible with UID "
+                        f"replacement, and could not be removed (tag may be nested inside a sequence). "
+                        f"Please verify this tag manually. Error: {remove_err}. Series: {series_info}"
                     )
-                except Exception:
-                    pass
-            # Return original value for non-UI VR types
-            return _orig
+                if self.review_collector:
+                    try:
+                        self.review_collector.add_flag(
+                            reason         = ReviewFlagCollector.REASON_VR_MISMATCH,
+                            original_value = _orig,
+                            keep           = 1,
+                            output_value   = _orig,
+                            **_fp,
+                        )
+                    except Exception:
+                        pass
+                # Return the actual element value (not the placeholder) so deid writes it back unchanged
+                return field.element.value
         
         project_hash_root = self.config.get('projectHashRoot', '')
         
@@ -529,13 +542,39 @@ class DicomProcessor:
             log_project_stacktrace(self.logger, e)
             original_uid = "unknown"
 
+        # The value can be empty (tag present but no value set).
+        # Do not generate a UID from empty entropy — leave the tag unchanged.
+        if not original_uid:
+            return field.element.value
+
         # Extract file path from the dicom dataset filename attribute
         file_path = f"{getattr(dicom, 'filename', str(dicom))}"
         if file_path not in self.current_file_mappings:
             self.current_file_mappings[file_path] = {}
 
-        # Get field keyword from the element
-        field_keyword = getattr(field.element, 'keyword', field.element.tag)
+        # Get field keyword from the element.
+        # For private tags use the same naming convention as the parquet exporter so
+        # that UID mapping CSV columns are human-readable and collision-free:
+        #   <private_creator>_<tag_name>         e.g. Siemens_CSA_Image_Header_Info
+        #   <private_creator>_<ggggxx>ee          e.g. PHILIPS_MR_IMAGING_0019xx10
+        # Public tags use the standard pydicom keyword; fall back to str(tag) for
+        # orphaned private tags that have no private creator block.
+        _elem = field.element
+        if _elem.is_private and _elem.private_creator:
+            _private_creator = _elem.private_creator.replace(' ', '_')
+            if _elem.name and _elem.name != 'Unknown':
+                # pydicom wraps private names in square brackets, e.g. '[CSA Header]'
+                field_keyword = f'{_private_creator}_{_elem.name[1:-1]}'
+            else:
+                field_keyword = (
+                    f'{_private_creator}_'
+                    f'{_elem.tag.group:04X}xx{_elem.tag.element & 0xFF:02X}'
+                )
+        elif _elem.keyword:
+            field_keyword = _elem.keyword
+        else:
+            # Orphaned private tag (no private_creator block) or unrecognised public tag
+            field_keyword = str(_elem.tag)
 
         # Check if mapping already exists for this file, field, and original UID
         mapping = self.current_file_mappings[file_path].get(field_keyword)

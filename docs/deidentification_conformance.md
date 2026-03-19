@@ -635,6 +635,8 @@ Replace the tag value with a generic text or computed value, such as a dummy str
 **Purpose:** Generate cryptographically secure, deterministic anonymized UIDs.
 **Example:** Study/Series/SOP Instance UIDs.
 
+**Supported VR types:** The function applies UID replacement to tags with VR `UI` (Unique Identifier) and also to VR `LO` (Long String), since some private tags store UID-like values as `LO`. Tags with any other VR are subject to the VR-mismatch handling described below.
+
 **Method:**
 - For each patient, a cryptographically secure random token is created using Python's `secrets` module.
 - The token is 32 bytes (256 bits) generated from the OS CSPRNG, encoded as a hexadecimal string.
@@ -670,7 +672,7 @@ REPLACE (0020,000d) func:generate_hmacuid
 **Current limitations**
 - This method is designed to provide cryptographic security sufficient to withstand technological advances projected for the next 50 years; however, progress in cryptanalysis or computing could occur faster than anticipated. Users should therefore remain vigilant and periodically review and update the method to ensure it continues to meet current safety standards.
 - If the database containing the random keys is saved and reused, it must be stored in an extremely secure environment, as it becomes the single point of vulnerability for the entire deidentification process.
-- 
+- **VR incompatibility handling:** When `func:generate_hmacuid` is applied to a tag whose VR is neither `UI` nor `LO`, Luwak first attempts to delete the tag entirely. If deletion succeeds the tag is silently removed from the output file. If deletion fails (e.g., the tag is nested inside a sequence and pydicom cannot remove it directly), a warning is logged once per tag per series, a `VR_MISMATCH_OPERATION` review flag is emitted, and the original value is written back unchanged. For binary VR types (`OB`, `OW`, `UN`) the review CSV records `<binary VR_TYPE data>` instead of serialising raw bytes.
 
 #### 5.3.5 Date Shifting `fun:generate_hmacdate_shift`
 
@@ -1055,7 +1057,9 @@ Here are the available actions for this option:
 - Private UIDs and dates are anonymized using the same cryptographic methods as standard tags
 
 **Notes**
-- Private tags can have several VR for the same tag, hence it is possible that the action of `func:generate_hmacuid` and `func:generate_hmacdate_shift` could be prescribed to VRs which are not `UI` or `DA`/`DT`. This is handled by the deidentification process directly, by issuing a warning (see [§6.4.1](#641-translation-logic-by-action)).
+- Private tags can have several VR for the same tag, hence it is possible that the action of `func:generate_hmacuid` and `func:generate_hmacdate_shift` could be prescribed to VRs which are not `UI`/`LO` or `DA`/`DT` respectively. This is handled by the deidentification process directly:
+  - For `func:generate_hmacuid`: tags with VRs other than `UI` or `LO` are first attempted for deletion; if deletion succeeds the tag is silently removed; if deletion fails (tag is nested inside a sequence) a warning is logged once per tag/series and a `VR_MISMATCH_OPERATION` review flag is emitted (see [§6.4.1](#641-translation-logic-by-action) and [§8.1](#81-output-files-generated-by-luwak)).
+  - For `func:generate_hmacdate_shift`: a single warning per series is issued for VRs that are not `DA` or `DT` (see [§6.4.1](#641-translation-logic-by-action)).
 - TCIA provides a list of safe private tags specifying the VR, which can have multiple values, for each safe tag. No check is implemented in luwak to ascertain that the private tags listed as safe in the private_tags_template have a VR included in those listed by TCIA for that specific tag.
 
 **Reference:** 
@@ -1301,7 +1305,9 @@ If `retain_safe_private_tags` selected: Processes private_tags_template.csv and 
   - Conditional: Only applied if `retain_long_modified_dates` is also selected in the recipe list
   - If `retain_long_modified_dates` is not selected, these tags are not kept
   - Example: `JITTER (0009,"GEMS_IDEN_01",27) func:generate_hmacdate_shift`
-- Note: Private tags may have different VRs for a single tag. The custom methods, `generate_hmacuid` and `generate_hmacdate_shift`, will issue a single warning per series if the date shift is attempted to VRs that are not `DA` or `DT`, and UID generation on VRs that are not `UI`. Please check the logs and verify the correct functioning for those tags.
+- Note: Private tags may have different VRs for a single tag.
+  - For `func:generate_hmacuid`: tags with VRs that are neither `UI` nor `LO` are first attempted for deletion. If deletion succeeds the tag is silently removed; if deletion fails (tag may be nested inside a sequence), a warning is logged once per tag per series and a `VR_MISMATCH_OPERATION` review flag is emitted. Check the logs and `review_flags.csv` for such occurrences.
+  - For `func:generate_hmacdate_shift`: a single warning per series is issued if date shifting is attempted on VRs that are not `DA` or `DT`. Check the logs and verify the correct functioning for those tags.
 
 *Private Tag Notation:*
 - Private tags use the format: `(group,"private_creator",element)`
@@ -1517,6 +1523,9 @@ Luwak produces several output files during the deidentification pipeline, each s
   - Location: Private mapping folder
   - Content: Table mapping original UIDs (e.g., StudyInstanceUID, SeriesInstanceUID, SOPInstanceUID) to anonymized UIDs for each file, including patient identifiers
   - Generation: Incrementally appended after each series is processed, using the `MetadataExporter.append_series_uid_mappings()` method
+  - Column Naming for UID fields:
+    - **Standard tags**: Use the official DICOM keyword (e.g., `StudyInstanceUID`, `SeriesInstanceUID`)
+    - **Private tags**: Constructed using the same convention as the `metadata.parquet` export — `{PrivateCreator}_{TagName}` if the tag name is known (e.g., `Siemens_CSA_Image_Header_Info`), or `{PrivateCreator}_{GGGG}xx{EE}` if the name is unknown (e.g., `PHILIPS_MR_IMAGING_0019xx10`). Spaces in the private creator string are replaced with underscores. Tags with no private creator block fall back to `str(tag)`.
 
 **3. DICOM Metadata Parquet (`metadata.parquet`)**
   - Location: Private mapping folder
@@ -1574,7 +1583,7 @@ Luwak produces several output files during the deidentification pipeline, each s
 
     | Reason Code | Description |
     |-------------|-------------|
-    | `VR_MISMATCH_OPERATION` | A recipe instruction (e.g. `func:generate_hmacuid`) was applied to a tag with an incompatible VR; the original value was preserved. |
+    | `VR_MISMATCH_OPERATION` | A recipe instruction (e.g. `func:generate_hmacuid`) was applied to a tag with an incompatible VR. For `func:generate_hmacuid`, Luwak first attempts to delete the tag; this flag is only emitted when deletion fails (e.g., the tag is nested inside a sequence) and the original value is preserved instead. |
     | `LLM_VERIFIED_CLEAN` | The LLM found no PHI; the original value was kept. Manual verification is still recommended. |
     | `VR_FORMAT_INVALID` | pydicom/deid detected that a stored value does not conform to its declared VR format; the value may or may not have been modified. |
     | `SQ_REPLACE_NEEDS_REVIEW` | A sequence tag (VR=SQ) was kept unchanged because no automated replacement logic is available; manual review is required. |
