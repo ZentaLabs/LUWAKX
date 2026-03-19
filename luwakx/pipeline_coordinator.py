@@ -95,44 +95,73 @@ class PipelineCoordinator:
     
     def _partition_series(self, num_partitions: int) -> List[List[DicomSeries]]:
         """Partition series into balanced groups by file count.
-        
+
         Uses a greedy algorithm to distribute series across partitions,
         minimizing workload imbalance by assigning each series to the
         partition with the smallest current total file count.
-        
+
+        Paired deface groups (a primary CT and its dependent PET series) are
+        kept together in the same partition and their internal order is
+        preserved so that the CT mask is always computed before any PET
+        attempts to read it.
+
         Args:
             num_partitions: Number of partitions to create
-            
+
         Returns:
             List of series lists, one per partition
         """
-        # Sort series by file count (descending) for better load balancing
-        sorted_series = sorted(
-            self.all_series,
-            key=lambda s: s.get_file_count(),
-            reverse=True
-        )
-        
+        # Build atomic scheduling units ("chunks") that must stay together.
+        # A chunk is either:
+        #   - a deface group: one elected primary CT followed by its paired PETs
+        #   - a single independent series
+        # Within each chunk the order from elect_and_sort is preserved.
+        assigned: set = set()       # series UIDs already placed in a chunk
+        chunks: list = []           # each entry: (file_count, [series, ...])
+
+        for series in self.all_series:
+            uid = series.original_series_uid
+            if uid in assigned:
+                continue
+
+            if getattr(series, 'is_primary_deface_candidate', False):
+                # Collect this CT and every PET that points to it.
+                group = [series]
+                assigned.add(uid)
+                for other in self.all_series:
+                    if (getattr(other, 'primary_ct_series', None) is not None
+                            and other.primary_ct_series.original_series_uid == uid):
+                        group.append(other)
+                        assigned.add(other.original_series_uid)
+                total_files = sum(s.get_file_count() for s in group)
+                chunks.append((total_files, group))
+            else:
+                assigned.add(uid)
+                chunks.append((series.get_file_count(), [series]))
+
+        # Sort chunks by total file count (descending) for better load balancing
+        chunks.sort(key=lambda c: c[0], reverse=True)
+
         # Initialize partitions and their sizes
         partitions: List[List[DicomSeries]] = [[] for _ in range(num_partitions)]
         partition_sizes = [0] * num_partitions
-        
-        # Greedy assignment: assign each series to least-loaded partition
-        for series in sorted_series:
+
+        # Greedy assignment: assign each chunk to least-loaded partition
+        for chunk_size, chunk_series in chunks:
             # Find partition with smallest total file count
             min_idx = partition_sizes.index(min(partition_sizes))
-            
-            # Assign series to this partition
-            partitions[min_idx].append(series)
-            partition_sizes[min_idx] += series.get_file_count()
-        
+
+            # Assign entire chunk to this partition (order preserved)
+            partitions[min_idx].extend(chunk_series)
+            partition_sizes[min_idx] += chunk_size
+
         # Log partition statistics
         for i, (partition, size) in enumerate(zip(partitions, partition_sizes)):
             if partition:
                 self.logger.debug(
                     f"Partition {i}: {len(partition)} series, {size} files"
                 )
-        
+
         return partitions
     
     def run_all_pipelines_sequential(self) -> None:
