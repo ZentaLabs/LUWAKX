@@ -8,6 +8,7 @@ cleaning, and private tag handling.
 
 import os
 import gc
+import re
 import hashlib
 import hmac
 import traceback
@@ -61,6 +62,12 @@ class DicomProcessor:
         
         # Isolated state per worker (NOT shared)
         self.current_file_mappings: Dict[str, Any] = {}  # UID mappings
+
+        # Private creator strings that have at least one KEEP rule in the active recipe.
+        # Consulted by is_tag_private() to preserve creator block elements (e.g. (0071,0010))
+        # whose corresponding data-elements are kept by the recipe.
+        # Populated at the start of process_series() via _build_kept_private_creators().
+        self._kept_private_creators: set = set()
 
         # Fallback dedup set for logger warnings when review_collector is None.
         # When review_collector is available, _first_occurrence() uses
@@ -147,7 +154,13 @@ class DicomProcessor:
         # 5. Perform anonymization using deid library
         # Note: Output directory is already created in organize stage
         self.logger.info(f"Anonymizing {len(dicom_files)} files to {self.series.output_base_path}")
-        
+
+        try:
+            self._kept_private_creators = DicomProcessor._build_kept_private_creators(recipe)
+        except Exception as _e:
+            self.logger.warning(f"Could not build kept private creators set: {_e}")
+            self._kept_private_creators = set()
+
         try:
             # Initialise tqdm bar and reset per-series counters
             if progress_handler:
@@ -1032,6 +1045,23 @@ class DicomProcessor:
                     pass
             return original_value
     
+    @staticmethod
+    def _build_kept_private_creators(recipe) -> set:
+        """Return the set of private creator strings that have at least one KEEP rule.
+
+        Scans all KEEP actions in the recipe and extracts quoted creator names from
+        private-tag expressions such as ``KEEP (0071,"Siemens MR Header",22)``.
+        Called once per recipe object; result is cached on the DicomProcessor instance.
+        """
+        creators: set = set()
+        if recipe and recipe.deid:
+            for action in recipe.get_actions(action="KEEP"):
+                field_expr = action.get("field", "") or ""
+                m = re.search(r'"([^"]+)"', field_expr)
+                if m:
+                    creators.add(m.group(1).strip())
+        return creators
+
     def is_tag_private(self, dicom, value, field, item):
         """Check if a DICOM tag is private.
         
@@ -1042,14 +1072,31 @@ class DicomProcessor:
             item: Item identifier from deid processing
             
         Returns:
-            bool: True if the tag is private (has private creator), False otherwise
+            bool: True if the tag is private, False otherwise
             
         See conformance documentation:
         - Private Tags Template: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#52-private-tags-template
         - Private Tag Removal ("Private Tag Removal" paragraph): https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
         """
-        # Log private tag details at PRIVATE level if it exists
-        if field.element.is_private and (field.element.private_creator is not None):
+        # Match any private tag regardless of whether a private creator block is present.
+        # Orphaned private tags (private_creator is None) must also be removed.
+        #
+        # Special case — private creator BLOCK elements (tag format (gggg, 00CC) where
+        # 0x10 <= CC <= 0xFF): these hold the creator identification string that makes
+        # the corresponding data elements (gggg, CCxx) interpretable.  They must be kept
+        # when at least one of their data elements is preserved by a KEEP rule; otherwise
+        # the kept data elements become unreadable (dangling, no creator declaration).
+        if field.element.is_private:
+            elem_num = field.element.tag.element
+            is_creator_block = (elem_num & 0xFF00) == 0x0000 and (elem_num & 0x00FF) >= 0x10
+            if is_creator_block:
+                creator_value = field.element.value
+                if isinstance(creator_value, bytes):
+                    creator_value = creator_value.decode("utf-8", errors="ignore").strip("\x00")
+                creator_value = creator_value.strip() if creator_value else ""
+                if creator_value and creator_value in self._kept_private_creators:
+                    # This creator has kept data elements — preserve the creator block.
+                    return False
             if hasattr(field.element, 'value'):
                 self.logger.private(f"Removed private tag {field.element.tag} with value: {field.element.value}")
             return True
