@@ -675,38 +675,75 @@ class DicomProcessor:
         See conformance documentation:
         https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#535-date-shifting-funcgenerate_hmacdate_shift
         """
-        # Check VR type - only apply date shift to DA (Date) and DT (DateTime)
-        field_vr = None
-        if hasattr(field, 'element') and hasattr(field.element, 'VR'):
-            field_vr = str(field.element.VR)
+        field_vr = str(field.element.VR) if hasattr(field, 'element') and hasattr(field.element, 'VR') else None
         
-        if field_vr not in ['DA', 'DT']:
-            tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
-            keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
-            _orig = str(getattr(field.element, 'value', ''))
-            _fp = self._flag_params(field, dicom)
+        import re as _re
+        tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
+        keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
+        _raw_val = getattr(field.element, 'value', '') if hasattr(field, 'element') else ''
+        # For VR=UN pydicom stores bytes; decode to ASCII for pattern matching.
+        if isinstance(_raw_val, (bytes, bytearray)):
+            try:
+                _orig = _raw_val.decode('ascii').strip('\x00').strip()
+            except (UnicodeDecodeError, AttributeError):
+                _orig = ''
+        else:
+            _orig = str(_raw_val)
+        _fp = self._flag_params(field, dicom)
+
+        # Remove the tag if the value does not match a DICOM DA/DT format.
+        # This covers both wrong-VR tags and DA/DT tags whose stored value is not
+        # actually a valid date/datetime (e.g. UN resolved to DT by private dictionary).
+        _da_pattern = r"^\d{8}$"                                           # YYYYMMDD
+        _dt_pattern = r"^\d{8}(\d{6}(\.\d{1,6})?)?([\+\-]\d{4})?$"       # YYYYMMDD[HHMMSS[.F]][±ZZZZ]
+        if not (_re.match(_da_pattern, _orig) or _re.match(_dt_pattern, _orig)):
+            series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
             if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
-                                      ReviewFlagCollector.REASON_VR_MISMATCH,
-                                      f"dateshift_{tag_str}_{keyword_str}"):
-                series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+                                      ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
+                                      f"dateshift_badvalue_{tag_str}_{keyword_str}"):
                 self.logger.warning(
-                    f"Tag {tag_str} ({keyword_str}) has VR={field_vr}, which cannot be jittered. "
-                    f"Date shift only applies to VR types DA and DT. Please verify this tag manually. "
+                    f"Tag {tag_str} ({keyword_str}) (VR={field_vr}) value {_orig!r} "
+                    f"does not match DICOM DA/DT format. Tag will be removed. "
                     f"Series: {series_info}"
                 )
-            # Record in review CSV (every instance, not gated by dedup)
-            if self.review_collector:
-                try:
-                    self.review_collector.add_flag(
-                        reason         = ReviewFlagCollector.REASON_VR_MISMATCH,
-                        original_value = _orig,
-                        keep           = 1,
-                        output_value   = _orig,
-                        **_fp,
+            try:
+                del dicom[field.element.tag]
+                if self.review_collector:
+                    try:
+                        self.review_collector.add_flag(
+                            reason         = ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
+                            original_value = _orig,
+                            keep           = 0,
+                            output_value   = '',
+                            **_fp,
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                          ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                                          f"dateshift_badvalue_remove_{tag_str}_{keyword_str}"):
+                    self.logger.warning(
+                        f"Tag {tag_str} ({keyword_str}) could not be removed. "
+                        f"Original value kept for manual review. Series: {series_info}"
                     )
-                except Exception:
-                    pass
-            return 0  # Return 0 (no shift) for non-date VR types
+                if self.review_collector:
+                    try:
+                        self.review_collector.add_flag(
+                            reason         = ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                            original_value = _orig,
+                            keep           = 1,
+                            output_value   = _orig,
+                            **_fp,
+                        )
+                    except Exception:
+                        pass
+            # Return None — NOT 0.  Deid's parser checks `if value is not None`
+            # before calling jitter_timestamp; returning 0 passes that check and
+            # jitter_timestamp still writes the value back via replace_field.
+            # Returning None makes deid skip the jitter entirely, so the deletion
+            # above sticks.
+            return None
         
         project_hash_root = self.config.get('projectHashRoot', '')
         

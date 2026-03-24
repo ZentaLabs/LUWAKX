@@ -347,6 +347,13 @@ class DefaceService:
                     ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
                     ds.is_implicit_VR = False
                     ds.is_little_endian = True
+                    # OB is the correct VR for encapsulated/compressed pixel data, but
+                    # once we decompress and switch to Explicit VR Little Endian the DICOM
+                    # standard (PS3.5 §8.2) requires OW when BitsAllocated > 8.  pydicom
+                    # does not update the DataElement VR automatically, so we do it here.
+                    pixel_data_tag = pydicom.tag.Tag(0x7FE0, 0x0010)
+                    if pixel_data_tag in ds and getattr(ds, 'BitsAllocated', 0) > 8:
+                        ds[pixel_data_tag].VR = 'OW'
 
                 # Save defaced DICOM file
                 defaced_file_path = os.path.join(series_temp_dir, os.path.basename(original_file_path))
