@@ -232,23 +232,23 @@ def _parse_dciodvfy_line(line: str):
 
     Three output formats are handled:
 
-      Format 1 — tag path first (``-new`` flag or similar):
+      Format 1 - tag path first (``-new`` flag or similar):
         ``Error - </PixelData(7fe0,0010)> - Invalid Value Representation - ...``
 
-      Format 2 — description first, attribute name second (common default):
+      Format 2 - description first, attribute name second (common default):
         ``Error - Invalid Value Representation - Pixel Data - VR = OB ...``
 
-      Format 3 — DICOM tag first, then severity (seen on the installed version):
+      Format 3 - DICOM tag first, then severity (seen on the installed version):
         ``(0x0010,0x0010) PN Patient's Name  - Warning - Value dubious ...``
         ``(0x0019,0x10b1) LO ?  - Warning - Explicit VR doesn't match dict ...``
 
     Returns ``(severity, affected_tag, full_line)`` where:
       - severity    : ``"Error"`` or ``"Warning"``
-      - affected_tag: the DICOM attribute/tag affected — used as the stable
+      - affected_tag: the DICOM attribute/tag affected - used as the stable
                       comparison key between original and anonymized series.
-                      • Format 1 → tag-path segment, e.g. ``</PixelData(7fe0,0010)>``
-                      • Format 2 → attribute-name segment, e.g. ``Pixel Data``
-                      • Format 3 → tag-identity prefix, e.g. ``(0x0010,0x0010) PN Patient's Name``
+                      • Format 1 -> tag-path segment, e.g. ``</PixelData(7fe0,0010)>``
+                      • Format 2 -> attribute-name segment, e.g. ``Pixel Data``
+                      • Format 3 -> tag-identity prefix, e.g. ``(0x0010,0x0010) PN Patient's Name``
       - full_line   : the complete original line, stored verbatim in the CSV.
 
     Returns ``None`` for informational lines (e.g. IOD name ``CTImage``).
@@ -274,9 +274,9 @@ def _parse_dciodvfy_line(line: str):
             rest = line[len(keyword):].lstrip(" -")
             parts = [p.strip() for p in rest.split(" - ")]
             # Format 1: first segment is a tag path starting with "</"
-            #   e.g. "</PixelData(7fe0,0010)>" → use as affected_tag directly.
+            #   e.g. "</PixelData(7fe0,0010)>" -> use as affected_tag directly.
             # Format 2: first segment is the error description, second is the
-            #   attribute name → use second segment so both original and
+            #   attribute name -> use second segment so both original and
             #   anonymized produce the same comparison key for the same attribute.
             if parts and parts[0].startswith("</"):
                 affected_tag = parts[0]          # Format 1
@@ -377,8 +377,8 @@ def write_summary_log(log_path: str, unique_issues: dict) -> None:
     """
     Overwrite the summary log with the current set of unique new issues.
 
-    The log contains only error/warning information — no patient or series
-    identifiers — organised into ERRORS and WARNINGS sections.
+    The log contains only error/warning information - no patient or series
+    identifiers - organised into ERRORS and WARNINGS sections.
     Each entry shows:
       - The affected DICOM attribute / tag
       - One example message from the anonymized series
@@ -398,7 +398,7 @@ def write_summary_log(log_path: str, unique_issues: dict) -> None:
                 fh.write(f"  Example (anonymized) : {info['message']}\n")
                 if info['orig_empty']:
                     fh.write(
-                        "  Original series      : NO ORIGINAL FILES RESOLVED — "
+                        "  Original series      : NO ORIGINAL FILES RESOLVED - "
                         "all findings reported as new; check that --original_folder "
                         "(or --anonymized_folder as fallback) points to the correct root\n"
                     )
@@ -412,7 +412,7 @@ def write_summary_log(log_path: str, unique_issues: dict) -> None:
             fh.write(f"{label}: none\n\n")
 
     with open(log_path, "w", encoding="utf-8") as fh:
-        fh.write("dciodvfy Validation — Unique New Errors and Warnings\n")
+        fh.write("dciodvfy Validation - Unique New Errors and Warnings\n")
         fh.write("=" * 60 + "\n\n")
         _write_section(fh, "ERRORS",   errors)
         _write_section(fh, "WARNINGS", warnings)
@@ -453,7 +453,7 @@ def main() -> None:
     print(f"Series to validate: {total_series}\n")
 
     # Accumulates unique new issues keyed by (severity, affected_tag).
-    # Only distinct structural issue types are kept — never grows beyond a
+    # Only distinct structural issue types are kept - never grows beyond a
     # few dozen entries regardless of dataset size.
     unique_issues: dict = {}
 
@@ -468,7 +468,7 @@ def main() -> None:
             series_uid_orig = info["series_uid_original"]
             print(
                 f"[{idx}/{total_series}] Series: {series_uid_orig}"
-                f"  →  {info['series_uid_anonymized']}"
+                f"  ->  {info['series_uid_anonymized']}"
             )
 
             orig_files = info["original_files"]
@@ -488,7 +488,7 @@ def main() -> None:
             )
             if not orig_files:
                 print(
-                    "  [WARN] No original files resolved for this series — "
+                    "  [WARN] No original files resolved for this series - "
                     "all anonymized findings will be reported as new. "
                     "Check --original_folder and the original_file_path column in the CSV.",
                     file=sys.stderr,
@@ -510,7 +510,7 @@ def main() -> None:
             for severity, affected_tag, message in anon_issues:
                 if (severity, _normalize_tag_key(affected_tag)) in orig_keys:
                     # Same structural issue already existed in the original
-                    # series — not introduced by anonymization, skip it.
+                    # series - not introduced by anonymization, skip it.
                     continue
 
                 new_in_anon += 1
@@ -561,7 +561,7 @@ def main() -> None:
                 csv_fh.flush()
 
             print(
-                f"  dciodvfy findings — original: {len(orig_issues)} | "
+                f"  dciodvfy findings - original: {len(orig_issues)} | "
                 f"anonymized: {len(anon_issues)} | "
                 f"new after anonymization: {new_in_anon}"
             )

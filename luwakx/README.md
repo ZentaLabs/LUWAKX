@@ -143,7 +143,7 @@ LuwakX supports multiple anonymization profiles that can be used individually or
 
 - **`clean_recognizable_visual_features`**: Uses ML-based defacing for images
   - Applies defacing to CT images to remove recognizable facial features using AI models
-  - **PET/CT automatic pairing**: when a PET series shares a `FrameOfReferenceUID` with a CT series in the same study, the CT face mask is resampled onto the PET geometry automatically — no ML runs on PET
+  - **PET/CT automatic pairing**: when a PET series shares a `FrameOfReferenceUID` with a CT series in the same study, the CT face mask is resampled onto the PET geometry automatically - no ML runs on PET
   - Uses specialized models to detect and anonymize faces
 
 

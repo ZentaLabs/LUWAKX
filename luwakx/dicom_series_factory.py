@@ -285,7 +285,7 @@ class DicomSeriesFactory:
                     )
             
             # Warn (with anonymized IDs) when no acquisition datetime is available.
-            # Emitted here — after generate_anonymized_uids() — so the log message
+            # Emitted here - after generate_anonymized_uids() - so the log message
             # uses anonymized identifiers rather than the raw original UIDs.
             if _needs_deface_priority and not series.acquisition_datetime:
                 self.logger.warning(

@@ -63,11 +63,12 @@ class DicomProcessor:
         # Isolated state per worker (NOT shared)
         self.current_file_mappings: Dict[str, Any] = {}  # UID mappings
 
-        # Private creator strings that have at least one KEEP rule in the active recipe.
+        # Mapping of private creator strings -> set of (group, element_offset) pairs
+        # that have at least one KEEP/REPLACE/JITTER rule in the active recipe.
         # Consulted by is_tag_private() to preserve creator block elements (e.g. (0071,0010))
-        # whose corresponding data-elements are kept by the recipe.
+        # only when the DICOM file actually contains at least one of those kept elements.
         # Populated at the start of process_series() via _build_kept_private_creators().
-        self._kept_private_creators: set = set()
+        self._kept_private_creators: dict = {}
 
         # Fallback dedup set for logger warnings when review_collector is None.
         # When review_collector is available, _first_occurrence() uses
@@ -159,7 +160,7 @@ class DicomProcessor:
             self._kept_private_creators = DicomProcessor._build_kept_private_creators(recipe)
         except Exception as _e:
             self.logger.warning(f"Could not build kept private creators set: {_e}")
-            self._kept_private_creators = set()
+            self._kept_private_creators = {}
 
         try:
             # Initialise tqdm bar and reset per-series counters
@@ -556,7 +557,7 @@ class DicomProcessor:
             original_uid = "unknown"
 
         # The value can be empty (tag present but no value set).
-        # Do not generate a UID from empty entropy — leave the tag unchanged.
+        # Do not generate a UID from empty entropy - leave the tag unchanged.
         if not original_uid:
             return field.element.value
 
@@ -676,75 +677,82 @@ class DicomProcessor:
         https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#535-date-shifting-funcgenerate_hmacdate_shift
         """
         field_vr = str(field.element.VR) if hasattr(field, 'element') and hasattr(field.element, 'VR') else None
-        
-        import re as _re
-        tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
-        keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
-        _raw_val = getattr(field.element, 'value', '') if hasattr(field, 'element') else ''
-        # For VR=UN pydicom stores bytes; decode to ASCII for pattern matching.
-        if isinstance(_raw_val, (bytes, bytearray)):
-            try:
-                _orig = _raw_val.decode('ascii').strip('\x00').strip()
-            except (UnicodeDecodeError, AttributeError):
-                _orig = ''
-        else:
-            _orig = str(_raw_val)
-        _fp = self._flag_params(field, dicom)
 
-        # Remove the tag if the value does not match a DICOM DA/DT format.
-        # This covers both wrong-VR tags and DA/DT tags whose stored value is not
-        # actually a valid date/datetime (e.g. UN resolved to DT by private dictionary).
-        _da_pattern = r"^\d{8}$"                                           # YYYYMMDD
-        _dt_pattern = r"^\d{8}(\d{6}(\.\d{1,6})?)?([\+\-]\d{4})?$"       # YYYYMMDD[HHMMSS[.F]][±ZZZZ]
-        if not (_re.match(_da_pattern, _orig) or _re.match(_dt_pattern, _orig)):
-            series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
-            if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
-                                      ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
-                                      f"dateshift_badvalue_{tag_str}_{keyword_str}"):
-                self.logger.warning(
-                    f"Tag {tag_str} ({keyword_str}) (VR={field_vr}) value {_orig!r} "
-                    f"does not match DICOM DA/DT format. Tag will be removed. "
-                    f"Series: {series_info}"
-                )
-            try:
-                del dicom[field.element.tag]
-                if self.review_collector:
-                    try:
-                        self.review_collector.add_flag(
-                            reason         = ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
-                            original_value = _orig,
-                            keep           = 0,
-                            output_value   = '',
-                            **_fp,
-                        )
-                    except Exception:
-                        pass
-            except Exception:
+        # For non-DA/DT VRs (e.g. UN misidentified as a date tag by a private
+        # dictionary): validate the stored value against DA/DT patterns.
+        # If the value is not a valid date/datetime, remove the tag and bail out.
+        # If the value IS a valid date/datetime string, fall through to the shift
+        # computation below so the date is still properly jittered.
+        if field_vr not in ('DA', 'DT'):
+            import re as _re
+            tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
+            keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
+            _raw_val = getattr(field.element, 'value', '') if hasattr(field, 'element') else ''
+            # For VR=UN pydicom stores bytes; decode to ASCII for pattern matching.
+            if isinstance(_raw_val, (bytes, bytearray)):
+                try:
+                    _orig = _raw_val.decode('ascii').strip('\x00').strip()
+                except (UnicodeDecodeError, AttributeError):
+                    _orig = ''
+            else:
+                _orig = str(_raw_val)
+            _fp = self._flag_params(field, dicom)
+
+            _da_pattern = r"^\d{8}$"                                       # YYYYMMDD
+            _dt_pattern = r"^\d{8}(\d{6}(\.\d{1,6})?)?([\+\-]\d{4})?$"   # YYYYMMDD[HHMMSS[.F]][±ZZZZ]
+            if not (_re.match(_da_pattern, _orig) or _re.match(_dt_pattern, _orig)):
+                series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
                 if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
-                                          ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
-                                          f"dateshift_badvalue_remove_{tag_str}_{keyword_str}"):
+                                          ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
+                                          f"dateshift_badvalue_{tag_str}_{keyword_str}"):
                     self.logger.warning(
-                        f"Tag {tag_str} ({keyword_str}) could not be removed. "
-                        f"Original value kept for manual review. Series: {series_info}"
+                        f"Tag {tag_str} ({keyword_str}) (VR={field_vr}) value {_orig!r} "
+                        f"does not match DICOM DA/DT format. Tag will be removed. "
+                        f"Series: {series_info}"
                     )
-                if self.review_collector:
-                    try:
-                        self.review_collector.add_flag(
-                            reason         = ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
-                            original_value = _orig,
-                            keep           = 1,
-                            output_value   = _orig,
-                            **_fp,
+                try:
+                    del dicom[field.element.tag]
+                    if self.review_collector:
+                        try:
+                            self.review_collector.add_flag(
+                                reason         = ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
+                                original_value = _orig,
+                                keep           = 0,
+                                output_value   = '',
+                                **_fp,
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                              ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                                              f"dateshift_badvalue_remove_{tag_str}_{keyword_str}"):
+                        self.logger.warning(
+                            f"Tag {tag_str} ({keyword_str}) could not be removed. "
+                            f"Original value kept for manual review. Series: {series_info}"
                         )
-                    except Exception:
-                        pass
-            # Return None — NOT 0.  Deid's parser checks `if value is not None`
-            # before calling jitter_timestamp; returning 0 passes that check and
-            # jitter_timestamp still writes the value back via replace_field.
-            # Returning None makes deid skip the jitter entirely, so the deletion
-            # above sticks.
-            return None
-        
+                    if self.review_collector:
+                        try:
+                            self.review_collector.add_flag(
+                                reason         = ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                                original_value = _orig,
+                                keep           = 1,
+                                output_value   = _orig,
+                                **_fp,
+                            )
+                        except Exception:
+                            pass
+                # Return None - NOT 0.  Deid's parser checks `if value is not None`
+                # before calling jitter_timestamp; returning 0 passes that check and
+                # jitter_timestamp still writes the value back via replace_field.
+                # Returning None makes deid skip the jitter entirely, so the deletion
+                # above sticks.
+                return None
+            # Value looks like a valid date/datetime despite the wrong VR - fall
+            # through to compute the shift normally.
+
+        # Compute HMAC-based date shift (reached for DA/DT tags always, and for
+        # non-DA/DT tags whose stored value is a valid date/datetime string).
         project_hash_root = self.config.get('projectHashRoot', '')
         
         # Get patient's random token from database to use as HMAC key
@@ -761,13 +769,11 @@ class DicomProcessor:
                     original_patient_name,
                     original_patient_birthdate
                 )
-                
                 if cached_result:
                     _, random_token = cached_result
                     hmac_key = random_token
             except Exception as e:
                 self.logger.warning(f"Could not retrieve patient random token for date shift: {e}")
-        
         try:
             # Generate date shift using HMAC if we have a key, otherwise fall back to old method
             if hmac_key:
@@ -789,7 +795,6 @@ class DicomProcessor:
             # Ensure shift is always at least 1 day (never 0) for proper anonymization
             max_shift = self.config.get('maxDateShiftDays', 1095)
             project_date_shift = (hash_int % max_shift) + 1
-            
             self.logger.debug(
                 f"Replacing tag {field.element.tag} "
                 f"({getattr(field.element, 'keyword', '')}) with date/time shifted."
@@ -1083,20 +1088,50 @@ class DicomProcessor:
             return original_value
     
     @staticmethod
-    def _build_kept_private_creators(recipe) -> set:
-        """Return the set of private creator strings that have at least one KEEP rule.
+    def _build_kept_private_creators(recipe) -> dict:
+        """Return a mapping of private creator strings -> kept (group, element_offset) pairs.
 
-        Scans all KEEP actions in the recipe and extracts quoted creator names from
-        private-tag expressions such as ``KEEP (0071,"Siemens MR Header",22)``.
-        Called once per recipe object; result is cached on the DicomProcessor instance.
+        Scans all actions in the recipe and extracts creator names and the
+        corresponding tag coordinates from private-tag expressions such as:
+          KEEP    (0071,"Siemens MR Header",22)
+          REPLACE (0071,"Siemens MR Header",22) func:generate_hmacuid
+          JITTER  (0009,"GEMS_PETD_01",05) func:generate_hmacdate_shift
+
+        The creator block element must be preserved only when at least one of its
+        data elements is both kept/replaced/jittered by the recipe AND actually
+        present in the DICOM file being processed - checked at runtime in
+        is_tag_private().
+
+        Removal actions (REMOVE, BLANK) are excluded: if all data elements for a
+        creator are removed, the creator block itself can be removed too.
+
+        Returns:
+            dict mapping creator_name (str) -> set of (group: int, element_offset: int)
+            where element_offset is the low byte of the element number (0x00–0xFF).
+
+        Called once per series via process_series(); the result is an in-memory
+        dict built from the already-loaded recipe, so it is O(recipe_actions) with
+        no disk I/O.
         """
-        creators: set = set()
-        if recipe and recipe.deid:
-            for action in recipe.get_actions(action="KEEP"):
-                field_expr = action.get("field", "") or ""
-                m = re.search(r'"([^"]+)"', field_expr)
-                if m:
-                    creators.add(m.group(1).strip())
+        # Actions that preserve or modify a private data element - the
+        # corresponding creator block must therefore be retained.
+        PRESERVING_ACTIONS = {'KEEP', 'REPLACE', 'JITTER'}
+
+        creators: dict = {}
+        if not (recipe and recipe.deid):
+            return creators
+
+        for action in recipe.get_actions():
+            if action.get("action", "").upper() not in PRESERVING_ACTIONS:
+                continue
+            field_expr = action.get("field", "") or ""
+            # Match (group,"creator",element_offset) - all parts are hex strings
+            m = re.search(r'\(([0-9a-fA-F]+)\s*,\s*"([^"]+)"\s*,\s*([0-9a-fA-F]+)\)', field_expr)
+            if m:
+                group = int(m.group(1), 16)
+                creator = m.group(2).strip()
+                elem_offset = int(m.group(3), 16)
+                creators.setdefault(creator, set()).add((group, elem_offset))
         return creators
 
     def is_tag_private(self, dicom, value, field, item):
@@ -1118,7 +1153,7 @@ class DicomProcessor:
         # Match any private tag regardless of whether a private creator block is present.
         # Orphaned private tags (private_creator is None) must also be removed.
         #
-        # Special case — private creator BLOCK elements (tag format (gggg, 00CC) where
+        # Special case - private creator BLOCK elements (tag format (gggg, 00CC) where
         # 0x10 <= CC <= 0xFF): these hold the creator identification string that makes
         # the corresponding data elements (gggg, CCxx) interpretable.  They must be kept
         # when at least one of their data elements is preserved by a KEEP rule; otherwise
@@ -1132,8 +1167,15 @@ class DicomProcessor:
                     creator_value = creator_value.decode("utf-8", errors="ignore").strip("\x00")
                 creator_value = creator_value.strip() if creator_value else ""
                 if creator_value and creator_value in self._kept_private_creators:
-                    # This creator has kept data elements — preserve the creator block.
-                    return False
+                    # The creator is referenced by the recipe; only preserve the
+                    # creator block if at least one of those kept elements is
+                    # actually present in this specific DICOM file.
+                    kept_coords = self._kept_private_creators[creator_value]
+                    for elem in dicom.iterall():
+                        if (elem.tag.is_private
+                                and elem.private_creator == creator_value
+                                and (elem.tag.group, elem.tag.element & 0x00FF) in kept_coords):
+                            return False
             if hasattr(field.element, 'value'):
                 self.logger.private(f"Removed private tag {field.element.tag} with value: {field.element.value}")
             return True

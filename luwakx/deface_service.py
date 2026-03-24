@@ -577,7 +577,7 @@ class DefaceService:
         """Return the absolute path of a previously-saved mask for this series, or ``None``.
 
         Looks up ``deface_mask_cache`` by
-        (cache_key, modality, ct_series_instance_uid) — an exact per-series match.
+        (cache_key, modality, ct_series_instance_uid) - an exact per-series match.
         Returns ``None`` when no DB is configured, no matching entry exists, or
         the file is missing on disk.
 

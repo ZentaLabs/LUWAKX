@@ -181,6 +181,9 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
     output_file = os.path.join(recipe_folder, "deid.dicom.recipe")
     output_csv = os.path.join(recipe_folder, "deid.dicom.recipe.csv")
 
+    # Set remove_private variable for later, it will be true if the basic profile is requested
+    remove_private = False 
+
     with open(output_file, 'w') as outfile, open(output_csv, 'w', newline='', encoding='utf-8') as csv_out:
         csv_writer = csv.DictWriter(csv_out, fieldnames=['Tag', 'Tag Name', 'Action', 'Replacement Value', 'Rationale'])
         csv_writer.writeheader()
@@ -238,9 +241,7 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                 elif final_action == 'remove':
                     # See remove action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     if name.lower() == 'private attributes':
-                        # Add line to remove all private tags
-                        # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
-                        line = f"REMOVE ALL func:is_tag_private\n"
+                        remove_private = True
                     else:
                         line = f"REMOVE {tag}\n"
                 elif final_action == 'blank':
@@ -424,6 +425,13 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                         'Replacement Value': _parse_replacement_from_recipe_line(line),
                         'Rationale': 'TCIA (The Cancer Imaging Archive) Private Tag Knowledge Base (https://wiki.cancerimagingarchive.net/download/attachments/3539047/TCIAPrivateTagKB-02-01-2024-formatted.csv?version=2&modificationDate=1707174689263&api=v2)',
                     })
+
+        if remove_private:
+            # Add line to remove all private tags
+            # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
+            line = f"REMOVE ALL func:is_tag_private\n"
+            outfile.write(line)
+
 
     logger.info(f"Recipe generated: {output_file}")
     logger.info(f"Summary CSV generated: {output_csv}")

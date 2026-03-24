@@ -64,7 +64,7 @@ Luwak currently does not provide automated support for the following DICOM PS3.1
 
 These profiles require manual intervention to ensure PHI is properly removed from structured content sequences and graphic annotations.
 
-Before running the deidentification pipeline, it is recommended to assess whether the input dataset contains tags relevant to these profiles. The `luwakx/scripts/dicom_curation/analyze_graphics_structured_content.py` curation script can detect the presence of such tags across the entire dataset. It checks for, among others, `GraphicAnnotationSequence` (0070,0001), `OverlayData` (6000,3000), `ContentSequence` (0040,A730), and `AcquisitionContextSequence` (0040,0555) — the main tags that fall under the Clean Graphics and Clean Structured Content profiles. Series that contain these tags are reported in the analysis output, allowing the user to decide whether to exclude them from the deidentification project or perform manual cleaning before running Luwak. For full usage instructions, see `luwakx/scripts/dicom_curation/DICOM_PROCESSING_WORKFLOW.md`.
+Before running the deidentification pipeline, it is recommended to assess whether the input dataset contains tags relevant to these profiles. The `luwakx/scripts/dicom_curation/analyze_graphics_structured_content.py` curation script can detect the presence of such tags across the entire dataset. It checks for, among others, `GraphicAnnotationSequence` (0070,0001), `OverlayData` (6000,3000), `ContentSequence` (0040,A730), and `AcquisitionContextSequence` (0040,0555) - the main tags that fall under the Clean Graphics and Clean Structured Content profiles. Series that contain these tags are reported in the analysis output, allowing the user to decide whether to exclude them from the deidentification project or perform manual cleaning before running Luwak. For full usage instructions, see `luwakx/scripts/dicom_curation/DICOM_PROCESSING_WORKFLOW.md`.
 
 **Note on Clean Pixel Data Option:**
 
@@ -177,7 +177,7 @@ The defacing pipeline processes DICOM series through four main stages while main
 #### 4.1.3 Modality Support
 - **CT (Computed Tomography):** Fully supported with modality-specific AI models.
 - **PET (Positron Emission Tomography):** Supported automatically when a co-registered CT is available in the same study and `FrameOfReferenceUID`:
-  - **PET/CT (co-registered CT available):** When the `clean_recognizable_visual_features` recipe is active, Luwak automatically detects PET series that share a `FrameOfReferenceUID` with a CT series in the same study. The AI face segmentation model runs on the CT only; the resulting mask is resampled onto the PET geometry and applied directly — no ML inference on the PET data. No extra configuration is required. See [§4.1.8](#418-petct-defacing-via-ct-mask-projection) for full implementation details.
+  - **PET/CT (co-registered CT available):** When the `clean_recognizable_visual_features` recipe is active, Luwak automatically detects PET series that share a `FrameOfReferenceUID` with a CT series in the same study. The AI face segmentation model runs on the CT only; the resulting mask is resampled onto the PET geometry and applied directly - no ML inference on the PET data. No extra configuration is required. See [§4.1.8](#418-petct-defacing-via-ct-mask-projection) for full implementation details.
   - **Standalone PET (no co-registered CT):** Support via a dedicated PET face segmentation model is planned for a future release (https://github.com/ZentaLabs/luwak/issues/31).
 - **MR (Magnetic Resonance):** Planned for future implementation.
 - **Other modalities:** Not currently supported for defacing.
@@ -241,9 +241,9 @@ For PET/CT studies, Luwak implements PET defacing by projecting the CT-derived f
 
 ##### 4.1.8.1 CT Primary Series Selection
 
-Before processing begins, `DefacePriorityElector.elect_and_sort()` identifies, for each PET series, a *primary* CT series within the same `(patient, study, FrameOfReferenceUID)` group that will serve as the source of the face mask. This pairing runs automatically whenever the `clean_recognizable_visual_features` recipe is active — no extra configuration is required.
+Before processing begins, `DefacePriorityElector.elect_and_sort()` identifies, for each PET series, a *primary* CT series within the same `(patient, study, FrameOfReferenceUID)` group that will serve as the source of the face mask. This pairing runs automatically whenever the `clean_recognizable_visual_features` recipe is active - no extra configuration is required.
 
-For each PET series, `DefacePriorityElector` selects the CT series whose `AcquisitionDateTime` (0008,002A) is closest to that individual PET series' `AcquisitionDateTime`. This per-PET proximity criterion ensures the most temporally — and therefore geometrically — aligned CT scan is chosen for the mask resampling step. `AcquisitionDateTime` is read from tag (0008,002A), falling back to `AcquisitionDate` (0008,0022) + `AcquisitionTime` (0008,0032) when the combined attribute is absent.
+For each PET series, `DefacePriorityElector` selects the CT series whose `AcquisitionDateTime` (0008,002A) is closest to that individual PET series' `AcquisitionDateTime`. This per-PET proximity criterion ensures the most temporally - and therefore geometrically - aligned CT scan is chosen for the mask resampling step. `AcquisitionDateTime` is read from tag (0008,002A), falling back to `AcquisitionDate` (0008,0022) + `AcquisitionTime` (0008,0032) when the combined attribute is absent.
 
 The selected primary CT series is placed first in the processing order so that its face mask is computed before any associated PET series are processed. The pairing is recorded in the `deface_series_pairing` table of `DefaceMaskDatabase`; the `mask_path` column is filled in once the CT mask has been computed.
 
@@ -292,7 +292,7 @@ Temporary NRRD files (`image.nrrd`, `image_defaced.nrrd`) are stored in `defaced
 
 **Face mask files (`deface_mask_<modality>.nrrd`):**
 
-A compressed NRRD mask file is written to the private mapping folder — mirroring the series output path structure — and recorded in `DefaceMaskDatabase`. The mask file is saved when **either** of the following conditions is met:
+A compressed NRRD mask file is written to the private mapping folder - mirroring the series output path structure - and recorded in `DefaceMaskDatabase`. The mask file is saved when **either** of the following conditions is met:
 
 | Condition | When it applies |
 |-----------|-----------------|
@@ -306,8 +306,8 @@ A compressed NRRD mask file is written to the private mapping folder — mirrori
 where `<rel_series_path>` mirrors the anonymized output directory structure (e.g. `<patientID>/<studyUID>/<seriesUID>/`).
 
 **Examples:**
-- `deface_mask_CT.nrrd` — saved for a CT that is primary candidate for a paired PET, or when `saveDefaceMasks: true`
-- `deface_mask_PT.nrrd` — saved only when `saveDefaceMasks: true` (PET mask derived from CT projection)
+- `deface_mask_CT.nrrd` - saved for a CT that is primary candidate for a paired PET, or when `saveDefaceMasks: true`
+- `deface_mask_PT.nrrd` - saved only when `saveDefaceMasks: true` (PET mask derived from CT projection)
 
 When `saveDefaceMasks: false` (default) and no PET pairing is detected, no mask file is written.
 
@@ -1428,9 +1428,9 @@ Output files: `deid.dicom.recipe`, `deid.dicom.recipe.csv`
 
 The recipe builder generates two files:
 
-- **`deid.dicom.recipe`** — A DEID-format recipe file containing all tag-level actions determined by the selected deidentification profiles and options. This is the input consumed by the deid library's `replace_identifiers()` function during metadata deidentification. A complete reference table showing all tags processed by the Basic Application Confidentiality Profile recipe is provided in [Appendix C](#appendix-c-basic-application-confidentiality-profile-recipe) (available [online](https://github.com/ZentaLabs/luwak/blob/main/docs/deidentification_conformance.md#appendix-c-basic-application-confidentiality-profile-recipe)).
+- **`deid.dicom.recipe`** - A DEID-format recipe file containing all tag-level actions determined by the selected deidentification profiles and options. This is the input consumed by the deid library's `replace_identifiers()` function during metadata deidentification. A complete reference table showing all tags processed by the Basic Application Confidentiality Profile recipe is provided in [Appendix C](#appendix-c-basic-application-confidentiality-profile-recipe) (available [online](https://github.com/ZentaLabs/luwak/blob/main/docs/deidentification_conformance.md#appendix-c-basic-application-confidentiality-profile-recipe)).
 
-- **`deid.dicom.recipe.csv`** — A human-readable summary CSV mirroring every directive in the recipe file. Each row records the tag address, tag name, action keyword (e.g., `KEEP`, `REMOVE`, `REPLACE`, `BLANK`, `JITTER`), replacement value (where applicable), and the rationale linking the decision back to the contributing deidentification profile and conformance documentation. The rationale is extracted from the `Documentation References` column of the tag template CSVs, using the label associated with the profile that drove the final action. When the source action is `func:clean_descriptors_with_llm` but the final action is derived as `remove` or `manual_review` (see [§6.4.1](#641-translation-logic-by-action)), the rationale is still attributed to the `clean_descriptors` profile. Additional directives (e.g., `ADD PatientIdentityRemoved`, `REMOVE ALL func:is_curve_or_overlay_tag`) are included as separate rows with a reference to [§6.4.2](#642-additional-recipe-directives).
+- **`deid.dicom.recipe.csv`** - A human-readable summary CSV mirroring every directive in the recipe file. Each row records the tag address, tag name, action keyword (e.g., `KEEP`, `REMOVE`, `REPLACE`, `BLANK`, `JITTER`), replacement value (where applicable), and the rationale linking the decision back to the contributing deidentification profile and conformance documentation. The rationale is extracted from the `Documentation References` column of the tag template CSVs, using the label associated with the profile that drove the final action. When the source action is `func:clean_descriptors_with_llm` but the final action is derived as `remove` or `manual_review` (see [§6.4.1](#641-translation-logic-by-action)), the rationale is still attributed to the `clean_descriptors` profile. Additional directives (e.g., `ADD PatientIdentityRemoved`, `REMOVE ALL func:is_curve_or_overlay_tag`) are included as separate rows with a reference to [§6.4.2](#642-additional-recipe-directives).
 
 **Example content:**
 ```
@@ -1525,7 +1525,7 @@ Luwak produces several output files during the deidentification pipeline, each s
   - Generation: Incrementally appended after each series is processed, using the `MetadataExporter.append_series_uid_mappings()` method
   - Column Naming for UID fields:
     - **Standard tags**: Use the official DICOM keyword (e.g., `StudyInstanceUID`, `SeriesInstanceUID`)
-    - **Private tags**: Constructed using the same convention as the `metadata.parquet` export — `{PrivateCreator}_{TagName}` if the tag name is known (e.g., `Siemens_CSA_Image_Header_Info`), or `{PrivateCreator}_{GGGG}xx{EE}` if the name is unknown (e.g., `PHILIPS_MR_IMAGING_0019xx10`). Spaces in the private creator string are replaced with underscores. Tags with no private creator block fall back to `str(tag)`.
+    - **Private tags**: Constructed using the same convention as the `metadata.parquet` export - `{PrivateCreator}_{TagName}` if the tag name is known (e.g., `Siemens_CSA_Image_Header_Info`), or `{PrivateCreator}_{GGGG}xx{EE}` if the name is unknown (e.g., `PHILIPS_MR_IMAGING_0019xx10`). Spaces in the private creator string are replaced with underscores. Tags with no private creator block fall back to `str(tag)`.
 
 **3. DICOM Metadata Parquet (`metadata.parquet`)**
   - Location: Private mapping folder
@@ -1684,7 +1684,7 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `saveDefaceMasks` | boolean | false | Controls face mask persistence across runs. When `true`, every series that runs ML inference has its mask saved to the private mapping folder and the database persists after the run, enabling full re-run cache hits. When `false` (default), only CT masks paired with a PET series are kept — just long enough to project onto the PET within the same run. PET/CT pairing itself is **automatic** whenever the `clean_recognizable_visual_features` recipe is active and requires no extra config. See [§4.1.8](#418-petct-defacing-via-ct-mask-projection). |
+| `saveDefaceMasks` | boolean | false | Controls face mask persistence across runs. When `true`, every series that runs ML inference has its mask saved to the private mapping folder and the database persists after the run, enabling full re-run cache hits. When `false` (default), only CT masks paired with a PET series are kept - just long enough to project onto the PET within the same run. PET/CT pairing itself is **automatic** whenever the `clean_recognizable_visual_features` recipe is active and requires no extra config. See [§4.1.8](#418-petct-defacing-via-ct-mask-projection). |
 
 #### 9.1.3 Example Configuration
 
