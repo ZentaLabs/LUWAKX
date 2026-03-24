@@ -152,6 +152,12 @@
       "description": "When true, the ML-generated face mask is saved as a compressed NRRD file in the private mapping folder for every series that runs ML inference, and the mask database persists after the run for re-run cache hits.\nWhen false or absent, a temporary mask database is still created during the run to support PET/CT mask projection (the CT mask is resampled onto the paired PET), but both the database and all mask files are deleted at the end of the run.",
       "default": false,
       "examples": [true, false]
+    },
+    "verifyDefacingIntegrity": {
+      "type": "boolean",
+      "description": "When true, after defacing each series the pipeline reads the written DICOM files back from disk and verifies that no voxel outside the (dilated) face mask was modified. The face mask is dilated by the pixelation block size to tolerate block-boundary effects. A WARNING is logged for each series that fails the check; processing continues regardless. Useful for quality-assurance runs; leave false (default) in production to avoid the extra I/O overhead.",
+      "default": false,
+      "examples": [true, false]
     }
   },
   "required": [

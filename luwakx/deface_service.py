@@ -365,6 +365,14 @@ class DefaceService:
                 if dicom_file:
                     dicom_file.set_defaced_path(defaced_file_path)
 
+            # Optionally verify that only face voxels were modified, reading the
+            # written DICOM files back from disk (mirrors the test_defacer_service check)
+            if self.config.get('verifyDefacingIntegrity', False):
+                self._verify_non_face_pixels_unchanged(
+                    image, series_temp_dir, series.original_series_uid,
+                    image_face_segmentation, series
+                )
+
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
@@ -725,6 +733,109 @@ class DefaceService:
                 f"Updated mask_path in {len(pairings)} pairing row(s) for "
                 f"CT {series.original_series_uid!r}"
             )
+
+    def _verify_non_face_pixels_unchanged(
+        self,
+        original_image,
+        defaced_dicom_dir: str,
+        original_series_uid: str,
+        face_mask,
+        series: DicomSeries,
+    ) -> bool:
+        """Verify that defacing only modified face voxels.
+
+        Reads the defaced DICOM series back from disk and compares it against
+        the original in-memory volume.  Dilates the face mask by the pixelation
+        block size (in voxels) to account for block-boundary effects, then
+        checks that every voxel outside the dilated mask is unchanged.
+        Results are logged at INFO level on success and WARNING level on failure.
+
+        Activated by setting ``verifyDefacingIntegrity: true`` in the config.
+
+        Args:
+            original_image:     SimpleITK.Image before defacing (in-memory).
+            defaced_dicom_dir:  Directory containing the written defaced DICOM files.
+            original_series_uid: SeriesInstanceUID used by the GDCM reader to sort files.
+            face_mask:          SimpleITK binary label image (face region = 1).
+            series:             DicomSeries being processed (used for log messages).
+
+        Returns:
+            True if all non-face voxels are unchanged, False otherwise.
+        """
+        import SimpleITK
+
+        series_display = (
+            f"series:{series.anonymized_series_uid}, "
+            f"study:{series.anonymized_study_uid}"
+        )
+        try:
+            original_arr = SimpleITK.GetArrayFromImage(original_image)
+
+            # Read the written DICOM files back from disk (mirrors the test check).
+            # Pass original_series_uid so GDCM sorts the files the same way as the
+            # original read, ensuring slice order matches original_arr exactly.
+            defaced_reader = SimpleITK.ImageSeriesReader()
+            defaced_files = defaced_reader.GetGDCMSeriesFileNames(defaced_dicom_dir, original_series_uid)
+            defaced_reader.SetFileNames(defaced_files)
+            defaced_arr = SimpleITK.GetArrayFromImage(defaced_reader.Execute())
+
+            block_size_mm   = self.physical_block_size_mm
+            min_spacing     = min(original_image.GetSpacing())
+            dilation_radius = int(np.ceil(block_size_mm / min_spacing))
+
+            dilate_filter = SimpleITK.BinaryDilateImageFilter()
+            dilate_filter.SetKernelRadius(dilation_radius)
+            dilate_filter.SetForegroundValue(1)
+            face_mask_dilated = dilate_filter.Execute(
+                SimpleITK.Cast(face_mask, SimpleITK.sitkUInt8)
+            )
+            face_mask_arr = SimpleITK.GetArrayFromImage(face_mask_dilated).astype(bool)
+
+            if original_arr.shape != defaced_arr.shape:
+                self.logger.warning(
+                    f"DefacingIntegrityCheck: volume shapes differ "
+                    f"(original={original_arr.shape}, defaced={defaced_arr.shape}) "
+                    f"for {series_display} - cannot verify integrity"
+                )
+                return False
+
+            if original_arr.shape != face_mask_arr.shape:
+                self.logger.warning(
+                    f"DefacingIntegrityCheck: face mask shape {face_mask_arr.shape} "
+                    f"does not match volume shape {original_arr.shape} "
+                    f"for {series_display} - cannot verify integrity"
+                )
+                return False
+
+            nonface_mask = ~face_mask_arr
+            unchanged    = np.isclose(
+                original_arr[nonface_mask], defaced_arr[nonface_mask], atol=1e-4
+            )
+            n_changed = int(np.sum(~unchanged))
+
+            if n_changed > 0:
+                self.logger.warning(
+                    f"DefacingIntegrityCheck FAILED for {series_display}: "
+                    f"{n_changed} non-face voxels were modified outside the dilated "
+                    f"face mask (dilation_radius={dilation_radius} voxels, "
+                    f"block={block_size_mm}mm, spacing={min_spacing:.2f}mm)"
+                )
+                return False
+
+            self.logger.info(
+                f"DefacingIntegrityCheck passed for {series_display}: "
+                f"all non-face voxels unchanged "
+                f"(dilation_radius={dilation_radius} voxels, "
+                f"block={block_size_mm}mm, spacing={min_spacing:.2f}mm)"
+            )
+            return True
+
+        except Exception as e:
+            log_project_stacktrace(self.logger, e)
+            self.logger.warning(
+                f"DefacingIntegrityCheck raised an exception for {series_display}: {e}"
+            )
+            return False
 
     def _copy_without_defacing(self, series: DicomSeries) -> Dict[str, Any]:
         """Copy files without defacing when defacing fails or is not applicable.

@@ -1685,6 +1685,7 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `saveDefaceMasks` | boolean | false | Controls face mask persistence across runs. When `true`, every series that runs ML inference has its mask saved to the private mapping folder and the database persists after the run, enabling full re-run cache hits. When `false` (default), only CT masks paired with a PET series are kept - just long enough to project onto the PET within the same run. PET/CT pairing itself is **automatic** whenever the `clean_recognizable_visual_features` recipe is active and requires no extra config. See [§4.1.8](#418-petct-defacing-via-ct-mask-projection). |
+| `verifyDefacingIntegrity` | boolean | false | When `true`, after defacing each series the pipeline reads the written DICOM files back from disk and checks that no voxel outside the (dilated) face mask was modified. The face mask is dilated by the pixelation block size (`physicalFacePixelationSizeMm`) to tolerate block-boundary effects. A `WARNING` is logged for each series that fails the check; processing continues regardless. Intended for quality-assurance runs; leave `false` in production to avoid the extra I/O overhead. |
 
 #### 9.1.3 Example Configuration
 
