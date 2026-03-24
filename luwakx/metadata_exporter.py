@@ -8,6 +8,7 @@ NRRD file movement to final destinations.
 
 import os
 import csv
+import re
 import shutil
 import traceback
 from typing import Any, Dict, List, Set
@@ -285,7 +286,12 @@ class MetadataExporter:
         # Try to extract patient info from original file
         try:
             row['PatientName_original'] = series.original_patient_name
-            row['PatientName_anonymized'] = series.anonymized_patient_id
+            m = re.match(r"([A-Za-z]+)(\d+)", series.anonymized_patient_id)
+            if m:
+                prefix, number = m.groups()
+                row['PatientName_anonymized'] = f"{prefix}^{int(number):04d}"
+            else:
+                row['PatientName_anonymized'] = series.anonymized_patient_id
             row['PatientID_original'] = series.original_patient_id
             row['PatientID_anonymized'] = series.anonymized_patient_id
             row['PatientBirthDate'] = series.original_patient_birthdate

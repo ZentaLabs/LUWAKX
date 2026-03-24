@@ -408,7 +408,7 @@ class DicomProcessor:
                 original_patient_name,
                 original_patient_birthdate
             )
-            self.logger.warning(
+            self.logger.private(
                 f"Generating patient ID from - PatientID: {original_patient_id}, "
                 f"PatientName: {original_patient_name}, BirthDate: {original_patient_birthdate}, new ID: {anonymized_id}"
             )
@@ -422,6 +422,12 @@ class DicomProcessor:
             f"Generated patient ID for tag {field.element.tag} "
             f"({getattr(field.element, 'keyword', '')}): {anonymized_id}"
         )
+        if getattr(field.element, 'keyword', '') == "PatientName":
+            m = re.match(r"([A-Za-z]+)(\d+)", anonymized_id)
+            if m:
+                prefix, number = m.groups()
+                anonymized_id = f"{prefix}^{int(number):04d}"
+
         return anonymized_id
     
     def find_sequence_path(self, ds, target_uid, target_keyword, path_prefix=""):
@@ -684,7 +690,6 @@ class DicomProcessor:
         # If the value IS a valid date/datetime string, fall through to the shift
         # computation below so the date is still properly jittered.
         if field_vr not in ('DA', 'DT'):
-            import re as _re
             tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
             keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
             _raw_val = getattr(field.element, 'value', '') if hasattr(field, 'element') else ''
@@ -700,7 +705,7 @@ class DicomProcessor:
 
             _da_pattern = r"^\d{8}$"                                       # YYYYMMDD
             _dt_pattern = r"^\d{8}(\d{6}(\.\d{1,6})?)?([\+\-]\d{4})?$"   # YYYYMMDD[HHMMSS[.F]][±ZZZZ]
-            if not (_re.match(_da_pattern, _orig) or _re.match(_dt_pattern, _orig)):
+            if not (re.match(_da_pattern, _orig) or re.match(_dt_pattern, _orig)):
                 series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
                 if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
                                           ReviewFlagCollector.REASON_VR_FORMAT_INVALID,

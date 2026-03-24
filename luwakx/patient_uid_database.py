@@ -215,8 +215,8 @@ class PatientUIDDatabase:
                 # First patient in this project
                 next_seq = 1
             
-            # Format with zero-padding (e.g., "000000", "000001", ...)
-            new_patient_id = f"{self.patient_id_prefix}{next_seq:06d}"
+            # Format with zero-padding (e.g., "0001", "0002", ...)
+            new_patient_id = f"{self.patient_id_prefix}{next_seq:04d}"
             
             # Generate cryptographically secure random token (256 bits / 32 bytes)
             random_token = secrets.token_bytes(256 // 8)

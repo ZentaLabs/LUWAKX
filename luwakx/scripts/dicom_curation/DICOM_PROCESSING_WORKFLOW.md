@@ -114,7 +114,7 @@ Ensure your `analyze_config.json` is configured with all the options you want to
   ```
   Config: [{"value": "LOCALIZER", "reason": "..."}, {"value": "Scout", "reason": "..."}]
   
-  ✓ EXCLUDED (exact matches):
+   EXCLUDED (exact matches):
     - "LOCALIZER"                    -> matches "LOCALIZER" exactly
     - "localizer"                    -> matches "LOCALIZER" (case-insensitive)
     - "  LOCALIZER  "                -> matches "LOCALIZER" (whitespace stripped)
@@ -154,7 +154,7 @@ Ensure your `analyze_config.json` is configured with all the options you want to
   ```
   ImageType in DICOM file:
   
-  ✓ EXCLUDED (contains both DERIVED and MIP):
+   EXCLUDED (contains both DERIVED and MIP):
     - ["DERIVED", "SECONDARY", "MIP", "AVERAGE"]    -> both found
     - ["ORIGINAL", "DERIVED", "MIP"]                -> both found
     - ["MIP", "DERIVED"]                            -> both found (order doesn't matter)

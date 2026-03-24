@@ -169,7 +169,7 @@ class TestExports(unittest.TestCase):
                 self.logger.warning("Private directory doesn't exist")
             
             self.assertTrue(os.path.exists(mapping_file), "UID mapping CSV file was not created")
-            self.logger.info(f"✓ UID mapping CSV file created at: {mapping_file}")
+            self.logger.info(f" UID mapping CSV file created at: {mapping_file}")
 
             # Read and verify the mapping file content
             with open(mapping_file, 'r', newline='') as csvfile:
@@ -178,7 +178,7 @@ class TestExports(unittest.TestCase):
                 
                 # Should have exactly one row for our single file
                 self.assertEqual(len(rows), 1, f"Expected 1 row in mapping file, got {len(rows)}")
-                self.logger.info(f"✓ CSV contains {len(rows)} row(s) as expected")
+                self.logger.info(f" CSV contains {len(rows)} row(s) as expected")
                 
                 row = rows[0]
                 
@@ -192,7 +192,7 @@ class TestExports(unittest.TestCase):
                 
                 for column in required_columns:
                     self.assertIn(column, row, f"Required column '{column}' missing from mapping file")
-                self.logger.info(f"✓ All required columns present: {required_columns}")
+                self.logger.info(f" All required columns present: {required_columns}")
                 
                 # Verify file path (now includes series folder as relative path)
                 # The path should be like: 'series_folder/000001.dcm' (sequential filename)
@@ -200,7 +200,7 @@ class TestExports(unittest.TestCase):
                 # For single file, should be 000001.dcm
                 self.assertTrue(anonymized_path.endswith('000001.dcm'), 
                               f"File path should end with '000001.dcm' (sequential filename), got: {anonymized_path}")
-                self.logger.info(f"✓ File path verified (relative): {anonymized_path}")
+                self.logger.info(f" File path verified (relative): {anonymized_path}")
 
                 # Verify original UIDs match what we read from the file
                 for uid_name in ['StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID']:
@@ -215,7 +215,7 @@ class TestExports(unittest.TestCase):
                                            f"Anonymized {uid_name} is missing in mapping file")
                         self.assertNotEqual(original_uid, mapped_anonymized,
                                           f"Anonymized {uid_name} should be different from original")
-                        self.logger.info(f"✓ {uid_name}: {original_uid} -> {mapped_anonymized}")
+                        self.logger.info(f" {uid_name}: {original_uid} -> {mapped_anonymized}")
                 
                 self.logger.info("UID mapping CSV file creation test completed successfully")
         
@@ -252,7 +252,7 @@ class TestExports(unittest.TestCase):
             # Check that the Parquet file was created
             parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "metadata.parquet")
             self.assertTrue(os.path.exists(parquet_file), "Parquet metadata file was not created")
-            self.logger.info(f"✓ Parquet metadata file created at: {parquet_file}")
+            self.logger.info(f" Parquet metadata file created at: {parquet_file}")
 
             # Read and verify the Parquet file content
             try:
@@ -260,13 +260,13 @@ class TestExports(unittest.TestCase):
                 
                 # Should have exactly one row for our single file
                 self.assertEqual(len(df), 1, f"Expected 1 row in Parquet file, got {len(df)}")
-                self.logger.info(f"✓ Parquet file contains {len(df)} row(s) as expected")
+                self.logger.info(f" Parquet file contains {len(df)} row(s) as expected")
                 
                 # Check that essential tracking columns exist
                 required_columns = ['AnonymizedFilePath']
                 for column in required_columns:
                     self.assertIn(column, df.columns, f"Required column '{column}' missing from Parquet file")
-                self.logger.info(f"✓ Required columns present: {required_columns}")
+                self.logger.info(f" Required columns present: {required_columns}")
                 
                 # Verify file paths (now includes series folder as relative path)
                 row = df.iloc[0]
@@ -274,7 +274,7 @@ class TestExports(unittest.TestCase):
                 # For single file (first in series), should be 000001.dcm (sequential filename)
                 self.assertTrue(anonymized_path.endswith('000001.dcm'), 
                               f"Anonymized file path should end with '000001.dcm' (sequential filename), got: {anonymized_path}")
-                self.logger.info(f"✓ File path verified (relative): {anonymized_path}")
+                self.logger.info(f" File path verified (relative): {anonymized_path}")
                 
                 # Check that some DICOM metadata columns exist (after anonymization)
                 # Note: Some fields may be removed/anonymized, so we check for commonly retained ones
@@ -284,14 +284,14 @@ class TestExports(unittest.TestCase):
                 # We should have at least some DICOM metadata columns beyond just AnonymizedFilePath
                 self.assertGreater(len(df.columns), 1, 
                                  "Parquet should contain DICOM metadata beyond just file paths")
-                self.logger.info(f"✓ Parquet contains {len(df.columns)} total columns")
+                self.logger.info(f" Parquet contains {len(df.columns)} total columns")
                 
                 # Check that we have some actual DICOM tags (not just our tracking columns)
                 non_tracking_columns = [col for col in df.columns if col != 'AnonymizedFilePath']
                 self.assertGreater(len(non_tracking_columns), 0,
                                  "Parquet should contain actual DICOM metadata columns")
                 
-                self.logger.info(f"✓ Found {len(non_tracking_columns)} DICOM metadata columns: {non_tracking_columns[:5]}...")  # Show first 5
+                self.logger.info(f" Found {len(non_tracking_columns)} DICOM metadata columns: {non_tracking_columns[:5]}...")  # Show first 5
                 self.logger.info("Parquet metadata export test completed successfully")
                 
             except ImportError:
@@ -330,7 +330,7 @@ class TestExports(unittest.TestCase):
             # Check that the Parquet file was created
             parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "metadata.parquet")
             self.assertTrue(os.path.exists(parquet_file), "Parquet metadata file was not created")
-            self.logger.info(f"✓ Parquet metadata file created at: {parquet_file}")
+            self.logger.info(f" Parquet metadata file created at: {parquet_file}")
 
             # Count expected files in input directory
             input_files = [f for f in os.listdir(self.limited_input_dir) if f.endswith('.dcm')]
@@ -345,26 +345,26 @@ class TestExports(unittest.TestCase):
                 # Should have one row per series (not per file)
                 self.assertEqual(len(df), expected_count, 
                                f"Expected {expected_count} row(s) in Parquet file (one per series), got {len(df)}")
-                self.logger.info(f"✓ Parquet file contains {len(df)} row(s) as expected (one per series)")
+                self.logger.info(f" Parquet file contains {len(df)} row(s) as expected (one per series)")
  
                 # Check that essential tracking columns exist
                 required_columns = ['AnonymizedFilePath']
                 for column in required_columns:
                     self.assertIn(column, df.columns, f"Required column '{column}' missing from Parquet file")
-                self.logger.info(f"✓ Required columns present: {required_columns}")
+                self.logger.info(f" Required columns present: {required_columns}")
                 
                 # Verify that we have the expected number of unique file paths (one per series)
                 unique_paths = df['AnonymizedFilePath'].nunique()
                 self.assertEqual(unique_paths, expected_count,
                                f"Expected {expected_count} unique file path(s), got {unique_paths}")
-                self.logger.info(f"✓ Found {unique_paths} unique file path(s)")
+                self.logger.info(f" Found {unique_paths} unique file path(s)")
                 
                 # Check that we have DICOM metadata columns beyond just file paths
                 non_tracking_columns = [col for col in df.columns if col != 'AnonymizedFilePath']
                 self.assertGreater(len(non_tracking_columns), 0,
                                  "Parquet should contain actual DICOM metadata columns")
                 
-                self.logger.info(f"✓ Found {len(non_tracking_columns)} DICOM metadata columns")
+                self.logger.info(f" Found {len(non_tracking_columns)} DICOM metadata columns")
                 self.logger.info(f"Sample columns: {non_tracking_columns[:5]}...")
                 
                 # Verify that each row has data (not all null values)
@@ -372,7 +372,7 @@ class TestExports(unittest.TestCase):
                     non_null_count = row.notna().sum()
                     self.assertGreater(non_null_count, 1,  # At least AnonymizedFilePath + some DICOM data
                                      f"Row {idx} should have more than just file path data")
-                self.logger.info(f"✓ All {len(df)} rows contain meaningful metadata")
+                self.logger.info(f" All {len(df)} rows contain meaningful metadata")
                 
                 # Test with at least 2 files to verify different files can have different metadata
                 if len(df) > 1:
@@ -383,8 +383,8 @@ class TestExports(unittest.TestCase):
                     self.assertNotEqual(row1_data['AnonymizedFilePath'], row2_data['AnonymizedFilePath'],
                                       "Different files should have different AnonymizedFilePath values")
                     
-                    self.logger.info(f"✓ File 1: {row1_data['AnonymizedFilePath']}")
-                    self.logger.info(f"✓ File 2: {row2_data['AnonymizedFilePath']}")
+                    self.logger.info(f" File 1: {row1_data['AnonymizedFilePath']}")
+                    self.logger.info(f" File 2: {row2_data['AnonymizedFilePath']}")
                 
                 self.logger.info("Parquet metadata export test with multiple files completed successfully")
                 
@@ -424,7 +424,7 @@ class TestExports(unittest.TestCase):
             
             self.assertTrue(os.path.exists(mapping_file), "CSV mapping file was not created")
             self.assertTrue(os.path.exists(parquet_file), "Parquet metadata file was not created")
-            self.logger.info(f"✓ Both CSV and Parquet files created successfully")
+            self.logger.info(f" Both CSV and Parquet files created successfully")
 
             # Read both files
             with open(mapping_file, 'r', newline='') as csvfile:
@@ -439,7 +439,7 @@ class TestExports(unittest.TestCase):
             self.assertEqual(len(df), 1, 
                            f"Parquet has {len(df)} rows but should be 1 row (should have 1 row per series)")
 
-            self.logger.info(f"✓ Both files contain the right amount of lines per series")
+            self.logger.info(f" Both files contain the right amount of lines per series")
             
             # Check that file names are consistent
             csv_files = set(row['anonymized_file_path'] for row in csv_rows)
@@ -448,7 +448,7 @@ class TestExports(unittest.TestCase):
             self.assertTrue(parquet_files.issubset(csv_files),
                 f"Parquet file names should be a subset of CSV file names: CSV={csv_files}, Parquet={parquet_files}")
             
-            self.logger.info(f"✓ File names consistent between formats: {csv_files}")
+            self.logger.info(f" File names consistent between formats: {csv_files}")
             self.logger.info(f"Successfully verified consistency between CSV ({len(csv_rows)} files) and Parquet ({len(df)} files)")
             self.logger.info("CSV and Parquet consistency test completed successfully")
                 

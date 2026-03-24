@@ -340,7 +340,7 @@ class TestAnonymizeScript(unittest.TestCase):
                     anonymized_uid = anonymized_uids[uid_name]
                     self.assertIsNotNone(anonymized_uid, f"Anonymized file missing {uid_name}")
                     self.assertNotEqual(original_uid, anonymized_uid, f"{uid_name} was not changed during anonymization for file {file}")
-                    self.logger.info(f"✓ {uid_name}: {original_uid} -> {anonymized_uid} (file: {file})")
+                    self.logger.info(f" {uid_name}: {original_uid} -> {anonymized_uid} (file: {file})")
             self.logger.info("UID generation batch test completed and config cleaned up")
         finally:
             os.unlink(config_path)
@@ -386,7 +386,7 @@ class TestAnonymizeScript(unittest.TestCase):
                     anonymized_uid = anonymized_uids[uid_name]
                     self.assertIsNotNone(anonymized_uid, f"Anonymized file missing {uid_name}")
                     self.assertEqual(original_uid, anonymized_uid, f"{uid_name} was changed during anonymization for file {file}")
-                    self.logger.info(f"✓ {uid_name} retained: {original_uid} (file: {file})")
+                    self.logger.info(f" {uid_name} retained: {original_uid} (file: {file})")
             self.logger.info("Retain UID batch test completed and config cleaned up")
         finally:
             os.unlink(config_path)
@@ -470,7 +470,7 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check that the SeriesDate has been shifted correctly
             self.assertEqual(anonymized_ds.SeriesDate, expected_shifted_date_str,
                         f"SeriesDate should be shifted by {expected_shift_days} days: expected '{expected_shifted_date_str}', got '{anonymized_ds.SeriesDate}'")
-            self.logger.info(f"✓ SeriesDate shifted: {original_series_date} -> {anonymized_ds.SeriesDate} (shift: -{expected_shift_days} days)")
+            self.logger.info(f" SeriesDate shifted: {original_series_date} -> {anonymized_ds.SeriesDate} (shift: -{expected_shift_days} days)")
         finally:
             os.unlink(config_path)
             self.logger.info("Date shift test completed and config cleaned up")
@@ -519,7 +519,7 @@ class TestAnonymizeScript(unittest.TestCase):
             # The value parameter should be the recipe string, not the original value
             fixed_da = processor.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_da_field, original_ds)
             self.assertEqual(fixed_da, "19000101", f"DA fixed should be '19000101', got '{fixed_da}'")
-            self.logger.info(f"✓ DA (Date) VR: {mock_da_field.element.value} -> {fixed_da}")
+            self.logger.info(f" DA (Date) VR: {mock_da_field.element.value} -> {fixed_da}")
             
             # Test DT (DateTime) VR
             self.logger.info("Testing DT (DateTime) VR...")
@@ -533,7 +533,7 @@ class TestAnonymizeScript(unittest.TestCase):
             fixed_dt = processor.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_dt_field, original_ds)
             expected_dt = "19000101000000.000000+0000"
             self.assertEqual(fixed_dt, expected_dt, f"DT fixed should be '{expected_dt}', got '{fixed_dt}'")
-            self.logger.info(f"✓ DT (DateTime) VR: {mock_dt_field.element.value} -> {fixed_dt}")
+            self.logger.info(f" DT (DateTime) VR: {mock_dt_field.element.value} -> {fixed_dt}")
             
             # Test TM (Time) VR
             self.logger.info("Testing TM (Time) VR...")
@@ -547,7 +547,7 @@ class TestAnonymizeScript(unittest.TestCase):
             fixed_tm = processor.set_fixed_datetime("item1", "func:set_fixed_datetime", mock_tm_field, original_ds)
             expected_tm = "000000.00"
             self.assertEqual(fixed_tm, expected_tm, f"TM fixed should be '{expected_tm}', got '{fixed_tm}'")
-            self.logger.info(f"✓ TM (Time) VR: {mock_tm_field.element.value} -> {fixed_tm}")
+            self.logger.info(f" TM (Time) VR: {mock_tm_field.element.value} -> {fixed_tm}")
             self.logger.info("All fixed datetime generation tests passed!")
             self.logger.info(f"    - DA (Date): '{fixed_da}'")
             self.logger.info(f"    - DT (DateTime): '{fixed_dt}'")
@@ -584,9 +584,9 @@ class TestAnonymizeScript(unittest.TestCase):
                 self.assertIsNotNone(output_file, f"Anonymized file {file} not found in output directory")
                 anonymized_ds = pydicom.dcmread(output_file)
                 self.assertEqual(anonymized_ds['00080020'].value, "19000101", f"DA fixed should be '19000101', got '{anonymized_ds['00080020'].value}' (file: {file})")
-                self.logger.info(f"✓ StudyDate (DA): {anonymized_ds['00080020'].value} (file: {file})")
+                self.logger.info(f" StudyDate (DA): {anonymized_ds['00080020'].value} (file: {file})")
                 self.assertEqual(anonymized_ds['00080030'].value, "000000.00", f"TM fixed should be '000000.00', got '{anonymized_ds['00080030'].value}' (file: {file})")
-                self.logger.info(f"✓ StudyTime (TM): {anonymized_ds['00080030'].value} (file: {file})")
+                self.logger.info(f" StudyTime (TM): {anonymized_ds['00080030'].value} (file: {file})")
             self.logger.info("Fixed datetime with basic profile batch test completed and config cleaned up")
         finally:
             os.unlink(config_path)
@@ -621,7 +621,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 if original_value is not None:
                     self.assertEqual(anonymized_ds.AcquisitionDate, original_value,
                         f"AcquisitionDate should be the original value: expected {original_value}, got {anonymized_ds.AcquisitionDate} (file: {file})")
-                    self.logger.info(f"✓ AcquisitionDate retained: {original_value} (file: {file})")
+                    self.logger.info(f" AcquisitionDate retained: {original_value} (file: {file})")
             self.logger.info("Retain dates batch test completed and config cleaned up")
         finally:
             os.unlink(config_path)
@@ -703,11 +703,11 @@ class TestAnonymizeScript(unittest.TestCase):
             # Check that the AcquisitionDate has been shifted correctly
             self.assertEqual(anonymized_ds.AcquisitionDate, expected_shifted_date_str,
                         f"AcquisitionDate should be shifted by {expected_shift_days} days: expected '{expected_shifted_date_str}', got '{anonymized_ds.AcquisitionDate}'")
-            self.logger.info(f"✓ AcquisitionDate modified: {original_acquisition_date} -> {anonymized_ds.AcquisitionDate} (shift: -{expected_shift_days} days)")
+            self.logger.info(f" AcquisitionDate modified: {original_acquisition_date} -> {anonymized_ds.AcquisitionDate} (shift: -{expected_shift_days} days)")
             
             self.assertEqual(anonymized_ds.LongitudinalTemporalInformationModified, 'MODIFIED',
                         f"LongitudinalTemporalInformationModified should be 'MODIFIED': expected 'MODIFIED', got '{anonymized_ds.LongitudinalTemporalInformationModified}'")
-            self.logger.info(f"✓ LongitudinalTemporalInformationModified: {anonymized_ds.LongitudinalTemporalInformationModified}")
+            self.logger.info(f" LongitudinalTemporalInformationModified: {anonymized_ds.LongitudinalTemporalInformationModified}")
         finally:
             os.unlink(config_path)
             self.logger.info("Modified dates test completed and config cleaned up")
@@ -819,15 +819,14 @@ class TestAnonymizeScript(unittest.TestCase):
             # Verify format: should start with prefix and end with digits
             self.assertTrue(patient_id_1.startswith("TestPatient"), f"Patient ID should start with 'TestPatient', got '{patient_id_1}'")
             self.assertTrue(patient_id_1[11:].isdigit(), f"Patient ID should end with digits, got '{patient_id_1}'")
-            self.assertEqual(patient_id_1, patient_name_1, f"Patient ID and Patient Name should be equal: {patient_id_1} != {patient_name_1}")
-            self.logger.info(f"✓ Generated patient ID and patient name: {patient_id_1} and {patient_name_1}")
+            self.logger.info(f" Generated patient ID and patient name: {patient_id_1} and {patient_name_1}")
             
             # Test patient ID generation - second call with same patient should return same ID
             patient_id_2 = processor.generate_patient_id("PatientID", "func:generate_patient_id", mock_patient_id_field, original_ds)
             self.assertEqual(patient_id_1, patient_id_2, f"Patient ID should be consistent: {patient_id_1} != {patient_id_2}")
             patient_name_2 = processor.generate_patient_id("PatientName", "func:generate_patient_id", mock_patient_name_field, original_ds) 
             self.assertEqual(patient_name_1, patient_name_2, f"Patient Name should be consistent: {patient_name_1} != {patient_name_2}")
-            self.logger.info(f"✓ Patient ID consistent on second call: {patient_id_2}")
+            self.logger.info(f" Patient ID consistent on second call: {patient_id_2}")
             
             # Test with different patient - should generate different ID
             modified_ds = original_ds.copy()
@@ -861,10 +860,10 @@ class TestAnonymizeScript(unittest.TestCase):
             
             patient_id_3 = processor.generate_patient_id("PatientID", "func:generate_patient_id", mock_different_patient_field, modified_ds)
             patient_name_3 = processor.generate_patient_id("PatientName", "func:generate_patient_id", mock_different_patient_name_field, modified_ds)
-            self.assertEqual(patient_id_3, patient_name_3, f"Patient ID and Patient Name should be equal for different patient: {patient_id_3} != {patient_name_3}")
+            self.assertNotEqual(patient_id_3, patient_name_3, f"Patient ID and Patient Name should be different: {patient_id_3} != {patient_name_3}")
             self.assertNotEqual(patient_id_1, patient_id_3, f"Different patients should get different IDs: {patient_id_1} == {patient_id_3}")
             self.assertTrue(patient_id_3.startswith("TestPatient"), f"Patient ID should start with 'TestPatient', got '{patient_id_3}'")
-            self.logger.info(f"✓ Different patient gets different ID: {patient_id_3}")
+            self.logger.info(f"Different patient gets different ID: {patient_id_3}")
             
             self.logger.info("All generate_patient_id method tests passed!")
             self.logger.info(f"    - Patient 1: '{patient_id_1}' (consistent across calls)")
@@ -918,19 +917,17 @@ class TestAnonymizeScript(unittest.TestCase):
                     f"Patient ID should start with 'Zenta', got '{anonymized_patient_id}' in file {file}")
                 self.assertTrue(anonymized_patient_id[5:].isdigit(), 
                     f"Patient ID should end with digits, got '{anonymized_patient_id}' in file {file}")
-                self.assertTrue(anonymized_patient_id == str(anonymized_patient_name),
-                    f"Patient ID and Patient Name should be equal: '{anonymized_patient_id}' != '{anonymized_patient_name}' in file {file}")
                 
                 # Check consistency: same original patient should get same anonymized ID
                 if original_patient_id in patient_id_mapping:
                     expected_anonymized_id = patient_id_mapping[original_patient_id]
                     self.assertEqual(anonymized_patient_id, expected_anonymized_id,
                         f"Same patient should get same anonymized ID: expected '{expected_anonymized_id}', got '{anonymized_patient_id}' in file {file}")
-                    self.logger.info(f"✓ Patient ID consistent for '{original_patient_id}': {anonymized_patient_id} (file: {file})")
+                    self.logger.info(f"Patient ID consistent for '{original_patient_id}': {anonymized_patient_id} (file: {file})")
                 else:
                     # First time seeing this original patient ID
                     patient_id_mapping[original_patient_id] = anonymized_patient_id
-                    self.logger.info(f"✓ Patient ID anonymized: {original_patient_id} -> {anonymized_patient_id} (file: {file})")
+                    self.logger.info(f" Patient ID anonymized: {original_patient_id} -> {anonymized_patient_id} (file: {file})")
             
             # Log summary
             self.logger.info(f"Patient ID generation batch test completed:")
