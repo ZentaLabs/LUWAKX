@@ -24,8 +24,8 @@ import pydicom
 pydicom.config.convert_wrong_length_to_UN = True
 
 from .dicom_series import DicomSeries
-from .luwak_logger import log_project_stacktrace
-from .review_flag_collector import ReviewFlagCollector
+from ..logging.luwak_logger import log_project_stacktrace
+from ..export.review_flag_collector import ReviewFlagCollector
 
 
 class DicomProcessor:
@@ -101,7 +101,7 @@ class DicomProcessor:
         """
         from deid.dicom import get_identifiers, replace_identifiers
         from deid.logger import bot
-        from .deid_logger_handler import DeidProgressHandler
+        from ..logging.deid_logger_handler import DeidProgressHandler
         
         self.series = series
         # Initialise review-flags context for this series
@@ -989,7 +989,7 @@ class DicomProcessor:
             try:
                 # Import detector module
                 detector_path = os.path.join(
-                    os.path.dirname(__file__), "scripts", "detector", "detector.py"
+                    os.path.dirname(os.path.dirname(__file__)), "scripts", "detector", "detector.py"
                 )
                 spec = importlib.util.spec_from_file_location("detector", detector_path)
                 detector = importlib.util.module_from_spec(spec)

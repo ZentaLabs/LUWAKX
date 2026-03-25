@@ -129,7 +129,7 @@ Luwak implements automated face detection and pixelation for medical imaging vol
 This is achieved by generating a segmentation of the face, with subsequent downsampling followed by upsampling to the original resolution of the image within the segmented region to voxelize the facial features. The process was implemented akin to Selfridge et al [10.2967/jnumed.122.265280]. 
 Currently only CT is supported, but we are soon extending this to PET and we plan in the future to add also MRI (https://github.com/ZentaLabs/luwak/issues/31).
 
-**Implementation Module:** `luwakx/deface_service.py`  
+**Implementation Module:** `luwakx/defacing/deface_service.py`  
 **ML Defacing Module:** `luwakx/scripts/defacing/image_defacer/image_anonymization.py`
 
 **Defacing Model Reference:** The defacing functionality in Luwak leverages the MOOSE framework and its pre-trained AI models for medical image segmentation and facial feature detection. MOOSE (https://github.com/ENHANCE-PET/MOOSE) provides robust deep learning models specifically designed for medical imaging tasks, enabling accurate and automated identification of facial regions in CT and PET scans. By integrating MOOSE, Luwak ensures performance and reliability in the defacing process.
@@ -237,7 +237,7 @@ Defacing is only performed when:
 
 For PET/CT studies, Luwak implements PET defacing by projecting the CT-derived face mask onto the PET geometry rather than running a separate ML model on the PET data. This approach exploits the spatial co-registration intrinsic to PET/CT acquisitions: the CT face segmentation model runs once, its output mask is stored, and that mask is resampled onto any PET series sharing the same `FrameOfReferenceUID` within the same study. This avoids redundant ML inference and ensures anatomically consistent face pixelation across both the CT and PET volumes.
 
-**Implementation Modules:** `luwakx/deface_mask_database.py`, `luwakx/deface_priority_elector.py`
+**Implementation Modules:** `luwakx/defacing/deface_mask_database.py`, `luwakx/defacing/deface_priority_elector.py`
 
 ##### 4.1.8.1 CT Primary Series Selection
 
@@ -1314,7 +1314,7 @@ If `retain_safe_private_tags` selected: Processes private_tags_template.csv and 
 - The element uses only the last two hex digits (e.g., `10` from `(0019,1010)`)
 - The private creator string identifies which vendor/device created the tag
 
-*Implementation:* `make_recipe_file()` in `luwakx/anonymization_recipe_builder.py`
+*Implementation:* `make_recipe_file()` in `luwakx/recipe/anonymization_recipe_builder.py`
 
 *Reference:* 
 - DICOM PS3.15 Appendix E.3.10 - Safe Private Attributes
@@ -1590,7 +1590,7 @@ Luwak produces several output files during the deidentification pipeline, each s
     | `PATIENT_DB_UNAVAILABLE` | The patient UID database was unavailable during processing; UID/date anonymization may be incomplete. |
     | `SERIES_FAILED` | An unhandled exception occurred during series-level processing; the series output may be incomplete or unanonymized. |
 
-  - Implementation: `luwakx/review_flag_collector.py`, `luwakx/metadata_exporter.py`
+  - Implementation: `luwakx/export/review_flag_collector.py`, `luwakx/export/metadata_exporter.py`
 
 **10. Deface Mask Database (`deface_mask.db`)**
   - Location: As configured in the optional `analysisCacheFolder` (if not specified: private mapping folder, temporary); created whenever the `clean_recognizable_visual_features` recipe is active and PET/CT pairs are detected, or when `saveDefaceMasks` is `true`
@@ -1604,8 +1604,8 @@ Luwak produces several output files during the deidentification pipeline, each s
 The export of metadata and mappings is performed in a streaming, memory-efficient manner. After each series is processed, results are immediately written to the corresponding output files. The `MetadataExporter` class manages all export operations, including incremental appending and finalization of CSV and Parquet files, and movement of NRRD volumes.
 
 For more details, see:
-- `luwakx/metadata_exporter.py` (export logic)
-- `luwakx/processing_pipeline.py` (pipeline orchestration)
+- `luwakx/export/metadata_exporter.py` (export logic)
+- `luwakx/pipeline/processing_pipeline.py` (pipeline orchestration)
 
 ---
 

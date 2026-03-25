@@ -9,9 +9,9 @@ import tempfile
 import sys
 
 from luwakx.anonymize import LuwakAnonymizer
-from luwakx.luwak_logger import setup_logger, get_logger
+from luwakx.logging.luwak_logger import setup_logger, get_logger
 from luwakx.utils import download_github_asset_by_tag
-from luwakx.dicom_processor import DicomProcessor
+from luwakx.dicom.dicom_processor import DicomProcessor
 
 class TestAnonymizeScript(unittest.TestCase):
 

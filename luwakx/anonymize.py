@@ -8,19 +8,19 @@ import jsonschema
 import logging
 import traceback
 # Import the centralized logger
-from .luwak_logger import get_logger, setup_logger, log_project_stacktrace, shutdown_logging
+from .logging.luwak_logger import get_logger, setup_logger, log_project_stacktrace, shutdown_logging
 # Import custom exceptions
 from .exceptions import ConfigurationError
 # Import DICOM tag registry functions
-from .dicom_private_tag_registry import register_private_tags_from_csv
+from .dicom.dicom_private_tag_registry import register_private_tags_from_csv
 # Import LLM cache
-from .llm_cache import LLMResultCache
+from .persistence.llm_cache import LLMResultCache
 # Import patient UID database
-from .patient_uid_database import PatientUIDDatabase
+from .persistence.patient_uid_database import PatientUIDDatabase
 # Import deface mask database
-from .deface_mask_database import DefaceMaskDatabase
+from .defacing.deface_mask_database import DefaceMaskDatabase
 # Import recipe builder functions
-from .anonymization_recipe_builder import make_recipe_file
+from .recipe.anonymization_recipe_builder import make_recipe_file
 # Import utilities
 from .utils import cleanup_gpu_memory
 
@@ -605,7 +605,7 @@ class LuwakAnonymizer:
         - Workflow: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#934-typical-workflow
         - Output Files: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
         """
-        from .pipeline_coordinator import PipelineCoordinator
+        from .pipeline.pipeline_coordinator import PipelineCoordinator
 
         self.logger.info("=" * 50)
         self.logger.info("Starting DICOM anonymization process...")

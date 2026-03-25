@@ -9,9 +9,9 @@ import os
 from collections import defaultdict
 from typing import Any, Dict, List
 from .processing_pipeline import ProcessingPipeline
-from .dicom_series import DicomSeries
-from .dicom_series_factory import DicomSeriesFactory
-from .deface_priority_elector import DefacePriorityElector
+from ..dicom.dicom_series import DicomSeries
+from ..dicom.dicom_series_factory import DicomSeriesFactory
+from ..defacing.deface_priority_elector import DefacePriorityElector
 
 
 class PipelineCoordinator:

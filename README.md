@@ -16,14 +16,14 @@ pip install luwakx
 ```bash
 git clone https://github.com/ZentaLabs/luwak.git
 cd luwak
-pip install -e .
+pip install -e ".[test]"
 ```
 
 ### Using requirements.txt (development)
 
 ```bash
 pip install -r requirements.txt
-pip install -e .
+pip install -e ".[test]"
 ```
 
 > **Note:** `deid` is a custom fork not available on PyPI. It is automatically installed from GitHub the first time anonymization is run.

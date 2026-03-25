@@ -18,7 +18,7 @@ import re
 import struct
 from typing import List, Optional
 
-from .luwak_logger import get_logger
+from ..logging.luwak_logger import get_logger
 
 
 # Map recipe names to their label prefix in the "Documentation References" column
@@ -124,8 +124,8 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
     logger.debug(f"Recipe output folder: {recipe_folder}")
     
     # Default template paths
-    input_standard_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "standard_tags_template.csv")
-    input_private_template = os.path.join(os.path.dirname(__file__), "data", "TagsArchive", "private_tags_template.csv")
+    input_standard_template = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "TagsArchive", "standard_tags_template.csv")
+    input_private_template = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "TagsArchive", "private_tags_template.csv")
 
     # Custom tag templates can override defaults
     # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#55-custom-tag-templates

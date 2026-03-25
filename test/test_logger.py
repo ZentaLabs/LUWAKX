@@ -8,7 +8,7 @@ import sys
 import os
 import tempfile
 
-from luwakx.luwak_logger import setup_logger, get_logger
+from luwakx.logging.luwak_logger import setup_logger, get_logger
 
 
 class TestLuwakLogger(unittest.TestCase):

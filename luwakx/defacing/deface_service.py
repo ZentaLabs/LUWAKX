@@ -13,9 +13,9 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
-from .dicom_series import DicomSeries
-from .utils import cleanup_gpu_memory
-from .luwak_logger import log_project_stacktrace
+from ..dicom.dicom_series import DicomSeries
+from ..utils import cleanup_gpu_memory
+from ..logging.luwak_logger import log_project_stacktrace
 
 
 class DefaceService:
@@ -130,7 +130,7 @@ class DefaceService:
                 # Load defacer module once and cache it on the instance to avoid
                 # re-executing moosez module-level initialisation on every series.
                 defacer_path = os.path.join(
-                    os.path.dirname(__file__), "scripts", "defacing",
+                    os.path.dirname(os.path.dirname(__file__)), "scripts", "defacing",
                     "image_defacer", "image_anonymization.py"
                 )
                 spec = importlib.util.spec_from_file_location("image_anonymization", defacer_path)

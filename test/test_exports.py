@@ -10,7 +10,7 @@ import csv
 import pandas as pd
 
 from luwakx.anonymize import LuwakAnonymizer
-from luwakx.luwak_logger import setup_logger, get_logger
+from luwakx.logging.luwak_logger import setup_logger, get_logger
 from luwakx.utils import download_github_asset_by_tag
 
 class TestExports(unittest.TestCase):

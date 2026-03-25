@@ -3,7 +3,7 @@
 import unittest
 import os
 import sys
-from luwakx.luwak_logger import setup_logger, get_logger
+from luwakx.logging.luwak_logger import setup_logger, get_logger
 
 class TestPaths(unittest.TestCase):
     """Test that all paths are correctly resolved when test is moved to test directory."""

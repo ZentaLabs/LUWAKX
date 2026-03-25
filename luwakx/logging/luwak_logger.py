@@ -234,7 +234,7 @@ def log_project_stacktrace(logger, exc):
         exc: Exception object containing the traceback to process
     """
     tb_list = traceback.extract_tb(exc.__traceback__)
-    project_path = os.path.abspath(os.path.dirname(__file__))
+    project_path = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
     # Find the first frame from your project
     start_idx = next(
         (i for i, frame in enumerate(tb_list)

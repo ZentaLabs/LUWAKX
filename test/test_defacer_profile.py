@@ -15,10 +15,10 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="batchgenerators")
 
 from luwakx.anonymize import LuwakAnonymizer
-from luwakx.deface_service import DefaceService
-from luwakx.dicom_series import DicomSeries
-from luwakx.dicom_file import DicomFile
-from luwakx.luwak_logger import get_logger, setup_logger
+from luwakx.defacing.deface_service import DefaceService
+from luwakx.dicom.dicom_series import DicomSeries
+from luwakx.dicom.dicom_file import DicomFile
+from luwakx.logging.luwak_logger import get_logger, setup_logger
 from luwakx.utils import has_gpu, download_github_asset_by_tag
 
 class TestDefacerProfile(unittest.TestCase):

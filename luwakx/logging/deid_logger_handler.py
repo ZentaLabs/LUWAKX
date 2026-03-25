@@ -87,7 +87,7 @@ class DeidProgressHandler:
             # Log project-relevant stack trace for errors only
             tb_list = traceback.extract_stack()
             import os
-            project_path = os.path.abspath(os.path.dirname(__file__))
+            project_path = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
             start_idx = next(
                 (i for i, frame in enumerate(tb_list)
                  if project_path in os.path.abspath(frame.filename)),
@@ -140,7 +140,7 @@ class DeidProgressHandler:
         original_value = value_match.group(1) if value_match else ""
 
         try:
-            from .review_flag_collector import ReviewFlagCollector
+            from ..export.review_flag_collector import ReviewFlagCollector
             self.review_collector.add_flag(
                 tag_group       = tag_group,
                 tag_element     = tag_element,
@@ -173,7 +173,7 @@ class DeidProgressHandler:
         recorded_msg = msg.strip()[:512]
 
         try:
-            from .review_flag_collector import ReviewFlagCollector
+            from ..export.review_flag_collector import ReviewFlagCollector
             self.review_collector.add_flag(
                 tag_group       = "*",
                 tag_element     = "*",

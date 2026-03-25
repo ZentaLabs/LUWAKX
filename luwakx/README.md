@@ -13,10 +13,21 @@ It is based on the 2025b DICOM standards.
 
 ## Architecture
 
-LuwakX uses a config-driven architecture with two main components:
+LuwakX uses a config-driven architecture with two main entry points:
 
 - **`anonymize.py`**: Contains the `LuwakAnonymizer` class for programmatic use
 - **`luwakx.py`**: Command-line wrapper script that uses JSON configuration files
+
+The package is organised into sub-packages:
+
+- **`logging/`**: Logging infrastructure (`luwak_logger`, `deid_logger_handler`)
+- **`dicom/`**: DICOM data model and processing (`dicom_file`, `dicom_series`, `dicom_series_factory`, `dicom_processor`, `dicom_private_tag_registry`)
+- **`defacing/`**: Visual feature removal (`deface_service`, `deface_priority_elector`, `deface_mask_database`)
+- **`pipeline/`**: Orchestration (`pipeline_coordinator`, `processing_pipeline`, `processing_stage`, `processing_status`)
+- **`export/`**: Output generation (`metadata_exporter`, `review_flag_collector`)
+- **`persistence/`**: Cross-run caches (`patient_uid_database`, `llm_cache`)
+- **`recipe/`**: deid recipe generation (`anonymization_recipe_builder`)
+- **`scripts/`**: Standalone maintenance and curation scripts
 
 ## Configuration File Format
 
@@ -246,7 +257,7 @@ python luwakx.py --config_path config.json --no-console
 Use the `LuwakAnonymizer` class directly in your Python code:
 
 ```python
-from anonymize import LuwakAnonymizer
+from luwakx.anonymize import LuwakAnonymizer
 
 # Initialize with config file
 anonymizer = LuwakAnonymizer("/path/to/config.json")
@@ -319,7 +330,7 @@ The PRIVATE log level (level 5) is a custom log level that captures sensitive in
 When using the programmatic interface, the logger is automatically configured based on your configuration:
 
 ```python
-from anonymize import LuwakAnonymizer
+from luwakx.anonymize import LuwakAnonymizer
 
 # Logger is automatically set up during initialization
 anonymizer = LuwakAnonymizer("/path/to/config.json")
@@ -331,7 +342,7 @@ result = anonymizer.anonymize()
 For debugging or audit purposes, you can also configure PRIVATE logging programmatically:
 
 ```python
-from luwak_logger import setup_logger
+from luwakx.logging.luwak_logger import setup_logger
 
 # Setup PRIVATE logging (includes sensitive data)
 setup_logger(log_level='PRIVATE', log_file='audit.log', console_output=False)
