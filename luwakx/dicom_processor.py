@@ -1322,6 +1322,9 @@ class DicomProcessor:
         - Curve Data: (50xx,xxxx) where xx is 00-FF (even numbers only)
         - Overlay Data: (60xx,3000) where xx is 00-FF (even numbers only)  
         - Overlay Comments: (60xx,4000) where xx is 00-FF (even numbers only)
+
+        When removing the Overlay Data (60xx,3000), all the group 6000 
+        must be removed too (60xx,xxxx), this includes Overlay Comments (60xx,4000)
         
         Args:
             dicom: PyDicom dataset object containing DICOM data
@@ -1337,21 +1340,18 @@ class DicomProcessor:
         """
         tag = field.element.tag
         group = tag.group
-        element = tag.element
         
         # Check for Curve Data (50xx,xxxx) - any element in group 50xx (even)
         if 0x5000 <= group <= 0x50FF and group % 2 == 0:
             self.logger.debug(f"Found Curve Data tag: {tag}")
             return True
         
-        # Check for Overlay Data (60xx,3000)
-        if 0x6000 <= group <= 0x60FF and group % 2 == 0 and element == 0x3000:
-            self.logger.debug(f"Found Overlay Data tag: {tag}")
-            return True
+        # When removing the Overlay Data (60xx,3000), all the group 6000 
+        # must be removed too, this includes Overlay Comments (60xx,4000)
+        # hence no explicit calls are necessary for those tags anymore
         
-        # Check for Overlay Comments (60xx,4000)
-        if 0x6000 <= group <= 0x60FF and group % 2 == 0 and element == 0x4000:
-            self.logger.debug(f"Found Overlay Comments tag: {tag}")
+        if 0x6000 <= group <= 0x60FF and group % 2 == 0:
+            self.logger.debug(f"Found Overlay Data group tag: {tag}")
             return True
         
         return False

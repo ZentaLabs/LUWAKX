@@ -1344,10 +1344,9 @@ The remove action here uses the custom method `is_curve_or_overlay_tag`
 
 *Method:*
 - Checks if tag is:
-  - Curve Data: Group (50xx,xxxx) where xx is even
-  - Overlay Data: (60xx,3000) where xx is even
-  - Overlay Comments: (60xx,4000) where xx is even
-- Used with REMOVE ALL to delete all Curve Data, Overlay Data, Overlay Comments tags
+  - Curve Data: Group (50xx,xxxx) where xx is even — any element in the 50xx group range
+  - Overlay group: Group (60xx,xxxx) where xx is even — the **entire** 60xx group is removed, which covers Overlay Data (60xx,3000), Overlay Comments (60xx,4000), and all other tags in that group. Removing the whole group is required because DICOM Overlay Data is always accompanied by mandatory descriptive tags (e.g. Overlay Rows, Overlay Columns, Overlay Type) in the same group; leaving those behind would produce an invalid IOD.
+- Used with REMOVE ALL to delete all Curve Data and Overlay group tags
 
 *Implementation:* `DicomProcessor.is_curve_or_overlay_tag()`
 
