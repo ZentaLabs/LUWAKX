@@ -1298,8 +1298,8 @@ class DicomProcessor:
             self.logger.warning(
                 f"MANUAL REVIEW REQUIRED: Tag ({_fp['tag_group']},{_fp['tag_element']}) "
                 f"({_fp['keyword']}) has VR=SQ and is marked for replacement, but no "
-                f"automatic replacement is available. The original sequence value is kept "
-                f"unchanged. Please review this tag manually. Series: {series_info}"
+                f"automatic replacement is available. The tags within the sequence might "
+                f"be already correctly modified. Please review this tag manually. Series: {series_info}"
             )
         if self.review_collector:
             try:

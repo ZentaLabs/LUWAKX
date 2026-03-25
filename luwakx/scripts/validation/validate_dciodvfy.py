@@ -232,24 +232,34 @@ def _parse_dciodvfy_line(line: str):
 
     Three output formats are handled:
 
-      Format 1 - tag path first (``-new`` flag or similar):
-        ``Error - </PixelData(7fe0,0010)> - Invalid Value Representation - ...``
+      Format 1 - tag path first:
+        ``Error - </ReferencedImageSequence(0008,1140)> - Bad Sequence ... - Module=<...>``
+        ``Error - <ReferencedImageSequence(0008,1140)> - Bad Sequence ...``
+        (tag element is enclosed in ``<...>`` or ``</...>`` immediately after the severity)
 
       Format 2 - description first, attribute name second (common default):
-        ``Error - Invalid Value Representation - Pixel Data - VR = OB ...``
+        ``Warning - Missing attribute or value ... - Study ID``
+
+      Format B - description only with embedded ``Element=<Name>`` reference:
+        ``Error - Bad Sequence number of Items 0 (...) Element=<ReferencedStudySequence> Module=<...>``
 
       Format 3 - DICOM tag first, then severity (seen on the installed version):
         ``(0x0010,0x0010) PN Patient's Name  - Warning - Value dubious ...``
         ``(0x0019,0x10b1) LO ?  - Warning - Explicit VR doesn't match dict ...``
 
-    Returns ``(severity, affected_tag, full_line)`` where:
+    Returns ``(severity, affected_tag, message)`` where:
       - severity    : ``"Error"`` or ``"Warning"``
       - affected_tag: the DICOM attribute/tag affected - used as the stable
                       comparison key between original and anonymized series.
-                      • Format 1 -> tag-path segment, e.g. ``</PixelData(7fe0,0010)>``
-                      • Format 2 -> attribute-name segment, e.g. ``Pixel Data``
-                      • Format 3 -> tag-identity prefix, e.g. ``(0x0010,0x0010) PN Patient's Name``
-      - full_line   : the complete original line, stored verbatim in the CSV.
+                      • Format 1 -> tag name stripped of angle brackets/slash,
+                        e.g. ``ReferencedImageSequence(0008,1140)``
+                      • Format 2 -> attribute-name segment, e.g. ``Study ID``
+                      • Format B -> element name extracted from ``Element=<Name>``,
+                        e.g. ``ReferencedStudySequence``
+                      • Format 3 -> tag-identity prefix,
+                        e.g. ``(0x0010,0x0010) PN Patient's Name``
+      - message     : the diagnostic description without the leading severity
+                      prefix and without the tag segment (for Format 1).
 
     Returns ``None`` for informational lines (e.g. IOD name ``CTImage``).
     """
@@ -266,33 +276,48 @@ def _parse_dciodvfy_line(line: str):
             if idx != -1:
                 # Everything before " - Warning/Error - " is the tag identity
                 affected_tag = line[:idx].strip().rstrip(" -").strip()
-                return severity, affected_tag, line
+                message = line[idx + len(keyword):].strip()
+                return severity, affected_tag, message
 
-    # ---- Format 1 / Format 2: line starts with "Error" or "Warning" ----
+    # ---- Format 1 / Format 2 / Format B: line starts with "Error" or "Warning" ----
     for keyword, severity in (("error", "Error"), ("warning", "Warning")):
         if low.startswith(keyword):
             rest = line[len(keyword):].lstrip(" -")
             parts = [p.strip() for p in rest.split(" - ")]
-            # Format 1: first segment is a tag path starting with "</"
-            #   e.g. "</PixelData(7fe0,0010)>" -> use as affected_tag directly.
+
+            # Format 1: first segment is a tag path enclosed in angle brackets,
+            # e.g. "</ReferencedImageSequence(0008,1140)>" or "<PixelData(7fe0,0010)>".
+            # Must start with "<" followed by a letter (to exclude bare values like "<0>").
+            if parts and _re.match(r'^</?[A-Za-z]', parts[0]):
+                # Strip angle brackets and optional leading slash
+                affected_tag = parts[0].strip("<>/")
+                message = " - ".join(parts[1:]) if len(parts) > 1 else rest
+
             # Format 2: first segment is the error description, second is the
-            #   attribute name -> use second segment so both original and
-            #   anonymized produce the same comparison key for the same attribute.
-            if parts and parts[0].startswith("</"):
-                affected_tag = parts[0]          # Format 1
+            # attribute name.
             elif len(parts) >= 2:
-                affected_tag = parts[1]          # Format 2
+                affected_tag = parts[1]
+                message = rest
+
+            # Format B: single-segment description with "Element=<Name>" embedded,
+            # e.g. "Bad Sequence ... Element=<ReferencedStudySequence> Module=<...>".
             else:
-                affected_tag = parts[0] if parts else rest
-            return severity, affected_tag, line
+                element_match = _re.search(r'Element\s*=\s*<([^>]+)>', rest)
+                if element_match:
+                    affected_tag = element_match.group(1)
+                else:
+                    affected_tag = parts[0] if parts else rest
+                message = rest
+
+            return severity, affected_tag, message
 
     # ---- "E:" / "W:" short format (some dciodvfy versions) ----
     if low.startswith("e:") or low.startswith("e "):
         rest = line[2:].strip()
-        return "Error", rest, line
+        return "Error", rest, rest
     if low.startswith("w:") or low.startswith("w "):
         rest = line[2:].strip()
-        return "Warning", rest, line
+        return "Warning", rest, rest
 
     return None
 
