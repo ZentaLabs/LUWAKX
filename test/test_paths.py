@@ -3,9 +3,7 @@
 import unittest
 import os
 import sys
-# Add luwakx directory to Python path for imports
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
-from luwak_logger import setup_logger, get_logger
+from luwakx.luwak_logger import setup_logger, get_logger
 
 class TestPaths(unittest.TestCase):
     """Test that all paths are correctly resolved when test is moved to test directory."""
@@ -77,9 +75,8 @@ class TestPaths(unittest.TestCase):
         print("Testing import resolution")
         
         # Test import
-        sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
         try:
-            from anonymize import LuwakAnonymizer
+            from luwakx.anonymize import LuwakAnonymizer
             # print("Import successful: LuwakAnonymizer imported")
             self.assertTrue(True, "LuwakAnonymizer should be importable")
         except ImportError as e:

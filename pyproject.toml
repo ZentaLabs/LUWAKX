@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "luwakx"
+version = "0.1.0"
+description = "Config-driven DICOM anonymization tool based on the 2025b DICOM standard"
+readme = "README.md"
+license = { file = "LICENSE.txt" }
+authors = [
+    { name = "Simona Lombardo", email = "simonalombardo88@gmail.com" }
+]
+requires-python = ">=3.12"
+keywords = ["dicom", "anonymization", "de-identification", "medical imaging"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+dependencies = [
+    "pydicom",
+    "requests",
+    "beautifulsoup4",
+    "pandas",
+    "pyarrow",
+    "jsonschema",
+    "psutil",
+    "openai==1.103.0",
+    "SimpleITK",
+    "vedo",
+    "annotated-types",
+    "anyio",
+    "certifi",
+    "distro",
+    "h11",
+    "httpcore",
+    "httpx",
+    "idna",
+    "jiter",
+    "pydantic",
+    "pydantic_core",
+    "python-dateutil",
+    "pytz",
+    "six",
+    "sniffio",
+    "tqdm",
+    "typing-inspection",
+    "typing_extensions",
+    "tzdata",
+    "moosez",
+    "opencv-python",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.scripts]
+luwakx = "luwakx.luwakx:main"
+
+[project.urls]
+Homepage = "https://github.com/ZentaLabs/luwak"
+Repository = "https://github.com/ZentaLabs/luwak"
+Documentation = "https://github.com/ZentaLabs/luwak/blob/main/docs/deidentification_conformance.md"
+"Bug Tracker" = "https://github.com/ZentaLabs/luwak/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["luwakx*"]
+
+[tool.setuptools.package-data]
+luwakx = ["data/**/*", "scripts/**/*"]

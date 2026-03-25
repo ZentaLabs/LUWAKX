@@ -12,7 +12,7 @@ import csv
 from pydicom.datadict import add_private_dict_entry
 
 # Import the centralized logger
-from luwak_logger import get_logger
+from .luwak_logger import get_logger
 
 
 def tag_str_to_int(group, element):

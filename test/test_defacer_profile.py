@@ -14,14 +14,12 @@ import warnings
 # Suppress deprecation warnings from batchgenerators/scipy
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="batchgenerators")
 
-# Add luwakx directory to Python path for imports
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
-from anonymize import LuwakAnonymizer
-from deface_service import DefaceService
-from dicom_series import DicomSeries
-from dicom_file import DicomFile
-from luwak_logger import get_logger, setup_logger
-from utils import has_gpu, download_github_asset_by_tag
+from luwakx.anonymize import LuwakAnonymizer
+from luwakx.deface_service import DefaceService
+from luwakx.dicom_series import DicomSeries
+from luwakx.dicom_file import DicomFile
+from luwakx.luwak_logger import get_logger, setup_logger
+from luwakx.utils import has_gpu, download_github_asset_by_tag
 
 class TestDefacerProfile(unittest.TestCase):
     

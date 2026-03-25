@@ -34,3 +34,6 @@ test_output/
 # Logs and temp files
 *.log
 *.tmp
+
+# Packaging metadata
+*.egg-info/

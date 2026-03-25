@@ -9,8 +9,8 @@ import hashlib
 import hmac
 from typing import Any, Dict, List, Optional, Tuple
 import pydicom
-from dicom_file import DicomFile
-from processing_status import ProcessingStatus
+from .dicom_file import DicomFile
+from .processing_status import ProcessingStatus
 
 
 class PathTooLongError(Exception):

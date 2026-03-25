@@ -14,7 +14,7 @@ import hashlib
 import traceback
 
 # Import the centralized logger
-from luwak_logger import get_logger, log_project_stacktrace
+from .luwak_logger import get_logger, log_project_stacktrace
 
 
 class LLMResultCache:

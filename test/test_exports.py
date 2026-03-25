@@ -9,11 +9,9 @@ import tarfile
 import csv
 import pandas as pd
 
-# Add luwakx directory to Python path for imports
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
-from anonymize import LuwakAnonymizer
-from luwak_logger import setup_logger, get_logger
-from utils import download_github_asset_by_tag
+from luwakx.anonymize import LuwakAnonymizer
+from luwakx.luwak_logger import setup_logger, get_logger
+from luwakx.utils import download_github_asset_by_tag
 
 class TestExports(unittest.TestCase):
     """Test suite for CSV mapping and Parquet export functionality."""

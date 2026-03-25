@@ -8,10 +8,10 @@ by distributing series across multiple workers.
 import os
 from collections import defaultdict
 from typing import Any, Dict, List
-from processing_pipeline import ProcessingPipeline
-from dicom_series import DicomSeries
-from dicom_series_factory import DicomSeriesFactory
-from deface_priority_elector import DefacePriorityElector
+from .processing_pipeline import ProcessingPipeline
+from .dicom_series import DicomSeries
+from .dicom_series_factory import DicomSeriesFactory
+from .deface_priority_elector import DefacePriorityElector
 
 
 class PipelineCoordinator:
@@ -204,7 +204,7 @@ class PipelineCoordinator:
         )
         
         # Count by status
-        from processing_status import ProcessingStatus
+        from .processing_status import ProcessingStatus
         status_counts = {status: 0 for status in ProcessingStatus}
         
         for pipeline in self.pipelines:

@@ -15,8 +15,8 @@ from typing import Any, Dict, List, Set
 import pydicom
 import pandas as pd
 
-from dicom_series import DicomSeries
-from luwak_logger import log_project_stacktrace
+from .dicom_series import DicomSeries
+from .luwak_logger import log_project_stacktrace
 
 
 class MetadataExporter:
@@ -104,7 +104,7 @@ class MetadataExporter:
         if not rows:
             return
 
-        from review_flag_collector import ReviewFlagCollector
+        from .review_flag_collector import ReviewFlagCollector
         columns = ReviewFlagCollector.CSV_COLUMNS
         file_exists = os.path.exists(review_flags_file)
 

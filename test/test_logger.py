@@ -8,11 +8,7 @@ import sys
 import os
 import tempfile
 
-# Add the luwakx directory to the path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
-
-# Test the logger system
-from luwak_logger import setup_logger, get_logger
+from luwakx.luwak_logger import setup_logger, get_logger
 
 
 class TestLuwakLogger(unittest.TestCase):
@@ -102,7 +98,7 @@ class TestLuwakLogger(unittest.TestCase):
         """Test that anonymize.py can import and use the logger."""
         try:
             # This should work without errors now
-            from anonymize import LuwakAnonymizer, register_private_tags_from_csv
+            from luwakx.anonymize import LuwakAnonymizer, register_private_tags_from_csv
             
             # Test that we can get a logger
             logger = get_logger('test_anonymize')
@@ -119,10 +115,10 @@ class TestLuwakLogger(unittest.TestCase):
         """Test that luwakx.py can import and use the logger."""
         try:
             # This should work without errors now
-            import luwakx
+            import luwakx.luwakx as luwakx_module
             
             # Verify import was successful
-            self.assertIsNotNone(luwakx)
+            self.assertIsNotNone(luwakx_module)
             
         except ImportError as e:
             self.fail(f"Failed to import luwakx module: {e}")

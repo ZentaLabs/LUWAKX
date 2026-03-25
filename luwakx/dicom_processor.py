@@ -23,9 +23,9 @@ import pydicom
 # UN so parsing continues.
 pydicom.config.convert_wrong_length_to_UN = True
 
-from dicom_series import DicomSeries
-from luwak_logger import log_project_stacktrace
-from review_flag_collector import ReviewFlagCollector
+from .dicom_series import DicomSeries
+from .luwak_logger import log_project_stacktrace
+from .review_flag_collector import ReviewFlagCollector
 
 
 class DicomProcessor:
@@ -101,7 +101,7 @@ class DicomProcessor:
         """
         from deid.dicom import get_identifiers, replace_identifiers
         from deid.logger import bot
-        from deid_logger_handler import DeidProgressHandler
+        from .deid_logger_handler import DeidProgressHandler
         
         self.series = series
         # Initialise review-flags context for this series

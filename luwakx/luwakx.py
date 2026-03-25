@@ -4,8 +4,8 @@ import os
 import argparse
 import sys
 import json
-from luwak_logger import setup_logger, get_logger
-from anonymize import LuwakAnonymizer
+from .luwak_logger import setup_logger, get_logger
+from .anonymize import LuwakAnonymizer
 
 def main():
     parser = argparse.ArgumentParser(

@@ -8,12 +8,10 @@ import json
 import tempfile
 import sys
 
-# Add luwakx directory to Python path for imports
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
-from anonymize import LuwakAnonymizer
-from luwak_logger import setup_logger, get_logger
-from utils import download_github_asset_by_tag
-from dicom_processor import DicomProcessor
+from luwakx.anonymize import LuwakAnonymizer
+from luwakx.luwak_logger import setup_logger, get_logger
+from luwakx.utils import download_github_asset_by_tag
+from luwakx.dicom_processor import DicomProcessor
 
 class TestAnonymizeScript(unittest.TestCase):
 
@@ -262,12 +260,11 @@ class TestAnonymizeScript(unittest.TestCase):
 
         try:
             self.logger.info("Starting luwakx wrapper script batch test")
-            script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "luwakx", "luwakx.py")
-            self.logger.info(f"Running luwakx script: {script_path}")
+            self.logger.info("Running luwakx via python -m luwakx.luwakx")
             result = subprocess.run([
-                "python", script_path,
+                sys.executable, "-m", "luwakx.luwakx",
                 "--config_path", config_path
-            ], capture_output=True, text=True)
+            ], capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__)))
             self.assertEqual(result.returncode, 0, f"luwakx.py failed with error: {result.stderr}")
             
             # Map input to output files using sequential ordering

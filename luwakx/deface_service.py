@@ -13,9 +13,9 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
-from dicom_series import DicomSeries
-from utils import cleanup_gpu_memory
-from luwak_logger import log_project_stacktrace
+from .dicom_series import DicomSeries
+from .utils import cleanup_gpu_memory
+from .luwak_logger import log_project_stacktrace
 
 
 class DefaceService:

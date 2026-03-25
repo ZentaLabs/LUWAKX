@@ -8,10 +8,10 @@ and tracking progress through processing stages.
 import os
 import shutil
 from typing import Any, Dict, List, Optional
-from dicom_series import DicomSeries
-from processing_stage import ProcessingStage
-from processing_status import ProcessingStatus
-from utils import cleanup_lm_studio_workers
+from .dicom_series import DicomSeries
+from .processing_stage import ProcessingStage
+from .processing_status import ProcessingStatus
+from .utils import cleanup_lm_studio_workers
 
 
 class ProcessingPipeline:
@@ -107,7 +107,7 @@ class ProcessingPipeline:
         self.review_collector = None
         if private_folder:
             try:
-                from review_flag_collector import ReviewFlagCollector
+                from .review_flag_collector import ReviewFlagCollector
                 self.review_collector = ReviewFlagCollector()
                 if self.logger:
                     self.logger.debug(f"ReviewFlagCollector initialised; review flags will be written to: {self.review_flags_file}")
@@ -119,7 +119,7 @@ class ProcessingPipeline:
     def processor(self):
         """Lazy-load DicomProcessor instance with shared LLM cache and patient UID DB."""
         if self._processor is None:
-            from dicom_processor import DicomProcessor
+            from .dicom_processor import DicomProcessor
             self._processor = DicomProcessor(
                 self.config,
                 self.logger,
@@ -133,7 +133,7 @@ class ProcessingPipeline:
     def deface_service(self):
         """Lazy-load DefaceService instance."""
         if self._deface_service is None:
-            from deface_service import DefaceService
+            from .deface_service import DefaceService
             self._deface_service = DefaceService(
                 self.config, self.logger, deface_mask_db=self.deface_mask_db
             )
@@ -143,7 +143,7 @@ class ProcessingPipeline:
     def exporter(self):
         """Lazy-load MetadataExporter instance."""
         if self._exporter is None:
-            from metadata_exporter import MetadataExporter
+            from .metadata_exporter import MetadataExporter
             self._exporter = MetadataExporter(self.config, self.logger)
         return self._exporter
     
@@ -244,7 +244,7 @@ class ProcessingPipeline:
                 # specific DICOM tag.
                 if self.review_collector:
                     try:
-                        from review_flag_collector import ReviewFlagCollector
+                        from .review_flag_collector import ReviewFlagCollector
                         # Reset context to this series (may differ if failure happened
                         # before DicomProcessor.anonymize_series() set it).
                         self.review_collector.set_series_context(

@@ -140,7 +140,7 @@ class DeidProgressHandler:
         original_value = value_match.group(1) if value_match else ""
 
         try:
-            from review_flag_collector import ReviewFlagCollector
+            from .review_flag_collector import ReviewFlagCollector
             self.review_collector.add_flag(
                 tag_group       = tag_group,
                 tag_element     = tag_element,
@@ -173,7 +173,7 @@ class DeidProgressHandler:
         recorded_msg = msg.strip()[:512]
 
         try:
-            from review_flag_collector import ReviewFlagCollector
+            from .review_flag_collector import ReviewFlagCollector
             self.review_collector.add_flag(
                 tag_group       = "*",
                 tag_element     = "*",

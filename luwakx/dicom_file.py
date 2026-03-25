@@ -6,7 +6,7 @@ information for a single DICOM file as it moves through the anonymization pipeli
 
 import os
 from typing import Any, Dict, Optional
-from processing_status import ProcessingStatus
+from .processing_status import ProcessingStatus
 
 
 class DicomFile:

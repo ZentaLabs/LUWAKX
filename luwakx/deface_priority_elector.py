@@ -24,8 +24,8 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Set, Tuple
 
-from deface_mask_database import DefaceMaskDatabase
-from dicom_series import DicomSeries
+from .deface_mask_database import DefaceMaskDatabase
+from .dicom_series import DicomSeries
 
 
 class DefacePriorityElector:

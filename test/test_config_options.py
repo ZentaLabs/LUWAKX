@@ -3,9 +3,7 @@ import os
 import json
 import tempfile
 import sys
-# Add luwakx directory to Python path for imports
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'luwakx'))
-from anonymize import LuwakAnonymizer
+from luwakx.anonymize import LuwakAnonymizer
 
 class TestConfigOptions(unittest.TestCase):
     """Test suite for each config option in luwak-config.json."""

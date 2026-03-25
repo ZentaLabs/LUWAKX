@@ -8,8 +8,8 @@ file reading to a single pass and manages patient UID pre-computation.
 import os
 from typing import Any, Dict, List, Set, Tuple
 import pydicom
-from dicom_series import DicomSeries, PathTooLongError
-from dicom_file import DicomFile
+from .dicom_series import DicomSeries, PathTooLongError
+from .dicom_file import DicomFile
 
 
 class DicomSeriesFactory:

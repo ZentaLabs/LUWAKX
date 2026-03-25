@@ -18,7 +18,7 @@ import re
 import struct
 from typing import List, Optional
 
-from luwak_logger import get_logger
+from .luwak_logger import get_logger
 
 
 # Map recipe names to their label prefix in the "Documentation References" column

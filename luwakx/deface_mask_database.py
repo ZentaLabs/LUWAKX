@@ -34,7 +34,7 @@ import hashlib
 import traceback
 from typing import Any, Dict, List, Optional
 
-from luwak_logger import get_logger, log_project_stacktrace
+from .luwak_logger import get_logger, log_project_stacktrace
 
 
 class DefaceMaskDatabase:
