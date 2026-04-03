@@ -1,4 +1,5 @@
 import SimpleITK
+import numpy as np
 import os
 from moosez import moose
 
@@ -16,7 +17,7 @@ def blur_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, sigma: float =
     return SimpleITK.Cast(blended, image.GetPixelID())
 
 
-def prepare_face_mask(image: SimpleITK.Image | None = None, modality: str | None = None, face_segmentation_path: str | None = None) -> SimpleITK.Image:
+def prepare_face_mask(image: SimpleITK.Image | None = None, modality: str | None = None, face_segmentation_path: str | None = None, dilation_margin_mm: float = 15.0) -> SimpleITK.Image:
     if face_segmentation_path and os.path.exists(face_segmentation_path):
         image_face_segmentation = SimpleITK.ReadImage(face_segmentation_path, SimpleITK.sitkUInt8)
     elif image and modality:
@@ -31,6 +32,15 @@ def prepare_face_mask(image: SimpleITK.Image | None = None, modality: str | None
         raise ValueError("Either the path or image and modality must be provided.")
 
     face_segmentation_image_largest_label = keep_largest_component(image_face_segmentation)
+
+    if dilation_margin_mm > 0:
+        min_spacing = min(face_segmentation_image_largest_label.GetSpacing())
+        dilation_radius = int(np.ceil(dilation_margin_mm / min_spacing))
+        dilate_filter = SimpleITK.BinaryDilateImageFilter()
+        dilate_filter.SetKernelRadius(dilation_radius)
+        dilate_filter.SetForegroundValue(1)
+        face_segmentation_image_largest_label = dilate_filter.Execute(face_segmentation_image_largest_label)
+
     return face_segmentation_image_largest_label
 
 

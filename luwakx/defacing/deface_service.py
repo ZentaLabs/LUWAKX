@@ -68,6 +68,9 @@ class DefaceService:
         # Physical block size for pixelation (in mm)
         self.physical_block_size_mm = config.get('physicalFacePixelationSizeMm', 8.5)
 
+        # Dilation margin applied to the face mask before pixelation (in mm)
+        self.face_dilation_margin_mm = config.get('faceDilationMarginMm', 15.0)
+
         # Track series counter for external mask indexing
         self._series_counter = 0
 
@@ -179,7 +182,7 @@ class DefaceService:
                 # Strategy 1: Use pre-computed external mask (test / override)
                 self.logger.info("Using external mask for face segmentation")
                 mask_path = self.external_mask_paths[self._series_counter]
-                image_face_segmentation = defacer.prepare_face_mask(image, modality, mask_path)
+                image_face_segmentation = defacer.prepare_face_mask(image, modality, mask_path, dilation_margin_mm=self.face_dilation_margin_mm)
                 self._series_counter += 1
 
             elif series.primary_ct_series is not None:
@@ -242,7 +245,7 @@ class DefaceService:
                         f"Running ML defacing for series {series.anonymized_series_uid!r} "
                         f"(modality={modality})"
                     )
-                    image_face_segmentation = defacer.prepare_face_mask(image, modality)
+                    image_face_segmentation = defacer.prepare_face_mask(image, modality, dilation_margin_mm=self.face_dilation_margin_mm)
                     cleanup_gpu_memory()
                     self.logger.debug("GPU memory cleaned up after face detection")
                     # Persist mask if this CT serves a paired PET, or saveDefaceMasks=true.
@@ -745,9 +748,11 @@ class DefaceService:
         """Verify that defacing only modified face voxels.
 
         Reads the defaced DICOM series back from disk and compares it against
-        the original in-memory volume.  Dilates the face mask by the pixelation
-        block size (in voxels) to account for block-boundary effects, then
-        checks that every voxel outside the dilated mask is unchanged.
+        the original in-memory volume.  The incoming ``face_mask`` is already
+        dilated by ``dilation_margin_mm`` (see ``prepare_face_mask``).  This
+        method applies an additional dilation by the pixelation block size to
+        account for block-boundary effects, then checks that every voxel
+        outside the dilated mask is unchanged.
         Results are logged at INFO level on success and WARNING level on failure.
 
         Activated by setting ``verifyDefacingIntegrity: true`` in the config.
@@ -779,6 +784,7 @@ class DefaceService:
             defaced_reader.SetFileNames(defaced_files)
             defaced_arr = SimpleITK.GetArrayFromImage(defaced_reader.Execute())
 
+            face_margin_mm  = self.face_dilation_margin_mm
             block_size_mm   = self.physical_block_size_mm
             min_spacing     = min(original_image.GetSpacing())
             dilation_radius = int(np.ceil(block_size_mm / min_spacing))
@@ -817,16 +823,20 @@ class DefaceService:
                 self.logger.warning(
                     f"DefacingIntegrityCheck FAILED for {series_display}: "
                     f"{n_changed} non-face voxels were modified outside the dilated "
-                    f"face mask (dilation_radius={dilation_radius} voxels, "
-                    f"block={block_size_mm}mm, spacing={min_spacing:.2f}mm)"
+                    f"face mask (face_margin={face_margin_mm}mm + "
+                    f"block={block_size_mm}mm, "
+                    f"block_dilation_radius={dilation_radius} voxels, "
+                    f"spacing={min_spacing:.2f}mm)"
                 )
                 return False
 
             self.logger.info(
                 f"DefacingIntegrityCheck passed for {series_display}: "
                 f"all non-face voxels unchanged "
-                f"(dilation_radius={dilation_radius} voxels, "
-                f"block={block_size_mm}mm, spacing={min_spacing:.2f}mm)"
+                f"(face_margin={face_margin_mm}mm + "
+                f"block={block_size_mm}mm, "
+                f"block_dilation_radius={dilation_radius} voxels, "
+                f"spacing={min_spacing:.2f}mm)"
             )
             return True
 

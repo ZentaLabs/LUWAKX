@@ -63,6 +63,14 @@ def get_parser() -> argparse.ArgumentParser:
         help="Target block size in mm for pixelation. Larger values = more anonymization. Default: 8.5",
     )
 
+    parser.add_argument(
+        "-dm",
+        "--dilation_margin",
+        type=float,
+        default=15.0,
+        help="Dilation margin in mm to grow the face mask. Default: 15.0",
+    )
+
     return parser
 
 
@@ -98,7 +106,8 @@ def main():
     face_mask_path = args.face_mask_path
     if face_mask_path:
         print(f"Getting face mask from: {face_mask_path}")
-    image_face_segmentation = image_anonymization.prepare_face_mask(image, modality, face_mask_path)
+    dilation_margin = args.dilation_margin
+    image_face_segmentation = image_anonymization.prepare_face_mask(image, modality, face_mask_path, dilation_margin_mm=dilation_margin)
 
     save_face_mask = args.save_face_mask
     if save_face_mask and not face_mask_path:
