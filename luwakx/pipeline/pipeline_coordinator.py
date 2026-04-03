@@ -347,6 +347,20 @@ class PipelineCoordinator:
         # Factory handles file discovery, reading, grouping, and series creation
         all_series = factory.create_series_from_files(dicom_files)
 
+        # Filter out series without anonymized UIDs (e.g. unreadable DICOM files)
+        valid_series = [
+            s for s in all_series
+            if s.anonymized_patient_id
+            and s.anonymized_study_uid
+            and s.anonymized_series_uid
+        ]
+        skipped = len(all_series) - len(valid_series)
+        if skipped:
+            logger.warning(
+                f"Skipped {skipped} series without anonymized UIDs"
+            )
+        all_series = valid_series
+
         # Elect primary deface candidates and reorder so each primary precedes
         # its group members - required for PET/CT mask projection to work correctly.
         # The elector always runs when the deface recipe is active; CT is the
