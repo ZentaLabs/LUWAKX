@@ -153,6 +153,13 @@
       "default": false,
       "examples": [true, false]
     },
+    "numWorkers": {
+      "type": "integer",
+      "description": "Number of parallel workers for DICOM processing. Default 1 (sequential).",
+      "default": 1,
+      "minimum": 1,
+      "examples": [1, 4, 8]
+    },
     "verifyDefacingIntegrity": {
       "type": "boolean",
       "description": "When true, after defacing each series the pipeline reads the written DICOM files back from disk and verifies that no voxel outside the (dilated) face mask was modified. The face mask is dilated by the pixelation block size to tolerate block-boundary effects. A WARNING is logged for each series that fails the check; processing continues regardless. Useful for quality-assurance runs; leave false (default) in production to avoid the extra I/O overhead.",
