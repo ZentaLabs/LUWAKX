@@ -180,21 +180,29 @@ class TestDefacerProfile(unittest.TestCase):
         reader.SetFileNames(defaced_series_files)
         defaced_arr = sitk.GetArrayFromImage(reader.Execute())
 
-        # Load face mask 
+        # Load face mask and apply the same preparation as DefaceService (prepare_face_mask),
+        # so the reference mask matches exactly what defacing operated on.
+        from luwakx.scripts.defacing.image_defacer.image_anonymization import prepare_face_mask
         face_mask_path = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
-        face_mask_img = sitk.ReadImage(face_mask_path)
-        # Dilate the mask to account for pixelation block boundary effects.
-        # Blocks at the mask border will always affect pixels up to block_size voxels
-        # beyond the mask edge. Compute the dilation radius from the physical block
-        # size and the volume's minimum voxel spacing.
+        face_dilation_margin_mm = config.get('faceDilationMarginMm', 15.0)
         block_size_mm = config.get('physicalFacePixelationSizeMm', 8.5)
         min_spacing = min(original_vol.GetSpacing())
+
+        # Step 1: apply the same prepare_face_mask used by DefaceService (includes faceDilationMarginMm)
+        face_mask_prepared = prepare_face_mask(
+            image=original_vol,
+            modality=modality,
+            face_segmentation_path=face_mask_path,
+            dilation_margin_mm=face_dilation_margin_mm
+        )
+
+        # Step 2: add block-boundary dilation (mirrors _verify_non_face_pixels_unchanged)
         dilation_radius = int(np.ceil(block_size_mm / min_spacing))
         self.logger.info(f"Face mask dilation radius: {dilation_radius} voxels (block={block_size_mm}mm, spacing={min_spacing:.2f}mm)")
         dilate_filter = sitk.BinaryDilateImageFilter()
         dilate_filter.SetKernelRadius(dilation_radius)
         dilate_filter.SetForegroundValue(1)
-        face_mask_dilated_vol = dilate_filter.Execute(sitk.Cast(face_mask_img, sitk.sitkUInt8))
+        face_mask_dilated_vol = dilate_filter.Execute(sitk.Cast(face_mask_prepared, sitk.sitkUInt8))
         face_mask_dilated = sitk.GetArrayFromImage(face_mask_dilated_vol).astype(bool)
 
         # Check shapes
