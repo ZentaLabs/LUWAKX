@@ -6,6 +6,7 @@ file reading to a single pass and manages patient UID pre-computation.
 """
 
 import os
+import sys
 from typing import Any, Dict, List, Set, Tuple
 import pydicom
 from .dicom_series import DicomSeries, PathTooLongError
@@ -112,8 +113,18 @@ class DicomSeriesFactory:
         series_metadata: Dict[Tuple[str, str, str, str, str], Dict[str, Any]] = {}
         seen_patients: Set[Tuple[str, str, str]] = set()
         patient_count = 0
-        
-        for file_path in dicom_files:
+
+        total_files = len(dicom_files)
+        # Print a progress bar every ~1 % of total (at least every 1000 files)
+        _progress_step = max(1000, total_files // 100)
+
+        for _file_idx, file_path in enumerate(dicom_files, start=1):
+            if _file_idx % _progress_step == 0 or _file_idx == total_files:
+                _pct = _file_idx * 100 // total_files
+                print(
+                    f"\r  Scanning files: {_pct:3d}%  ({_file_idx}/{total_files})",
+                    end='', flush=True, file=sys.stderr,
+                )
             try:
                 ds = pydicom.dcmread(file_path, stop_before_pixels=True)
                 
@@ -206,7 +217,8 @@ class DicomSeriesFactory:
                         unknown_meta['acquisition_datetime'] = ''
                     series_metadata[unknown_key] = unknown_meta
                 series_groups[unknown_key].append(file_path)
-        
+
+        print(file=sys.stderr)  # newline after the progress bar
         self.logger.info(f"Pre-computed {patient_count} unique patients during file grouping")
         self.logger.info(f"Created {len(series_groups)} series groups from {len(dicom_files)} files")
         
