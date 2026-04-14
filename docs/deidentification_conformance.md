@@ -164,15 +164,13 @@ The defacing pipeline processes DICOM series through four main stages while main
 
 **Step 4: DICOM Export**
 - Extracts defaced pixel data from 3D volume, stored in the SimpleITK.Image object, as 2D slices
-- Each slice is located in the 3D volume using its spatial metadata (ImagePositionPatient, ImageOrientationPatient, PixelSpacing) rather than relying on slice order, ensuring robustness for non-axis-aligned volumes
-  - For axis-aligned volumes, the nearest slice along the primary axis is selected (`_is_volume_axis_aligned()`)
-  - For arbitrarily oriented volumes, the correct slice is identified via spatial coordinates (`_extract_slice_from_volume()`)
+- Each slice is extracted by its loop index over the GDCM-sorted file list, which is identical to the ITK internal z-index (`_extract_slice_from_volume()`). This approach is correct for all acquisition geometries (axis-aligned, oblique, non-uniform slice spacing) without any physical-coordinate arithmetic
 - Reads original DICOM files to preserve all header metadata
 - Applies inverse rescale transformation: `raw_pixels = (defaced_pixels - RescaleIntercept) / RescaleSlope`
 - Replaces only PixelData attribute; all spatial tags remain unchanged
 - Adds CID 7050 code 113101 to DeidentificationMethodCodeSequence (0012,0064) to document defacing method
 
-**Implementation:** `DefaceService._is_volume_axis_aligned()`, `DefaceService._extract_slice_from_volume()`
+**Implementation:** `DefaceService._extract_slice_from_volume()`
 
 #### 4.1.3 Modality Support
 - **CT (Computed Tomography):** Fully supported with modality-specific AI models.

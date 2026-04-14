@@ -322,16 +322,23 @@ class DefaceService:
             self.logger.warning(f"Volume has axis not aligned with the world (LPS) coordinate axes, check final defacing result, this option is not tested")
 
         try:
-            for original_file_path in gdcm_sorted_files:
+            for file_idx, original_file_path in enumerate(gdcm_sorted_files):
                 ds = pydicom.dcmread(original_file_path)
 
                 # Extract the defaced 2D slice that corresponds to this DICOM file's
-                # physical position/orientation - independent of file order.
+                # physical position/orientation.
+                # We pass file_idx as the explicit z-index because ITK reads slices in
+                # exactly the same order as gdcm_sorted_files.  Using the loop index
+                # avoids index-computation errors that occur with non-uniform slice
+                # spacing (ITK warning "Non uniform sampling or missing slices"), where
+                # the physical-position-to-index formula using vol_spacing[2] (the
+                # average spacing) maps some slices to wrong indices.
                 ipp = [float(x) for x in ds.ImagePositionPatient]
                 iop = [float(x) for x in ds.ImageOrientationPatient]
                 pixel_spacing = [float(x) for x in ds.PixelSpacing]
                 slice_2d = self._extract_slice_from_volume(
-                    image_defaced, ipp, iop, pixel_spacing, ds.Rows, ds.Columns
+                    image_defaced, ipp, iop, pixel_spacing, ds.Rows, ds.Columns,
+                    slice_z_index=file_idx,
                 )
 
                 # Get rescale parameters
@@ -446,103 +453,49 @@ class DefaceService:
 
 
     @staticmethod
-    def _extract_slice_from_volume(volume, ipp, iop, pixel_spacing, rows: int, cols: int) -> np.ndarray:
-        """Extract a 2D slice from a 3D SimpleITK volume at the physical location of a DICOM slice.
+    def _extract_slice_from_volume(volume, ipp, iop, pixel_spacing, rows: int, cols: int, slice_z_index: int) -> np.ndarray:
+        """Extract a 2D slice from a 3D SimpleITK volume by its loop index.
 
-        Uses ExtractImageFilter when the volume is axis-aligned (fast, lossless) and
-        ResampleImageFilter for arbitrary orientation acquisitions.
+        The correct and universal approach is to treat ``slice_z_index`` (the
+        loop index over ``gdcm_sorted_files``) as the ITK z-index, because ITK
+        always builds the 3D volume by stacking ``gdcm_sorted_files[i]`` at
+        internal z-index ``i`` — regardless of whether the acquisition is
+        axis-aligned, oblique/tilted, or has non-uniform slice spacing.
 
-        For the axis-aligned path, the slice index is computed directly.
-        The 3rd column of the direction matrix gives the slice axis direction
-        in world space. Since the volume is axis-aligned, this direction is parallel to
-        exactly one world axis k. The slice index is then:
-
-            k              = argmax(|z_axis_dir|)   # which world axis (0=x,1=y,2=z)
-            slice_step     = spacing[2] * z_axis_dir[k]  # signed mm per slice
-            slice_index    = round((ipp[k] - origin[k]) / slice_step)
+        For tilted/oblique series specifically: ITK still stacks slices along its
+        internal z-axis in file order regardless of the physical orientation. The
+        volume's direction matrix (3rd column) records the oblique slice normal,
+        but the internal storage index is invariant to this. ``ExtractImageFilter``
+        at z=``slice_z_index`` performs a direct memory copy with no arithmetic,
+        which is exact for any orientation.
 
         Args:
-            volume: SimpleITK.Image (3D) - the defaced volume
-            ipp: ImagePositionPatient (list/tuple of 3 floats)
-            iop: ImageOrientationPatient (list/tuple of 6 floats)
-            pixel_spacing: PixelSpacing (list/tuple of 2 floats, [row_spacing, col_spacing])
-            rows: DICOM Rows
-            cols: DICOM Columns
+            volume:         SimpleITK.Image (3D) - the defaced volume built by ITK
+                            from ``gdcm_sorted_files``.
+            ipp:            ImagePositionPatient (not used for extraction; kept for
+                            API symmetry with the DICOM metadata).
+            iop:            ImageOrientationPatient (not used for extraction; kept
+                            for API symmetry).
+            pixel_spacing:  PixelSpacing (not used; kept for API symmetry).
+            rows:           DICOM Rows (not used; kept for API symmetry).
+            cols:           DICOM Columns (not used; kept for API symmetry).
+            slice_z_index:  The 0-based index of the source file in the
+                            ``gdcm_sorted_files`` list, equal to the ITK z-index.
 
         Returns:
-            2D numpy array with the extracted pixel values.
+            2D numpy array with the exact pixel values at that z-slice.
         """
         import SimpleITK
 
-        ipp_arr = np.array(ipp, dtype=float)
-        row_cosines = np.array(iop[:3], dtype=float)
-        col_cosines = np.array(iop[3:], dtype=float)
+        # Clamp defensively in case of edge conditions (e.g. a gap slice).
+        slice_index = max(0, min(slice_z_index, volume.GetSize()[2] - 1))
 
-        if DefaceService._is_volume_axis_aligned(iop):
-            # --- Axis-aligned volume path ---
-            # For axis-aligned volumes the slice direction (3rd column of vol_dir) is
-            # parallel to exactly one world axis k. The slice index is computed directly
-            # as the offset along that axis divided by the signed physical step per slice.
-            vol_dir = np.array(volume.GetDirection()).reshape(3, 3)
-            vol_spacing = np.array(volume.GetSpacing())
-            vol_origin = np.array(volume.GetOrigin())
-
-            z_axis_dir = vol_dir[:, 2]                          # slice direction in world space
-            k = int(np.argmax(np.abs(z_axis_dir)))              # dominant world axis (0=x,1=y,2=z)
-            slice_step = vol_spacing[2] * z_axis_dir[k]         # signed mm per slice along axis k
-            slice_index = int(round((ipp_arr[k] - vol_origin[k]) / slice_step))
-            # Clamp to valid range
-            slice_index = max(0, min(slice_index, volume.GetSize()[2] - 1))
-
-            extractor = SimpleITK.ExtractImageFilter()
-            size = list(volume.GetSize())
-            size[2] = 0  # collapse z -> 2D output
-            extractor.SetSize(size)
-            extractor.SetIndex([0, 0, slice_index])
-            slice_2d = extractor.Execute(volume)
-            return SimpleITK.GetArrayFromImage(slice_2d)
-        else:
-            # --- General path: arbitrary orientation ---
-            # TODO: Test this path with appropriate data, then remove the warning logged if validated
-            # Build a thin 3D reference image (depth=1) with the exact geometry of
-            # the DICOM slice and resample the 3D volume onto it.
-            # A 2D reference cannot be used here: ResampleImageFilter requires the
-            # reference and the input to share the same dimensionality, and passing a
-            # 2D reference for a 3D volume causes "Expected vector of length 3 but only
-            # got 2 elements" inside SimpleITK's transform pipeline.
-            row_spacing = float(pixel_spacing[0])
-            col_spacing = float(pixel_spacing[1])
-
-            # Normal vector = cross product of row and column cosines.
-            normal = np.cross(row_cosines, col_cosines)
-
-            # Full 3×3 direction matrix stored row-major as SimpleITK expects.
-            # Columns of D are the world-space unit vectors for i (col index),
-            # j (row index), and k (slice/normal) axes respectively.
-            direction_3d = (
-                row_cosines[0], col_cosines[0], normal[0],
-                row_cosines[1], col_cosines[1], normal[1],
-                row_cosines[2], col_cosines[2], normal[2],
-            )
-
-            slice_ref = SimpleITK.Image([cols, rows, 1], volume.GetPixelID())
-            slice_ref.SetSpacing([col_spacing, row_spacing, 1.0])
-            slice_ref.SetOrigin(ipp_arr.tolist())
-            slice_ref.SetDirection(direction_3d)
-
-            resampler = SimpleITK.ResampleImageFilter()
-            resampler.SetReferenceImage(slice_ref)
-            resampler.SetInterpolator(SimpleITK.sitkLinear)
-            resampler.SetDefaultPixelValue(0)
-            extracted_3d = resampler.Execute(volume)
-
-            # Collapse the singleton k-dimension to return a 2D array.
-            extractor = SimpleITK.ExtractImageFilter()
-            size = list(extracted_3d.GetSize())
-            size[2] = 0  # collapse z -> 2D output
-            extractor.SetSize(size)
-            extractor.SetIndex([0, 0, 0])
-            return SimpleITK.GetArrayFromImage(extractor.Execute(extracted_3d))
+        extractor = SimpleITK.ExtractImageFilter()
+        size = list(volume.GetSize())
+        size[2] = 0  # collapse z dimension -> 2D output
+        extractor.SetSize(size)
+        extractor.SetIndex([0, 0, slice_index])
+        return SimpleITK.GetArrayFromImage(extractor.Execute(volume))
 
     def _get_ct_mask_for_pet(self, series: DicomSeries) -> Optional[str]:
         """Return the absolute path to the cached CT face mask for a secondary series.
