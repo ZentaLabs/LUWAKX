@@ -15,7 +15,7 @@ It can either generate a new face mask automatically or use an existing mask tha
 
 ## Usage
 
-    python image_defacer.py -i INPUT [-o OUTPUT] [-m MODALITY] [-fm FACE_MASK_PATH] [-sfm]
+    python image_defacer.py -i INPUT [-o OUTPUT] [-m MODALITY] [-fm FACE_MASK_PATH] [-sfm] [-bs BLOCK_SIZE] [-dm DILATION_MARGIN]
 
 ---
 
@@ -28,6 +28,8 @@ It can either generate a new face mask automatically or use an existing mask tha
 | `-m`, `--modality` | ⚠️ Required for NIfTI | Image modality (e.g., `MR`, `CT`). Required when input is NIfTI. Not required for DICOM (extracted from metadata if available). |
 | `-fm`, `--face_mask_path` | ❌ | Path to an existing face mask (NIfTI) to use. If provided, no new mask will be generated. |
 | `-sfm`, `--save_face_mask` | ❌ | If set (and no `--face_mask_path` was provided), the generated face mask will be saved to the output directory. |
+| `-bs`, `--block_size` | ❌ | Target block size in mm for pixelation. Larger values = more anonymization. Default: `8.5`. |
+| `-dm`, `--dilation_margin` | ❌ | Dilation margin in mm to grow the face mask. Default: `15.0`. Set to `0` for no dilation. |
 
 ---
 
