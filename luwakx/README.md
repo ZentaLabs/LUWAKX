@@ -25,7 +25,7 @@ The package is organised into sub-packages:
 - **`defacing/`**: Visual feature removal (`deface_service`, `deface_priority_elector`, `deface_mask_database`)
 - **`pipeline/`**: Orchestration (`pipeline_coordinator`, `processing_pipeline`, `processing_stage`, `processing_status`)
 - **`export/`**: Output generation (`metadata_exporter`, `review_flag_collector`)
-- **`persistence/`**: Cross-run caches (`patient_uid_database`, `llm_cache`)
+- **`persistence/`**: Cross-run caches and checkpoint state (`patient_uid_database`, `llm_cache`, `job_checkpoint_database`)
 - **`recipe/`**: deid recipe generation (`anonymization_recipe_builder`)
 - **`scripts/`**: Standalone maintenance and curation scripts
 

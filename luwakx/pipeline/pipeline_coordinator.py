@@ -6,8 +6,9 @@ by distributing series across multiple workers.
 """
 
 import os
+import threading
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Set
 from .processing_pipeline import ProcessingPipeline
 from ..dicom.dicom_series import DicomSeries
 from ..dicom.dicom_series_factory import DicomSeriesFactory
@@ -37,7 +38,9 @@ class PipelineCoordinator:
     def __init__(self, all_series: List[DicomSeries], output_directory: str,
                  config: Dict[str, Any], logger, num_workers: int = 1, 
                  llm_cache=None, patient_uid_db=None, recipe=None,
-                 deface_mask_db=None):
+                 deface_mask_db=None, checkpoint_db=None, job_id: str = '',
+                 completed_series_uids: Optional[Set[str]] = None,
+                 stop_event: Optional[threading.Event] = None):
         """Initialize PipelineCoordinator.
         
         Args:
@@ -50,6 +53,10 @@ class PipelineCoordinator:
             patient_uid_db: Shared patient UID database instance (thread-safe)
             recipe: DeidRecipe instance for anonymization (shared across all workers)
             deface_mask_db: Shared DefaceMaskDatabase instance (thread-safe, optional)
+            checkpoint_db: JobCheckpointDatabase for stop/resume support (optional)
+            job_id: Job identifier recorded in checkpoint_db
+            completed_series_uids: Series UIDs already fully processed (skip on resume)
+            stop_event: threading.Event set when a graceful stop is requested
         """
         self.all_series = all_series
         self.output_directory = output_directory
@@ -60,6 +67,10 @@ class PipelineCoordinator:
         self.patient_uid_db = patient_uid_db  # Shared across all workers
         self.recipe = recipe                  # Shared across all workers
         self.deface_mask_db = deface_mask_db  # Shared across all workers
+        self.checkpoint_db = checkpoint_db
+        self.job_id = job_id
+        self.completed_series_uids: Set[str] = completed_series_uids or set()
+        self.stop_event: Optional[threading.Event] = stop_event
         
         self.pipelines: List[ProcessingPipeline] = []
         
@@ -88,6 +99,10 @@ class PipelineCoordinator:
                 patient_uid_db=self.patient_uid_db,
                 recipe=self.recipe,
                 deface_mask_db=self.deface_mask_db,
+                checkpoint_db=self.checkpoint_db,
+                job_id=self.job_id,
+                completed_series_uids=self.completed_series_uids,
+                stop_event=self.stop_event,
             )
             
             self.pipelines.append(pipeline)
@@ -315,7 +330,10 @@ class PipelineCoordinator:
                                config: Dict[str, Any], logger,
                                num_workers: int = 1, llm_cache=None, 
                                patient_uid_db=None, recipe=None,
-                               deface_mask_db=None) -> 'PipelineCoordinator':
+                               deface_mask_db=None, checkpoint_db=None,
+                               job_id: str = '',
+                               completed_series_uids: Optional[Set[str]] = None,
+                               stop_event: Optional[threading.Event] = None) -> 'PipelineCoordinator':
         """Factory method to create coordinator from DICOM file list or input folder.
         
         Uses DicomSeriesFactory to create DicomSeries objects, then initializes
@@ -332,6 +350,10 @@ class PipelineCoordinator:
             patient_uid_db: Patient UID database for anonymization
             recipe: DeidRecipe instance for anonymization (shared across workers)
             deface_mask_db: Shared DefaceMaskDatabase instance (thread-safe, optional)
+            checkpoint_db: JobCheckpointDatabase for stop/resume support (optional)
+            job_id: Job identifier recorded in checkpoint_db
+            completed_series_uids: Series UIDs already fully processed (skip on resume)
+            stop_event: threading.Event set when a graceful stop is requested
             
         Returns:
             PipelineCoordinator: Initialized coordinator ready to run
@@ -375,4 +397,5 @@ class PipelineCoordinator:
 
         # Create and return coordinator with created series
         return cls(all_series, output_directory, config, logger, num_workers, 
-                  llm_cache, patient_uid_db, recipe, deface_mask_db)
+                  llm_cache, patient_uid_db, recipe, deface_mask_db,
+                  checkpoint_db, job_id, completed_series_uids, stop_event)

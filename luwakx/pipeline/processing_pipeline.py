@@ -7,7 +7,8 @@ and tracking progress through processing stages.
 
 import os
 import shutil
-from typing import Any, Dict, List, Optional
+import threading
+from typing import Any, Dict, List, Optional, Set
 from ..dicom.dicom_series import DicomSeries
 from .processing_stage import ProcessingStage
 from .processing_status import ProcessingStatus
@@ -38,7 +39,9 @@ class ProcessingPipeline:
     def __init__(self, series_subset: List[DicomSeries], output_directory: str,
                  config: Dict[str, Any], logger=None, worker_id: int = 0,
                  llm_cache=None, patient_uid_db=None, recipe=None,
-                 deface_mask_db=None):
+                 deface_mask_db=None, checkpoint_db=None, job_id: str = '',
+                 completed_series_uids: Optional[Set[str]] = None,
+                 stop_event: Optional[threading.Event] = None):
         """Initialize a ProcessingPipeline instance.
         
         Args:
@@ -51,10 +54,20 @@ class ProcessingPipeline:
             patient_uid_db: Shared patient UID database instance (thread-safe)
             recipe: DeidRecipe instance for anonymization (shared across all workers)
             deface_mask_db: Shared DefaceMaskDatabase instance (thread-safe, optional)
+            checkpoint_db: JobCheckpointDatabase instance for stop/resume support (optional)
+            job_id: Job identifier recorded in checkpoint_db (required when checkpoint_db set)
+            completed_series_uids: Set of series UIDs already fully processed (skip on resume)
+            stop_event: threading.Event that is set when a graceful stop is requested
         """
         self.worker_id = worker_id
         self.series_collection: Dict[str, DicomSeries] = {}
         self.current_stage = ProcessingStage.INPUT_SCANNING
+
+        # Stop/resume support
+        self.checkpoint_db = checkpoint_db
+        self.job_id = job_id
+        self.completed_series_uids: Set[str] = completed_series_uids or set()
+        self.stop_event: Optional[threading.Event] = stop_event
         
         # Directory paths - isolated per worker
         self.output_directory = output_directory
@@ -209,6 +222,7 @@ class ProcessingPipeline:
             )
         
         completed = 0
+        skipped = 0
         failed = 0
         total = len(self.series_collection)
 
@@ -216,13 +230,35 @@ class ProcessingPipeline:
         # from series_collection immediately after it is processed, freeing memory.
         for series_uid in list(self.series_collection.keys()):
             series = self.series_collection[series_uid]
+
+            # --- Graceful stop check ---
+            if self.stop_event is not None and self.stop_event.is_set():
+                if self.logger:
+                    self.logger.info(
+                        f"Worker {self.worker_id}: stop requested — "
+                        f"halting before series {series.anonymized_series_uid}"
+                    )
+                break
+
+            # --- Skip series already fully processed (resume path) ---
+            if series.anonymized_series_uid in self.completed_series_uids:
+                if self.logger:
+                    self.logger.info(
+                        f"Worker {self.worker_id}: skipping already-completed series "
+                        f"{series.anonymized_series_uid}"
+                    )
+                skipped += 1
+                del self.series_collection[series_uid]
+                del series
+                continue
+
             try:
                 if self.logger:
                     # Use output_base_path basename for logging (contains UID hierarchy)
                     series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
                     self.logger.info(
                         f"Worker {self.worker_id}: Processing series "
-                        f"{completed + 1}/{total}: {series_display}"
+                        f"{completed + skipped + 1}/{total}: {series_display}"
                     )
                 
                 # Process this series through ALL stages
@@ -293,9 +329,14 @@ class ProcessingPipeline:
         
         if self.logger:
             self.logger.info(
-                f"Worker {self.worker_id} finished: {completed} completed, {failed} failed"
+                f"Worker {self.worker_id} finished: {completed} completed, "
+                f"{skipped} skipped (resumed), {failed} failed"
             )
             self.logger.info(f"Worker {self.worker_id}: All results exported incrementally")
+
+        # Update checkpoint timestamp on clean exit (graceful stop or completion)
+        if self.checkpoint_db and self.job_id:
+            self.checkpoint_db.touch_job(self.job_id)
         
         # Mark export stage complete (exports happened incrementally during processing)
         self.current_stage = ProcessingStage.EXPORT_METADATA
@@ -309,21 +350,33 @@ class ProcessingPipeline:
         Args:
             series: DicomSeries to process
         """
+        uid = series.anonymized_series_uid
+
         # Stage 1: Organize
         self._organize_series(series)
-        
+        if self.checkpoint_db and self.job_id:
+            self.checkpoint_db.mark_series_status(self.job_id, uid, ProcessingStatus.ORGANIZED)
+
         # Stage 2: Deface (if needed)
         if self._needs_defacing(series):
             self._deface_series(series)
-        
+        # Always advance to DEFACED so the checkpoint cleanup logic never
+        # mis-classifies a non-defaced series as deface-incomplete.
+        if self.checkpoint_db and self.job_id:
+            self.checkpoint_db.mark_series_status(self.job_id, uid, ProcessingStatus.DEFACED)
+
         # Stage 3: Anonymize
         self._anonymize_series(series)
-        
+        if self.checkpoint_db and self.job_id:
+            self.checkpoint_db.mark_series_status(self.job_id, uid, ProcessingStatus.ANONYMIZED)
+
         # Stage 4: Export results incrementally (streaming mode)
         # This writes results to worker-specific temp files immediately,
         # keeping memory usage constant regardless of dataset size
         self._export_series_results_incremental(series)
-        
+        if self.checkpoint_db and self.job_id:
+            self.checkpoint_db.mark_series_status(self.job_id, uid, ProcessingStatus.EXPORTED)
+
         # Stage 5: Clear series data from memory after export completes
         # This frees current_file_mappings and self.series reference
         self.processor.clear_series_data(series)
@@ -683,6 +736,7 @@ class ProcessingPipeline:
         
         # Append directly to final CSV file using MetadataExporter
         # Pass series object to use DicomFile relative path methods
+        self.logger.info(f"Worker {self.worker_id}: Writing UID mappings CSV for {series_display}")
         self.exporter.append_series_uid_mappings(
             self.uid_mappings_file,
             series,
@@ -690,6 +744,7 @@ class ProcessingPipeline:
             input_folder,
             output_folder
         )
+        self.logger.info(f"Worker {self.worker_id}: Finished writing UID mappings CSV for {series_display}")
         
         # Extract and append metadata from first file of series
         if series.files:

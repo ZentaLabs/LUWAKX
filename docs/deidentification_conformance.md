@@ -284,8 +284,8 @@ When `true`, every series that runs ML inference has its face mask saved to the 
 
 #### 4.1.9 Output Artifacts
 For each defaced series:
-- `image.nrrd` - Original 3D volume (temporary, for validation)
-- `image_defaced.nrrd` - Defaced 3D volume (temporary)
+- `image.nrrd` - Original 3D volume, gzip-compressed (temporary, for validation)
+- `image_defaced.nrrd` - Defaced 3D volume, gzip-compressed (temporary)
 - `*.dcm` - Defaced DICOM files (final output)
 
 Temporary NRRD files (`image.nrrd`, `image_defaced.nrrd`) are stored in `defaced_base_path` during processing and moved to the private mapping folder after the series completes.
@@ -1538,7 +1538,7 @@ Luwak produces several output files during the deidentification pipeline, each s
 
 **4. NRRD Volumes (`image.nrrd`, `image_defaced.nrrd`)**
   - Location: `image.nrrd` in private mapping folder, `image_defaced.nrrd` in output directory
-  - Content: 3D reconstructed volumes of the original and defaced image data, used for validation and further analysis
+  - Content: 3D reconstructed volumes of the original and defaced image data, used for validation and further analysis. All NRRD files (including the face mask) are written with gzip compression (`useCompression=True`).
   - Generation: Created during defacing stage and moved to final destinations by `MetadataExporter._move_nrrd_files()`
 
 **5. Log Files**
@@ -1896,6 +1896,21 @@ Luwak follows an object-oriented design with clear separation of concerns:
 - **Key Methods:**
   - `elect_and_sort(all_series)` - Returns the sorted series list with primary series first per group
 
+**`JobCheckpointDatabase`**
+- **Purpose:** Thread-safe SQLite database for per-series processing checkpoint tracking, enabling stop/resume of interrupted anonymization jobs
+- **Key Responsibilities:**
+  - Record per-series processing status (`ORIGINAL` → `ORGANIZED` → `DEFACED` → `ANONYMIZED` → `EXPORTED`)
+  - Detect config drift between a stopped run and a resume attempt via SHA-256 config hash (recipe-affecting keys only)
+  - Support resume by skipping `EXPORTED` series and cleaning up partially-completed stages
+- **SQLite settings:** `WAL` journal mode for concurrent reads without blocking writes; `synchronous=NORMAL` for crash-safe writes without full-fsync overhead; `busy_timeout=30000` ms for graceful lock-contention handling
+- **Key Methods:**
+  - `get_or_create_job(input_folder, output_folder, private_folder, config_hash)` — Create or resume a job record
+  - `upsert_series(job_id, anonymized_series_uid, ...)` — Register a series after the scan phase
+  - `mark_scan_complete(job_id)` — Commit the scan result
+  - `mark_series_status(job_id, uid, status)` — Advance a series through pipeline stages
+  - `compute_config_hash(config)` — SHA-256 of recipe-affecting config keys
+- **Location:** `luwakx/persistence/job_checkpoint_database.py`
+
 #### 9.2.3 Data Flow
 
 ```
@@ -2029,7 +2044,25 @@ export MESSAGELEVEL="DEBUG"  # Set automatically by Luwak based on logLevel
    - Review `outputPrivateMappingFolder` for UID mappings and metadata
    - Check log file in output folder
 
-#### 9.3.5 Log Files
+#### 9.3.5 Stop and Resume
+
+If an anonymization run is interrupted (process killed, machine restart, etc.), it can be safely resumed by re-running Luwak with the **same configuration file** and the **same output paths**. No additional steps are required.
+
+**How it works:**
+
+Luwak maintains a lightweight SQLite checkpoint database (`job_checkpoint.db`) in the private mapping folder. After each series completes export, its status is recorded as `EXPORTED`. On the next run:
+
+1. Luwak detects an existing job matching the input/output folder pair.
+2. Any series already marked `EXPORTED` is skipped entirely.
+3. Series that were partially processed (e.g., stopped after organizing but before anonymizing) are cleaned up and reprocessed from scratch.
+
+**Config-change detection:**
+
+Before resuming, Luwak computes a SHA-256 hash of the recipe-affecting configuration keys (`recipes`, `inputFolder`, `outputDeidentifiedFolder`, `outputPrivateMappingFolder`, `projectHashRoot`, `patientIdPrefix`, `physicalFacePixelationSizeMm`, `faceDilationMarginMm`, `customTags`, `selectedModalities`). If the hash differs from the stored value, the resume is rejected with an error and the user must start a new run with a clean output folder. Changes to non-recipe keys such as `numWorkers`, `logLevel`, or `keepTempFiles` do not invalidate the checkpoint.
+
+**Implementation:** `luwakx/persistence/job_checkpoint_database.py` — `JobCheckpointDatabase`
+
+#### 9.3.6 Log Files
 
 Log files are created in `outputDeidentifiedFolder/luwak.log` and contain:
 - Configuration validation results

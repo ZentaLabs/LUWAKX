@@ -575,37 +575,21 @@ class LuwakAnonymizer:
         - PipelineCoordinator: Manages multi-worker processing pipelines
           (internally uses ProcessingPipeline, DicomProcessor, and DefaceService)
         
+        Stop/resume: when ``analysisCacheFolder`` is configured, a
+        ``job_checkpoint.db`` is created (or opened) there.  Sending SIGINT
+        (Ctrl-C) triggers a graceful stop after the current series finishes.
+        On the next run the job resumes from the first incomplete series.
+        
         Args:
             None (uses all configured instance attributes)
             
         Returns:
-            None
-            
-        Process Flow:
-            1. Get DICOM files from input folder
-            2. Create anonymization recipe
-            3. Create PipelineCoordinator with service architecture
-            4. Execute processing pipeline (organize -> deface -> anonymize)
-            5. Collect results from all workers
-            6. Export UID mappings, metadata, and NRRD files
-            
-        Note:
-            Cleanup of temporary directories happens automatically within each
-            ProcessingPipeline worker at the end of run_full_pipeline()
-            
-        Output Files:
-            - Anonymized DICOMs: In output_directory/{series_folder}/
-            - private/uid_mappings.csv: UID mapping table
-            - private/metadata.parquet: Structured metadata
-            - private/{series_folder}/image.nrrd: Original volume (if CT)
-            - {series_folder}/image_defaced.nrrd: Defaced volume (if CT)
-            
-        See conformance documentation:
-        - Pipeline Architecture: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#32-pipeline-architecture
-        - Workflow: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#934-typical-workflow
-        - Output Files: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
+            coordinator: The PipelineCoordinator instance after processing.
         """
+        import signal
+        import threading
         from .pipeline.pipeline_coordinator import PipelineCoordinator
+        from .persistence.job_checkpoint_database import JobCheckpointDatabase
 
         self.logger.info("=" * 50)
         self.logger.info("Starting DICOM anonymization process...")
@@ -616,41 +600,199 @@ class LuwakAnonymizer:
         output_directory = self.config.get('outputDeidentifiedFolder')
         private_folder = self.config.get('outputPrivateMappingFolder')
         num_workers = self.config.get('numWorkers', 1)
-        
-        # Create recipe once for all processing
-        self.logger.info("Creating anonymization recipe...")
-        recipe = self.create_deid_recipe()
-        
-        # Create and execute processing coordinator
-        # Pass input_folder directly - PipelineCoordinator will discover files
-        self.logger.info(f"Creating processing coordinator with {num_workers} worker(s)...")
-        coordinator = PipelineCoordinator.create_from_dicom_files(
-            dicom_files=input_folder,  # Can be folder path, file path, or file list
-            output_directory=output_directory,
-            config=self.config,
-            logger=self.logger,
-            num_workers=num_workers,
-            llm_cache=self.llm_cache,
-            patient_uid_db=self.patient_uid_db,
-            recipe=recipe,
-            deface_mask_db=self.deface_mask_db,
-        )
-        
-        # Execute all pipelines (streaming mode: results exported incrementally)
-        self.logger.info("Executing processing pipelines...")
-        coordinator.run_all_pipelines_sequential()
-        
-        # Finalize exports: Verify files were written correctly
-        self.logger.info("Finalizing exports: Verifying export files...")
-        coordinator.finalize_exports(private_folder)
-                
-        self.logger.info("=" * 50)
-        self.logger.info("DICOM anonymization process completed successfully!")
-        self.logger.info(f"Processed {len(coordinator.all_series)} series")
-        self.logger.info(f"Output saved to: {output_directory}")
-        self.logger.info(f"Private mappings saved to: {private_folder}")
-        self.logger.info("=" * 50)
-        
+        cache_folder = self.config.get('analysisCacheFolder')
+
+        # ------------------------------------------------------------------ #
+        # Job Checkpoint Database setup                                        #
+        # ------------------------------------------------------------------ #
+        checkpoint_db = None
+        job_id = ''
+        completed_series_uids = set()
+
+        if cache_folder:
+            checkpoint_db_path = os.path.join(cache_folder, 'job_checkpoint.db')
+            checkpoint_db = JobCheckpointDatabase(checkpoint_db_path)
+            config_hash = JobCheckpointDatabase.compute_config_hash(self.config)
+
+            job_id = checkpoint_db.get_or_create_job(
+                input_folder=input_folder,
+                output_folder=output_directory,
+                private_folder=private_folder,
+                config_hash=config_hash,
+            )
+
+            if job_id is None:
+                # Config drift detected
+                self.logger.warning(
+                    "Resume detected but the configuration has changed since the "
+                    "previous run.  Starting a fresh job (previous checkpoint will "
+                    "be overwritten once the new scan completes)."
+                )
+                # Remove old job rows for this folder pair so a clean job is created
+                checkpoint_db.conn.execute(
+                    'DELETE FROM series_status WHERE job_id IN '
+                    '(SELECT job_id FROM jobs WHERE input_folder = ? AND output_folder = ?)',
+                    (input_folder, output_directory),
+                )
+                checkpoint_db.conn.execute(
+                    'DELETE FROM jobs WHERE input_folder = ? AND output_folder = ?',
+                    (input_folder, output_directory),
+                )
+                checkpoint_db.conn.commit()
+                job_id = checkpoint_db.get_or_create_job(
+                    input_folder=input_folder,
+                    output_folder=output_directory,
+                    private_folder=private_folder,
+                    config_hash=config_hash,
+                )
+
+            scan_status = checkpoint_db.get_job_scan_status(job_id)
+            if scan_status == 'COMPLETE':
+                completed_series_uids = checkpoint_db.get_completed_series_uids(job_id)
+                self.logger.info(
+                    f"Resuming job {job_id}: "
+                    f"{len(completed_series_uids)} series already completed, "
+                    f"running pre-resume cleanup for incomplete series..."
+                )
+                # Clean up partial artifacts and purge incomplete rows from export files
+                incomplete_rows = checkpoint_db.get_incomplete_series_rows(job_id)
+                if incomplete_rows:
+                    incomplete_uids = {row['anonymized_series_uid'] for row in incomplete_rows}
+                    uid_mappings_file = os.path.join(private_folder, 'uid_mappings.csv')
+                    metadata_file = os.path.join(private_folder, 'metadata.parquet')
+                    review_flags_file = os.path.join(private_folder, 'review_flags.csv')
+                    checkpoint_db.purge_series_from_export_files(
+                        incomplete_uids, uid_mappings_file, metadata_file,
+                        review_flags_file, self.logger,
+                    )
+                    checkpoint_db.cleanup_incomplete_series(job_id, self.logger)
+                    self.logger.info(
+                        f"Pre-resume cleanup complete: {len(incomplete_uids)} series reset"
+                    )
+                else:
+                    self.logger.info("No incomplete series found, resuming cleanly")
+            else:
+                self.logger.info(f"New job {job_id}: starting full scan")
+        else:
+            self.logger.info(
+                "No analysisCacheFolder configured — stop/resume support is disabled. "
+                "Set 'analysisCacheFolder' in your config to enable it."
+            )
+
+        # ------------------------------------------------------------------ #
+        # Graceful stop — SIGINT sets this event; each series checks it       #
+        # ------------------------------------------------------------------ #
+        stop_event = threading.Event()
+        _previous_sigint_handler = signal.getsignal(signal.SIGINT)
+
+        def _graceful_stop_handler(signum, frame):
+            if stop_event.is_set():
+                # Second Ctrl-C — propagate to kill immediately
+                self.logger.warning("Second interrupt received — forcing exit")
+                signal.signal(signal.SIGINT, _previous_sigint_handler)
+                raise KeyboardInterrupt
+            msg = (
+                "Stop requested (SIGINT). The current series will finish, "
+                "then the job will pause. Resume by running the same command again."
+            )
+            self.logger.warning(msg)
+            print(f"\n{msg}", flush=True)
+            stop_event.set()
+
+        signal.signal(signal.SIGINT, _graceful_stop_handler)
+
+        try:
+            # Create recipe once for all processing
+            self.logger.info("Creating anonymization recipe...")
+            recipe = self.create_deid_recipe()
+
+            # ------------------------------------------------------------------ #
+            # Scan — always runs (fast when resume path; PatientUIDDB dedupes)   #
+            # ------------------------------------------------------------------ #
+            self.logger.info(f"Creating processing coordinator with {num_workers} worker(s)...")
+            coordinator = PipelineCoordinator.create_from_dicom_files(
+                dicom_files=input_folder,
+                output_directory=output_directory,
+                config=self.config,
+                logger=self.logger,
+                num_workers=num_workers,
+                llm_cache=self.llm_cache,
+                patient_uid_db=self.patient_uid_db,
+                recipe=recipe,
+                deface_mask_db=self.deface_mask_db,
+                checkpoint_db=checkpoint_db,
+                job_id=job_id,
+                completed_series_uids=completed_series_uids,
+                stop_event=stop_event,
+            )
+
+            # Commit scan result to checkpoint DB after coordinator is built
+            if checkpoint_db and job_id:
+                for order_idx, series in enumerate(coordinator.all_series):
+                    # Find which pipeline partition this series ended up in
+                    worker_partition = 0
+                    for pipeline in coordinator.pipelines:
+                        if series.anonymized_series_uid in pipeline.series_collection or \
+                                series.anonymized_series_uid in completed_series_uids:
+                            worker_partition = pipeline.worker_id
+                            break
+                    checkpoint_db.upsert_series(
+                        job_id=job_id,
+                        anonymized_series_uid=series.anonymized_series_uid,
+                        original_series_uid=series.original_series_uid or '',
+                        original_patient_id=series.original_patient_id or '',
+                        original_study_uid=series.original_study_uid or '',
+                        anonymized_patient_id=series.anonymized_patient_id or '',
+                        anonymized_study_uid=series.anonymized_study_uid or '',
+                        modality=series.modality or '',
+                        series_order=order_idx,
+                        primary_ct_series_uid=(
+                            series.primary_ct_series.original_series_uid
+                            if series.primary_ct_series else ''
+                        ),
+                        worker_partition=worker_partition,
+                        organized_base_path=series.organized_base_path or '',
+                        defaced_base_path=series.defaced_base_path or '',
+                        output_base_path=series.output_base_path or '',
+                    )
+                checkpoint_db.mark_scan_complete(job_id)
+                self.logger.info(
+                    f"Scan committed to checkpoint DB: {len(coordinator.all_series)} series"
+                )
+
+            # ------------------------------------------------------------------ #
+            # Process                                                             #
+            # ------------------------------------------------------------------ #
+            self.logger.info("Executing processing pipelines...")
+            coordinator.run_all_pipelines_sequential()
+
+            if stop_event.is_set():
+                self.logger.info(
+                    "Job paused after graceful stop. "
+                    "Re-run with the same config to resume."
+                )
+            else:
+                # Finalize exports: Verify files were written correctly
+                self.logger.info("Finalizing exports: Verifying export files...")
+                coordinator.finalize_exports(private_folder)
+                self.logger.info("=" * 50)
+                self.logger.info("DICOM anonymization process completed successfully!")
+                self.logger.info(f"Processed {len(coordinator.all_series)} series")
+                self.logger.info(f"Output saved to: {output_directory}")
+                self.logger.info(f"Private mappings saved to: {private_folder}")
+                self.logger.info("=" * 50)
+
+        finally:
+            # Restore original SIGINT handler
+            signal.signal(signal.SIGINT, _previous_sigint_handler)
+
+            # Close checkpoint DB
+            if checkpoint_db:
+                try:
+                    checkpoint_db.close()
+                except Exception:
+                    pass
+
         # Close the LLM cache if it was initialized
         if self.llm_cache:
             try:
@@ -732,8 +874,9 @@ class LuwakAnonymizer:
         # Shutdown logging to ensure clean exit
         shutdown_logging()
         
-        # Return list of processed series for backwards compatibility
+        # Return coordinator
         return coordinator
+
     
 
 if __name__ == "__main__":

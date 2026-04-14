@@ -301,8 +301,20 @@ class DefaceMaskDatabase:
             if row is None:
                 return None
 
+            # Guard against mask files deleted outside of Luwak (e.g. manual
+            # cleanup, or a crashed run that left the DB entry but removed the
+            # file during pre-resume cleanup).  Treat a missing file as a cache
+            # miss so the pipeline re-runs ML inference and updates the entry.
+            mask_path = row['mask_path']
+            if mask_path and not os.path.exists(mask_path):
+                self.logger.warning(
+                    f'DefaceMaskDatabase: cached mask file missing on disk, '
+                    f'treating as cache miss: {mask_path}'
+                )
+                return None
+
             return {
-                'mask_path':              row['mask_path'],
+                'mask_path':              mask_path,
                 'spacing':                json.loads(row['spacing'])   if row['spacing']   else None,
                 'origin':                 json.loads(row['origin'])    if row['origin']    else None,
                 'direction':              json.loads(row['direction'])  if row['direction'] else None,
