@@ -147,6 +147,11 @@
       "description": "If true, bypasses the LLM call in clean_descriptors_with_llm. The result is always treated as 0 (no PHI detected) and the tag is kept unchanged.",
       "default": false
     },
+    "bypassCleanPixelData": {
+      "type": "boolean",
+      "description": "If true, skips the CleanPixelDataService execution when the clean_pixel_data recipe is active. Use this when burned-in pixel data has been verified absent by other means (e.g. manual review). The DICOM CID 7050 code 113101 (Clean Pixel Data Option) is still injected into DeidentificationMethodCodeSequence as if cleaning had been performed.",
+      "default": false
+    },
     "saveDefaceMasks": {
       "type": "boolean",
       "description": "When true, the ML-generated face mask is saved as a compressed NRRD file in the private mapping folder for every series that runs ML inference, and the mask database persists after the run for re-run cache hits.\nWhen false or absent, a temporary mask database is still created during the run to support PET/CT mask projection (the CT mask is resampled onto the paired PET), but both the database and all mask files are deleted at the end of the run.",

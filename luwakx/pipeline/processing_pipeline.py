@@ -105,6 +105,7 @@ class ProcessingPipeline:
         # These will be imported and initialized when needed to avoid circular imports
         self._processor = None
         self._deface_service = None
+        self._clean_pixel_data_service = None
         self._exporter = None
         
         # Direct export to final files (for single-worker sequential processing)
@@ -152,6 +153,16 @@ class ProcessingPipeline:
             )
         return self._deface_service
     
+    @property
+    def clean_pixel_data_service(self):
+        """Lazy-load CleanPixelDataService instance."""
+        if self._clean_pixel_data_service is None:
+            from ..pixel_cleaning.clean_pixel_data_service import CleanPixelDataService
+            self._clean_pixel_data_service = CleanPixelDataService(
+                self.config, self.logger
+            )
+        return self._clean_pixel_data_service
+
     @property
     def exporter(self):
         """Lazy-load MetadataExporter instance."""
@@ -365,6 +376,10 @@ class ProcessingPipeline:
         if self.checkpoint_db and self.job_id:
             self.checkpoint_db.mark_series_status(self.job_id, uid, ProcessingStatus.DEFACED)
 
+        # Stage 2b: Clean pixel data (if needed)
+        if self._needs_pixel_cleaning(series):
+            self._clean_pixel_data_series(series)
+
         # Stage 3: Anonymize
         self._anonymize_series(series)
         if self.checkpoint_db and self.job_id:
@@ -524,6 +539,56 @@ class ProcessingPipeline:
         
         series.processing_status = ProcessingStatus.ANONYMIZED
     
+    def _needs_pixel_cleaning(self, series: DicomSeries) -> bool:
+        """Check if series needs pixel cleaning based on config.
+
+        When ``bypassCleanPixelData`` is true the service is skipped but the
+        series is marked as succeeded so that the DICOM code 113101 is still
+        injected into DeidentificationMethodCodeSequence.
+
+        Args:
+            series: DicomSeries to check
+
+        Returns:
+            bool: True if the CleanPixelDataService should be invoked
+        """
+        if 'clean_pixel_data' not in self.config.get('recipes', []):
+            return False
+
+        if self.config.get('bypassCleanPixelData', False):
+            # User asserts pixel data is clean — mark as succeeded without running service
+            series.pixel_cleaning_succeeded = True
+            if self.logger:
+                series_display = (
+                    f"series:{series.anonymized_series_uid}, "
+                    f"of study:{series.anonymized_study_uid}, "
+                    f"for patient:{series.anonymized_patient_id}"
+                )
+                self.logger.info(
+                    f"Bypassing CleanPixelDataService for {series_display} "
+                    f"(bypassCleanPixelData=true)"
+                )
+            return False
+
+        return True
+
+    def _clean_pixel_data_series(self, series: DicomSeries) -> None:
+        """Run pixel cleaning on a single series.
+
+        Args:
+            series: DicomSeries to clean
+        """
+        if self.logger:
+            series_display = (
+                f"series:{series.anonymized_series_uid}, "
+                f"of study:{series.anonymized_study_uid}, "
+                f"for patient:{series.anonymized_patient_id}"
+            )
+            self.logger.info(f"Cleaning pixel data for {series_display}")
+
+        succeeded = self.clean_pixel_data_service.process_series(series)
+        series.pixel_cleaning_succeeded = bool(succeeded)
+
     def _needs_defacing(self, series: DicomSeries) -> bool:
         """Check if series needs defacing based on modality and config.
         

@@ -68,6 +68,8 @@ This recipe is automatically integrated into the Luwak anonymization pipeline an
 2. Flagging problematic regions for manual review or automated masking
 3. Ensuring compliance with privacy regulations that require pixel-level anonymization
 
+To record that pixel data has been reviewed and cleaned, add `"clean_pixel_data"` to the `recipes` list in your config. This injects DICOM CID 7050 code 113101 (*Clean Pixel Data Option*) into `DeidentificationMethodCodeSequence`. If manual review has confirmed no burned-in PHI is present, set `"bypassCleanPixelData": true` to skip the automated service while still updating the code sequence.
+
 ## File Usage
 
 These files are used by the Luwak anonymization pipeline to:
@@ -210,6 +212,16 @@ The `luwak-config.json` file is the main configuration file for the Luwak DICOM 
       "items": {"type": "string"},
       "default": [],
       "examples": [["MR", "CT"]]
+    },
+    "bypassCleanDescriptorsLlm": {
+      "type": "boolean",
+      "description": "If true, bypasses the LLM call in clean_descriptors_with_llm. The result is always treated as 0 (no PHI detected) and the tag is kept unchanged. Useful for testing or when no LLM infrastructure is available.",
+      "default": false
+    },
+    "bypassCleanPixelData": {
+      "type": "boolean",
+      "description": "If true and the clean_pixel_data recipe is active, skips the CleanPixelDataService execution. Use this when burned-in pixel data has been verified absent by other means (e.g. manual review). The DICOM CID 7050 code 113101 (Clean Pixel Data Option) is still injected into DeidentificationMethodCodeSequence as if cleaning had been performed.",
+      "default": false
     }
   },
   "required": ["inputFolder", "outputDeidentifiedFolder", "outputPrivateMappingFolder", "recipesFolder", "recipes"],
@@ -252,6 +264,17 @@ Control persistent storage for patient UID database and LLM cache:
   - If not specified: Temporary databases are created and deleted after processing
   - Enables consistent patient ID and UID mappings across multiple anonymization runs
   - Enables LLM cache reuse for cost savings and performance
+
+### Pixel Cleaning Options
+
+Control whether burned-in pixel cleaning is performed or bypassed:
+
+```json
+"recipes": ["basic_profile", "clean_pixel_data"],
+"bypassCleanPixelData": true
+```
+- `clean_pixel_data` in `recipes`: Activates the Clean Pixel Data Option. Injects DICOM CID 7050 code 113101 into `DeidentificationMethodCodeSequence` when pixel cleaning succeeds (or is bypassed).
+- `bypassCleanPixelData`: If `true`, skips the `CleanPixelDataService` execution. Use when burned-in PHI has been verified absent by manual review. The DICOM code is still injected. (default: `false`)
 
 ### Test Options
 

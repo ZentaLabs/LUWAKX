@@ -1408,12 +1408,20 @@ class DicomProcessor:
         # See conformance documentation (sec.7.2 - "Conditionally includes defacing code"):
         # https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#72-implementation
         defacing_performed = getattr(self.series, 'defacing_succeeded', False)
+
+        # Check if pixel cleaning was actually performed (or bypassed) for clean_pixel_data
+        pixel_cleaning_performed = getattr(self.series, 'pixel_cleaning_succeeded', False)
         
         # Build sequence items for all matching recipes
         # Maps recipe profiles to DICOM CID 7050 codes (sec.7.3):
         # https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#73-code-mapping
         sequence_items = []
         for recipe_name in recipes_list:
+            # Skip clean_pixel_data if pixel cleaning was not performed
+            if recipe_name == 'clean_pixel_data' and not pixel_cleaning_performed:
+                self.logger.debug(f"Skipping DeidentificationMethodCodeSequence for '{recipe_name}': pixel cleaning was not performed for this series")
+                continue
+
             # Skip clean_recognizable_visual_features if defacing was not performed
             if recipe_name == 'clean_recognizable_visual_features' and not defacing_performed:
                 self.logger.debug(f"Skipping DeidentificationMethodCodeSequence for '{recipe_name}': defacing was not performed for this series")

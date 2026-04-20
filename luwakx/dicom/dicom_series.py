@@ -127,6 +127,10 @@ class DicomSeries:
         
         # Defacing state - tracks if defacing was actually performed successfully
         self.defacing_succeeded = False
+
+        # Pixel cleaning state - tracks if clean_pixel_data was actually performed
+        # (or bypassed via bypassCleanPixelData config option)
+        self.pixel_cleaning_succeeded = False
         
         # Base paths for different processing stages
         self.organized_base_path: Optional[str] = None

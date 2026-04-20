@@ -23,6 +23,7 @@ The package is organised into sub-packages:
 - **`logging/`**: Logging infrastructure (`luwak_logger`, `deid_logger_handler`)
 - **`dicom/`**: DICOM data model and processing (`dicom_file`, `dicom_series`, `dicom_series_factory`, `dicom_processor`, `dicom_private_tag_registry`)
 - **`defacing/`**: Visual feature removal (`deface_service`, `deface_priority_elector`, `deface_mask_database`)
+- **`pixel_cleaning/`**: Burned-in pixel data cleaning (`clean_pixel_data_service`) UNDER DEVELOPMENT
 - **`pipeline/`**: Orchestration (`pipeline_coordinator`, `processing_pipeline`, `processing_stage`, `processing_status`)
 - **`export/`**: Output generation (`metadata_exporter`, `review_flag_collector`)
 - **`persistence/`**: Cross-run caches and checkpoint state (`patient_uid_database`, `llm_cache`, `job_checkpoint_database`)
@@ -80,6 +81,7 @@ Create a JSON configuration file with the following structure:
 - **`cleanDescriptorsLlmModel`**: LLM model name for descriptor cleaning (default: "openai/gpt-4o-mini")
 - **`cleanDescriptorsLlmApiKeyEnvVar`**: Environment variable name containing the LLM API key (optional)
 - **`bypassCleanDescriptorsLlm`**: If `true`, skips the LLM call entirely in `clean_descriptors_with_llm`. The result is always treated as 0 (no PHI detected) and the tag is kept with its original value. Useful for testing or when LLM access is unavailable. (default: false)
+- **`bypassCleanPixelData`**: If `true` and the `clean_pixel_data` recipe is active, skips the `CleanPixelDataService` execution. Use this when burned-in pixel data has been verified absent by other means (e.g. manual review). The DICOM CID 7050 code 113101 (Clean Pixel Data Option) is still injected into `DeidentificationMethodCodeSequence` as if cleaning had been performed. (default: false)
 
 #### Analysis Cache Parameters
 
@@ -156,6 +158,10 @@ LuwakX supports multiple anonymization profiles that can be used individually or
   - Applies defacing to CT images to remove recognizable facial features using AI models
   - **PET/CT automatic pairing**: when a PET series shares a `FrameOfReferenceUID` with a CT series in the same study, the CT face mask is resampled onto the PET geometry automatically - no ML runs on PET
   - Uses specialized models to detect and anonymize faces
+
+- **`clean_pixel_data`**: Marks series as having been reviewed/cleaned for burned-in pixel PHI
+  - Injects DICOM CID 7050 code 113101 (Clean Pixel Data Option) into `DeidentificationMethodCodeSequence`
+  - Actual pixel-scrubbing logic is under active development; use `bypassCleanPixelData: true` to assert manual verification without running the service
 
 
 #### Recipe Combination Examples
