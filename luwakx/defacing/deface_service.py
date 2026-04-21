@@ -5,6 +5,7 @@ recognizable visual features (faces) from medical images using AI models.
 
 """
 
+import gc
 import os
 import shutil
 import traceback
@@ -151,6 +152,10 @@ class DefaceService:
             f"Defacing series {series.original_series_uid} with modality {modality}"
         )
 
+        # Initialise to None so the finally block can release them unconditionally,
+        # regardless of which early-return path was taken.
+        image = image_face_segmentation = image_defaced = None
+
         # Load DICOM series as 3D volume
         reader = SimpleITK.ImageSeriesReader()
         try:
@@ -166,6 +171,9 @@ class DefaceService:
             log_project_stacktrace(self.logger, e)
             self.logger.error(f"Failed to load DICOM series as volume: {e}")
             return self._copy_without_defacing(series)
+
+        # reader is no longer needed — image holds the decoded volume.
+        del reader
 
         # Apply face detection/segmentation strategy
         #
@@ -375,6 +383,11 @@ class DefaceService:
                 if dicom_file:
                     dicom_file.set_defaced_path(defaced_file_path)
 
+            # image_defaced is no longer needed: the slice loop has finished writing
+            # all DICOM files and the verify step reads from disk, not from this object.
+            del image_defaced
+            gc.collect()
+
             # Optionally verify that only face voxels were modified, reading the
             # written DICOM files back from disk (mirrors the test_defacer_service check)
             if self.config.get('verifyDefacingIntegrity', False):
@@ -383,6 +396,11 @@ class DefaceService:
                     image_face_segmentation, series
                 )
 
+            # image and image_face_segmentation are no longer needed after verify.
+            del image
+            del image_face_segmentation
+            gc.collect()
+
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
@@ -390,28 +408,13 @@ class DefaceService:
             self.logger.error("Defacing failed - falling back to undefaced files")
             return self._copy_without_defacing(series)
         finally:
-            # Explicitly release large 3D volumes now that the slice loop is done.
-            # NRRD files are on disk; image_defaced was needed only for per-slice
-            # extraction above.  Releasing here (rather than waiting for function-scope
-            # GC) lets the C++/ITK allocator reclaim the memory before the next series.
-            import gc as _gc
-            try:
-                del image_defaced
-            except NameError:
-                pass
-            try:
-                del image_face_segmentation
-            except NameError:
-                pass
-            try:
-                del reader
-            except NameError:
-                pass
-            try:
-                del image
-            except NameError:
-                pass
-            _gc.collect()
+            # Release any large ITK volumes that were not yet freed on the
+            # happy path (e.g. when an exception cut the try block short).
+            # Assigning None is safe regardless of whether the name was already
+            # del-ed inside the try block or was never assigned at all, because
+            # all three were initialised to None before the try.
+            image = image_defaced = image_face_segmentation = None
+            gc.collect()
 
         series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
         self.logger.info(
