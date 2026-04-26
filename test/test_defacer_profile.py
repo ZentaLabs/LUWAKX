@@ -104,9 +104,6 @@ class TestDefacerProfile(unittest.TestCase):
         # Test the defacer service directly without full anonymization
         print("Testing defacer service directly...")
 
-        # Make it easy to disable visualization (vedo package) in case of using a headless system
-        HAS_VISUALIZATION = True
-
         # Simple GPU check
         HAS_GPU = has_gpu()
 
@@ -250,7 +247,11 @@ class TestDefacerProfile(unittest.TestCase):
             spacing = spacing[::-1]
             threshold = 0.42
 
-            if HAS_VISUALIZATION:
+            # Interactive visualization blocks the test execution until the user manually closes the window,
+            # so we make it optional via environment variable.
+            # This allows us to have a visual check when running tests locally, but not require it in automated CI environments or headless systems.
+            interactive_visualization = os.environ.get("TEST_INTERACTIVE_VISUALIZATION", "").lower() in ("1", "true", "yes")
+            if interactive_visualization:
                 import vedo
                 vol1 = vedo.Volume(array_norm, spacing=spacing)
                 vol2 = vedo.Volume(defaced_array_norm, spacing=spacing)
