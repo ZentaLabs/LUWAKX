@@ -1,3 +1,4 @@
+import gc
 import unittest
 import subprocess
 import os
@@ -97,6 +98,9 @@ class TestAnonymizeScript(unittest.TestCase):
         for handler in root_logger.handlers[:]:
             handler.close()
             root_logger.removeHandler(handler)
+        # Force GC to close any SQLite connections (e.g. patient_uid.db) still
+        # held by test-local LuwakAnonymizer / DicomProcessor objects.
+        gc.collect()
         # Clean up output directory after each test
         if os.path.exists(self.test_output_dir):
             shutil.rmtree(self.test_output_dir)
