@@ -1,6 +1,5 @@
 import zipfile
 import numpy as np
-import vedo
 import SimpleITK as sitk
 import unittest
 import os
@@ -98,6 +97,10 @@ class TestDefacerProfile(unittest.TestCase):
     def test_defacer_service_makes_defacing(self):    
         # Test the defacer service directly without full anonymization
         print("Testing defacer service directly...")
+
+        # Make it easy to disable visualization (vedo package) in case of using a headless system
+        HAS_VISUALIZATION = True
+
         # Simple GPU check
         HAS_GPU = has_gpu()
 
@@ -240,37 +243,40 @@ class TestDefacerProfile(unittest.TestCase):
             # vedo expects spacing in (z, y, x) order for numpy arrays
             spacing = spacing[::-1]
             threshold = 0.42
-            vol1 = vedo.Volume(array_norm, spacing=spacing)
-            vol2 = vedo.Volume(defaced_array_norm, spacing=spacing)
-            # Create isosurfaces for both volumes
-            mesh1 = vol1.isosurface(threshold)
-            mesh2 = vol2.isosurface(threshold)
 
-            # Position meshes side by side
-            # Center of the mesh
-            center = mesh1.center_of_mass()
-            mesh1.pos(-center[0], -center[1], -center[2])
-            center2 = mesh2.center_of_mass()
-            bounds1 = mesh1.bounds()
-            offset = bounds1[1] - bounds1[0] + 10  # Use mesh1's width for spacing
-            mesh2.pos(-center2[0] + offset, -center2[1], -center2[2])
-            mesh1.pos(-center[0]+offset, -center[1], -center[2])
-            plt = vedo.Plotter(N=2, axes=1, size=(1200,600))
-            mesh1.rotate(angle=90, axis=[1, 0, 0])
-            mesh1.rotate(angle=180, axis=[0, 0, 1])
-            mesh2.rotate(angle=90, axis=[1, 0, 0])
-            mesh2.rotate(angle=180, axis=[0, 0, 1])
-            plt.add(vedo.Text2D("Original", pos="top-left", c="white", bg="black"), at=0)
-            plt.add(vedo.Text2D("Defaced", pos="top-left", c="white", bg="black"), at=1)
+            if HAS_VISUALIZATION:
+                import vedo
+                vol1 = vedo.Volume(array_norm, spacing=spacing)
+                vol2 = vedo.Volume(defaced_array_norm, spacing=spacing)
+                # Create isosurfaces for both volumes
+                mesh1 = vol1.isosurface(threshold)
+                mesh2 = vol2.isosurface(threshold)
 
-            # Camera position: move along negative y, looking back at the center
-            cam_pos = [center[0], center[1], center[2]+1000]  
-            plt.camera.SetPosition(cam_pos)
-            plt.camera.SetFocalPoint(center)
-            plt.camera.SetViewUp([1, 0, 0])
-            plt.show(mesh1, at=0)
-            plt.show(mesh2, at=1, interactive=True)
-            plt.close()
+                # Position meshes side by side
+                # Center of the mesh
+                center = mesh1.center_of_mass()
+                mesh1.pos(-center[0], -center[1], -center[2])
+                center2 = mesh2.center_of_mass()
+                bounds1 = mesh1.bounds()
+                offset = bounds1[1] - bounds1[0] + 10  # Use mesh1's width for spacing
+                mesh2.pos(-center2[0] + offset, -center2[1], -center2[2])
+                mesh1.pos(-center[0]+offset, -center[1], -center[2])
+                plt = vedo.Plotter(N=2, axes=1, size=(1200,600))
+                mesh1.rotate(angle=90, axis=[1, 0, 0])
+                mesh1.rotate(angle=180, axis=[0, 0, 1])
+                mesh2.rotate(angle=90, axis=[1, 0, 0])
+                mesh2.rotate(angle=180, axis=[0, 0, 1])
+                plt.add(vedo.Text2D("Original", pos="top-left", c="white", bg="black"), at=0)
+                plt.add(vedo.Text2D("Defaced", pos="top-left", c="white", bg="black"), at=1)
+
+                # Camera position: move along negative y, looking back at the center
+                cam_pos = [center[0], center[1], center[2]+1000]  
+                plt.camera.SetPosition(cam_pos)
+                plt.camera.SetFocalPoint(center)
+                plt.camera.SetViewUp([1, 0, 0])
+                plt.show(mesh1, at=0)
+                plt.show(mesh2, at=1, interactive=True)
+                plt.close()
         else:
             self.fail("No NRRD files returned by defacer")
 
