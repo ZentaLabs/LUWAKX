@@ -704,7 +704,7 @@ class DicomProcessor:
             _fp = self._flag_params(field, dicom)
 
             _da_pattern = r"^\d{8}$"                                       # YYYYMMDD
-            _dt_pattern = r"^\d{8}(\d{6}(\.\d{1,6})?)?([\+\-]\d{4})?$"   # YYYYMMDD[HHMMSS[.F]][±ZZZZ]
+            _dt_pattern = r"^\d{8}(\d{6}(\.\d{1,6})?)?([\+\-]\d{4})?$"   # YYYYMMDD[HHMMSS[.F]][+/-ZZZZ]
             if not (re.match(_da_pattern, _orig) or re.match(_dt_pattern, _orig)):
                 series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
                 if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
@@ -1112,7 +1112,7 @@ class DicomProcessor:
 
         Returns:
             dict mapping creator_name (str) -> set of (group: int, element_offset: int)
-            where element_offset is the low byte of the element number (0x00–0xFF).
+            where element_offset is the low byte of the element number (0x00-0xFF).
 
         Called once per series via process_series(); the result is an in-memory
         dict built from the already-loaded recipe, so it is O(recipe_actions) with

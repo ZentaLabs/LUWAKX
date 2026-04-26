@@ -20,7 +20,7 @@ import pydicom
 import vtk
 
 
-# ── Transfer syntax support ────────────────────────────────────────────────
+# -- Transfer syntax support ------------------------------------------------
 
 # Transfer syntaxes that vtkDICOMImageReader can handle (uncompressed)
 VTK_SUPPORTED_TRANSFER_SYNTAXES = {
@@ -51,7 +51,7 @@ def check_transfer_syntax(dicom_dir: str) -> tuple[bool, str]:
     return False, "unknown (could not read DICOM metadata)"
 
 
-# ── NIfTI support ───────────────────────────────────────────────────────────
+# -- NIfTI support -----------------------------------------------------------
 
 NIFTI_EXTENSIONS = (".nii", ".nii.gz")
 
@@ -70,7 +70,7 @@ def load_nifti(path: str) -> vtk.vtkImageData:
     return reader.GetOutput()
 
 
-# ── Default transfer function ────────────────────────────────────────────────
+# -- Default transfer function ------------------------------------------------
 
 DEFAULT_CT_TF = {
     "opacity": [
@@ -179,7 +179,7 @@ def create_volume_property(tf: dict) -> vtk.vtkVolumeProperty:
     return vp
 
 
-# ── Views ────────────────────────────────────────────────────────────────────
+# -- Views --------------------------------------------------------------------
 
 VIEWS = [
     (0, 0, "front"),
@@ -195,7 +195,7 @@ VIEWS = [
 ]
 
 
-# ── Rendering ────────────────────────────────────────────────────────────────
+# -- Rendering ----------------------------------------------------------------
 
 
 def render_views(input_path: str, modality: str) -> list[str]:
@@ -223,7 +223,7 @@ def render_views(input_path: str, modality: str) -> list[str]:
         bqml_hi = scalar_range[1] * slope + intercept
         print(
             f"PET rescale: slope={slope}, intercept={intercept}, units={units}\n"
-            f"Bq/ml range: {bqml_lo:.1f} – {bqml_hi:.1f}"
+            f"Bq/ml range: {bqml_lo:.1f} - {bqml_hi:.1f}"
         )
     else:
         resolved_tf = DEFAULT_CT_TF
@@ -283,20 +283,20 @@ def render_views(input_path: str, modality: str) -> list[str]:
         writer.Write()
         png_paths.append(path)
 
-        print(f"  [{i + 1}/{len(VIEWS)}] {label} (az={az_deg}°, el={el_deg}°)")
+        print(f"  [{i + 1}/{len(VIEWS)}] {label} (az={az_deg} deg, el={el_deg} deg)")
 
     return png_paths
 
 
 def save_pdf(png_paths: list[str], output_path: str, name: str, modality: str):
-    """Combine PNG renders into a single PDF — 2 per page in a grid."""
+    """Combine PNG renders into a single PDF - 2 per page in a grid."""
     from matplotlib.backends.backend_pdf import PdfPages
     import matplotlib.pyplot as plt
     import matplotlib.image as mpimg
 
     cols, rows = 2, 1
     per_page = cols * rows
-    header = f"{name}  —  {modality}"
+    header = f"{name}  -  {modality}"
 
     with PdfPages(output_path) as pdf:
         for page_start in range(0, len(png_paths), per_page):
@@ -330,7 +330,7 @@ def save_pdf(png_paths: list[str], output_path: str, name: str, modality: str):
     print(f"\nPDF saved: {output_path}")
 
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
+# -- CLI ----------------------------------------------------------------------
 
 
 def main():

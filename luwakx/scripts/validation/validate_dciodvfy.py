@@ -251,12 +251,12 @@ def _parse_dciodvfy_line(line: str):
       - severity    : ``"Error"`` or ``"Warning"``
       - affected_tag: the DICOM attribute/tag affected - used as the stable
                       comparison key between original and anonymized series.
-                      • Format 1 -> tag name stripped of angle brackets/slash,
+                      - Format 1 -> tag name stripped of angle brackets/slash,
                         e.g. ``ReferencedImageSequence(0008,1140)``
-                      • Format 2 -> attribute-name segment, e.g. ``Study ID``
-                      • Format B -> element name extracted from ``Element=<Name>``,
+                      - Format 2 -> attribute-name segment, e.g. ``Study ID``
+                      - Format B -> element name extracted from ``Element=<Name>``,
                         e.g. ``ReferencedStudySequence``
-                      • Format 3 -> tag-identity prefix,
+                      - Format 3 -> tag-identity prefix,
                         e.g. ``(0x0010,0x0010) PN Patient's Name``
       - message     : the diagnostic description without the leading severity
                       prefix and without the tag segment (for Format 1).

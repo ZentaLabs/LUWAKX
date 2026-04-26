@@ -693,20 +693,20 @@ class LuwakAnonymizer:
                 self.logger.info(f"New job {job_id}: starting full scan")
         else:
             self.logger.info(
-                "No analysisCacheFolder configured — stop/resume support is disabled. "
+                "No analysisCacheFolder configured - stop/resume support is disabled. "
                 "Set 'analysisCacheFolder' in your config to enable it."
             )
 
         # ------------------------------------------------------------------ #
-        # Graceful stop — SIGINT sets this event; each series checks it       #
+        # Graceful stop - SIGINT sets this event; each series checks it      #
         # ------------------------------------------------------------------ #
         stop_event = threading.Event()
         _previous_sigint_handler = signal.getsignal(signal.SIGINT)
 
         def _graceful_stop_handler(signum, frame):
             if stop_event.is_set():
-                # Second Ctrl-C — propagate to kill immediately
-                self.logger.warning("Second interrupt received — forcing exit")
+                # Second Ctrl-C - propagate to kill immediately
+                self.logger.warning("Second interrupt received - forcing exit")
                 signal.signal(signal.SIGINT, _previous_sigint_handler)
                 raise KeyboardInterrupt
             msg = (
@@ -725,7 +725,7 @@ class LuwakAnonymizer:
             recipe = self.create_deid_recipe()
 
             # ------------------------------------------------------------------ #
-            # Scan — always runs (fast when resume path; PatientUIDDB dedupes)   #
+            # Scan - always runs (fast when resume path; PatientUIDDB dedupes)   #
             # ------------------------------------------------------------------ #
             self.logger.info(f"Creating processing coordinator with {num_workers} worker(s)...")
             coordinator = PipelineCoordinator.create_from_dicom_files(

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Job Checkpoint Database — stop/resume support for Luwak anonymization jobs.
+Job Checkpoint Database -- stop/resume support for Luwak anonymization jobs.
 
 Two tables:
 
@@ -21,12 +21,12 @@ Two tables:
     ============ =====================================================
     Status       Resume from / Cleanup action
     ============ =====================================================
-    ORIGINAL     organize step   — nothing to clean
-    ORGANIZED    deface step     — organised copies intact, keep them
-    DEFACED      anonymize step  — delete ``output_base_path``
-    ANONYMIZED   export step     — delete ``output_base_path``,
+    ORIGINAL     organize step   - nothing to clean
+    ORGANIZED    deface step     - organised copies intact, keep them
+    DEFACED      anonymize step  - delete ``output_base_path``
+    ANONYMIZED   export step     - delete ``output_base_path``,
                                    purge CSV/Parquet rows
-    EXPORTED     skip entirely   — nothing
+    EXPORTED     skip entirely   - nothing
     ============ =====================================================
 
 Usage sketch::
@@ -159,8 +159,8 @@ class JobCheckpointDatabase:
         """Return the job_id for an existing resumable job, or create a new one.
 
         If an existing job for ``(input_folder, output_folder)`` is found:
-        - ``config_hash`` matches  → return its job_id (resume path).
-        - ``config_hash`` differs  → return ``None`` (config drift; caller warns).
+        - ``config_hash`` matches  -> return its job_id (resume path).
+        - ``config_hash`` differs  -> return ``None`` (config drift; caller warns).
 
         Returns:
             job_id string, or None when config drift is detected.
@@ -207,7 +207,7 @@ class JobCheckpointDatabase:
             self.conn.commit()
 
     def touch_job(self, job_id: str) -> None:
-        """Update ``last_updated_at`` — called on graceful stop."""
+        """Update ``last_updated_at`` - called on graceful stop."""
         with self._write_lock:
             self.conn.execute(
                 'UPDATE jobs SET last_updated_at = CURRENT_TIMESTAMP WHERE job_id = ?',
@@ -286,7 +286,7 @@ class JobCheckpointDatabase:
     ) -> None:
         """Record that *series_uid* has reached *status*.
 
-        Only advances the status — never moves it backwards, so a duplicate
+        Only advances the status - never moves it backwards, so a duplicate
         call is harmless.
         """
         with self._write_lock:
@@ -346,7 +346,7 @@ class JobCheckpointDatabase:
         Cleanup rules (derived from ``ProcessingStatus`` ordering)
         ----------------------------------------------------------
         ``ORIGINAL``
-            Nothing has been written yet — nothing to clean.
+            Nothing has been written yet - nothing to clean.
 
         ``ORGANIZED``
             Organised copies are intact and valid; keep them so resume can
@@ -355,7 +355,7 @@ class JobCheckpointDatabase:
         ``DEFACED``
             NRRDs are already at their final destinations (moved by
             ``_export_nrrd_files`` before the status was recorded).  Only
-            ``output_base_path`` may have partial anonymized files — delete it.
+            ``output_base_path`` may have partial anonymized files - delete it.
 
         ``ANONYMIZED``
             Anonymize completed but export crashed mid-write.  Delete
@@ -391,7 +391,7 @@ class JobCheckpointDatabase:
                 # Nothing written yet
                 pass
             elif status < ProcessingStatus.DEFACED:
-                # Organize done; defacing not started — keep organised copies
+                # Organize done; defacing not started - keep organised copies
                 # Nothing else to delete
                 pass
             else:
@@ -419,7 +419,7 @@ class JobCheckpointDatabase:
 
         Only series whose status was ``ANONYMIZED`` at stop time could have rows
         in the export files (partial export crash).  It is safe to call this for
-        all incomplete series — rows simply won't be found for earlier stages.
+        all incomplete series - rows simply won't be found for earlier stages.
 
         ``uid_mappings.csv`` and ``review_flags.csv`` are rewritten in-place.
         ``metadata.parquet`` is rewritten via pyarrow.

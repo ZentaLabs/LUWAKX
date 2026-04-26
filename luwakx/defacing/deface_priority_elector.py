@@ -133,7 +133,7 @@ class DefacePriorityElector:
             _, _, _, study_uid, for_uid = group_key
 
             if primary_candidates and secondary_series:
-                # Mixed group: per-PET AcquisitionDateTime-based election ─
+                # Mixed group: per-PET AcquisitionDateTime-based election
                 # For each secondary (PET) series independently elect the CT
                 # that is closest in acquisition time to that PET.  A CT can be
                 # chosen for more than one PET; all distinct elected CTs are
@@ -170,7 +170,7 @@ class DefacePriorityElector:
                 )
 
             elif primary_candidates:
-                # CT-only group: no election, each CT runs ML independently ─
+                # CT-only group: no election, each CT runs ML independently
                 result_groups.append(([], [], primary_candidates, secondary_series))
 
             else:

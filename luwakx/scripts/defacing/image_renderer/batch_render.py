@@ -30,8 +30,8 @@ def find_inputs(root: str) -> list[dict]:
     """Return a list of render-able inputs found under *root*.
 
     Each entry is a dict with keys:
-        path  — DICOM series directory or NIfTI file path
-        type  — "dicom" or "nifti"
+        path  - DICOM series directory or NIfTI file path
+        type  - "dicom" or "nifti"
     """
     inputs = []
 
@@ -99,7 +99,7 @@ def _process_input(
         modality = "CT"
         result["modality"] = modality
     else:
-        # DICOM — check transfer syntax
+        # DICOM - check transfer syntax
         supported, ts_name = check_transfer_syntax(input_path)
         if not supported:
             result["skipped"] = True
@@ -188,10 +188,10 @@ def main():
 
             if r["skipped"]:
                 print(f"[done {done_count:>{len(str(total))}}/{total}] "
-                      f"{r['label']} — skipped: {r['skip_reason']}")
+                      f"{r['label']} - skipped: {r['skip_reason']}")
             else:
                 print(f"[done {done_count:>{len(str(total))}}/{total}] "
-                      f"{r['label']} — rendered ({r['modality']})")
+                      f"{r['label']} - rendered ({r['modality']})")
 
     # Sort by original index to preserve directory order in merged PDF
     results.sort(key=lambda r: r["index"])
@@ -210,7 +210,7 @@ def main():
             f.write("=" * 72 + "\n\n")
             for input_path, label, reason in skipped:
                 f.write(f"{label}\n  path: {input_path}\n  reason: {reason}\n\n")
-        print(f"\n⚠ {len(skipped)} inputs skipped — see {log_path}")
+        print(f"\n[!] {len(skipped)} inputs skipped - see {log_path}")
 
     if not per_series_pdfs:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -221,7 +221,7 @@ def main():
     _merge_pdfs(per_series_pdfs, output_pdf)
 
     shutil.rmtree(tmpdir, ignore_errors=True)
-    print(f"Done — {len(per_series_pdfs)} rendered → {output_pdf}")
+    print(f"Done - {len(per_series_pdfs)} rendered -> {output_pdf}")
 
 
 def _merge_pdfs(pdf_paths: list[str], output_path: str):

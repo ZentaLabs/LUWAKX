@@ -172,7 +172,7 @@ class DefaceService:
             self.logger.error(f"Failed to load DICOM series as volume: {e}")
             return self._copy_without_defacing(series)
 
-        # reader is no longer needed — image holds the decoded volume.
+        # reader is no longer needed - image holds the decoded volume
         del reader
 
         # Apply face detection/segmentation strategy
@@ -367,7 +367,7 @@ class DefaceService:
                     ds.is_little_endian = True
                     # OB is the correct VR for encapsulated/compressed pixel data, but
                     # once we decompress and switch to Explicit VR Little Endian the DICOM
-                    # standard (PS3.5 §8.2) requires OW when BitsAllocated > 8.  pydicom
+                    # standard (PS3.5 sec 8.2) requires OW when BitsAllocated > 8.  pydicom
                     # does not update the DataElement VR automatically, so we do it here.
                     pixel_data_tag = pydicom.tag.Tag(0x7FE0, 0x0010)
                     if pixel_data_tag in ds and getattr(ds, 'BitsAllocated', 0) > 8:
@@ -462,7 +462,7 @@ class DefaceService:
         The correct and universal approach is to treat ``slice_z_index`` (the
         loop index over ``gdcm_sorted_files``) as the ITK z-index, because ITK
         always builds the 3D volume by stacking ``gdcm_sorted_files[i]`` at
-        internal z-index ``i`` — regardless of whether the acquisition is
+        internal z-index ``i`` - regardless of whether the acquisition is
         axis-aligned, oblique/tilted, or has non-uniform slice spacing.
 
         For tilted/oblique series specifically: ITK still stacks slices along its

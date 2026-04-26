@@ -246,7 +246,7 @@ class ProcessingPipeline:
             if self.stop_event is not None and self.stop_event.is_set():
                 if self.logger:
                     self.logger.info(
-                        f"Worker {self.worker_id}: stop requested — "
+                        f"Worker {self.worker_id}: stop requested - "
                         f"halting before series {series.anonymized_series_uid}"
                     )
                 break
@@ -556,7 +556,7 @@ class ProcessingPipeline:
             return False
 
         if self.config.get('bypassCleanPixelData', False):
-            # User asserts pixel data is clean — mark as succeeded without running service
+            # User asserts pixel data is clean - mark as succeeded without running service
             series.pixel_cleaning_succeeded = True
             if self.logger:
                 series_display = (
