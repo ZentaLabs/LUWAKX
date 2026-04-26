@@ -221,6 +221,19 @@ class DicomProcessor:
                         f"     - Series UID: {self.series.anonymized_series_uid}\n"
                         f"   Tags to verify: {tag_list}"
                     )
+                _llm_tags_skipped = self.review_collector.get_pending_keywords_by_reason(
+                    ReviewFlagCollector.REASON_LLM_VERIFICATION_SKIPPED
+                )
+                if _llm_tags_skipped:
+                    tag_list = ', '.join(sorted(_llm_tags_skipped))
+                    self.logger.warning(
+                        f"MANUAL VERIFICATION REQUIRED: The following tags contain free-text values that were not checked for presence of PHI:\n"
+                        f"   Series Information:\n"
+                        f"     - Patient ID: {self.series.anonymized_patient_id}\n"
+                        f"     - Study UID: {self.series.anonymized_study_uid}\n"
+                        f"     - Series UID: {self.series.anonymized_series_uid}\n"
+                        f"   Tags skipped: {tag_list}"
+                    )
             # flush_series() and CSV writing are handled by ProcessingPipeline
             # via MetadataExporter after process_series() returns.
             
@@ -941,16 +954,13 @@ class DicomProcessor:
                 f"{field.element.tag} ({tag_keyword})."
             )
             if self.review_collector:
-                try:
-                    self.review_collector.add_flag(
-                        reason         = ReviewFlagCollector.REASON_LLM_VERIFIED_CLEAN,
-                        original_value = original_value,
-                        keep           = 1,
-                        output_value   = original_value,
-                        **self._flag_params(field, dicom),
-                    )
-                except Exception:
-                    pass
+                self.review_collector.add_flag(
+                    reason         = ReviewFlagCollector.REASON_LLM_VERIFICATION_SKIPPED,
+                    original_value = original_value,
+                    keep           = 1,
+                    output_value   = original_value,
+                    **self._flag_params(field, dicom),
+                )
             return original_value
 
         from openai import OpenAI
@@ -1001,6 +1011,14 @@ class DicomProcessor:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
                 log_project_stacktrace(self.logger, e)
+                if self.review_collector:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_LLM_VERIFICATION_SKIPPED,
+                        original_value = original_value,
+                        keep           = 1,
+                        output_value   = original_value,
+                        **self._flag_params(field, dicom),
+                    )
                 return original_value
         
             try:
@@ -1009,6 +1027,14 @@ class DicomProcessor:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
                 log_project_stacktrace(self.logger, e)
+                if self.review_collector:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_LLM_VERIFICATION_SKIPPED,
+                        original_value = original_value,
+                        keep           = 1,
+                        output_value   = original_value,
+                        **self._flag_params(field, dicom),
+                    )
                 return original_value
         
             try:
@@ -1031,6 +1057,14 @@ class DicomProcessor:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
                 log_project_stacktrace(self.logger, e)
+                if self.review_collector:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_LLM_VERIFICATION_SKIPPED,
+                        original_value = original_value,
+                        keep           = 1,
+                        output_value   = original_value,
+                        **self._flag_params(field, dicom),
+                    )
                 return original_value
 
         # Apply result
@@ -1051,16 +1085,13 @@ class DicomProcessor:
                     f"failed_remove_{field.element.tag}"
                 )
                 if self.review_collector:
-                    try:
-                        self.review_collector.add_flag(
-                            reason         = ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
-                            original_value = str(getattr(field.element, 'value', '')),
-                            keep           = 0,
-                            output_value   = 'ANONYMIZED',
-                            **_fp,
-                        )
-                    except Exception:
-                        pass
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                        original_value = str(getattr(field.element, 'value', '')),
+                        keep           = 0,
+                        output_value   = 'ANONYMIZED',
+                        **_fp,
+                    )
                 if is_first:
                     series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
                     self.logger.warning(
@@ -1083,16 +1114,13 @@ class DicomProcessor:
             # Record in review CSV (the pending buffer is queried at end of
             # process_series to produce the MANUAL VERIFICATION warning log)
             if self.review_collector:
-                try:
-                    self.review_collector.add_flag(
-                        reason         = ReviewFlagCollector.REASON_LLM_VERIFIED_CLEAN,
-                        original_value = original_value,
-                        keep           = 1,
-                        output_value   = original_value,
-                        **self._flag_params(field, dicom),
-                    )
-                except Exception:
-                    pass
+                self.review_collector.add_flag(
+                    reason         = ReviewFlagCollector.REASON_LLM_VERIFIED_CLEAN,
+                    original_value = original_value,
+                    keep           = 1,
+                    output_value   = original_value,
+                    **self._flag_params(field, dicom),
+                )
             return original_value
     
     @staticmethod

@@ -81,6 +81,7 @@ Create a JSON configuration file with the following structure:
 
 - **`cleanDescriptorsLlmBaseUrl`**: Base URL for LLM API used in descriptor cleaning (optional)
 - **`cleanDescriptorsLlmModel`**: LLM model name for descriptor cleaning (default: "openai/gpt-4o-mini")
+- **`cleanDescriptorsLlmApiKey`**: LLM model API key. It is recommended to use environment variable instead.
 - **`cleanDescriptorsLlmApiKeyEnvVar`**: Environment variable name containing the LLM API key (optional)
 - **`bypassCleanDescriptorsLlm`**: If `true`, skips the LLM call entirely in `clean_descriptors_with_llm`. The result is always treated as 0 (no PHI detected) and the tag is kept with its original value. Useful for testing or when LLM access is unavailable. (default: false)
 - **`bypassCleanPixelData`**: If `true` and the `clean_pixel_data` recipe is active, skips the `CleanPixelDataService` execution. Use this when burned-in pixel data has been verified absent by other means (e.g. manual review). The DICOM CID 7050 code 113101 (Clean Pixel Data Option) is still injected into `DeidentificationMethodCodeSequence` as if cleaning had been performed. (default: false)
@@ -399,6 +400,11 @@ python -m unittest discover test -v
 # Run specific test
 python -m unittest test.test_anonymize.TestAnonymizeScript.test_keep_specific_private_tags_should_be_original_value -v
 ```
+
+The following environment variables control testing:
+- **`TEST_DATA_TOKEN`**: GitHub token that allows downloading release assets.
+- **`TEST_INTERACTIVE_VISUALIZATION`**: set to `1` to show interactive visualizations (use interaction is needed to complete the testing).
+- **`TEST_INITIALIZE_LLM_CACHE_FROM_TEST_DATA`**: Set to `1` to download default LLM analysis cache from test data repository. It allows running tests successfully without having access to an LLM.
 
 ## Troubleshooting
 

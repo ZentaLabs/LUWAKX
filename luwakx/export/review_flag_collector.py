@@ -56,6 +56,8 @@ class ReviewFlagCollector:
         REASON_LLM_VERIFIED_CLEAN:
             The LLM/PHI-detector inspected the tag value and found no PHI.  The original
             value was kept.  Manual verification is still recommended.
+        REASON_LLM_VERIFICATION_SKIPPED:
+            The LLM/PHI-detector was not called on this tag (e.g. because LLM was not available or disabled).
         REASON_VR_FORMAT_INVALID:
             deid / pydicom emitted a warning indicating that a stored value does not conform
             to the declared VR format (e.g. ``IS`` field containing letters).  The value may
@@ -86,6 +88,7 @@ class ReviewFlagCollector:
     #  Reason codes ---------------------------------------------------------
     REASON_VR_MISMATCH              = "VR_MISMATCH_OPERATION"
     REASON_LLM_VERIFIED_CLEAN       = "LLM_VERIFIED_CLEAN"
+    REASON_LLM_VERIFICATION_SKIPPED = "LLM_VERIFICATION_SKIPPED"
     REASON_VR_FORMAT_INVALID        = "VR_FORMAT_INVALID"
     REASON_SQ_REPLACE_NEEDS_REVIEW  = "SQ_REPLACE_NEEDS_REVIEW"
     REASON_PHI_REMOVAL_FAILED       = "PHI_REMOVAL_FAILED"

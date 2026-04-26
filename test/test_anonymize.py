@@ -730,6 +730,17 @@ class TestAnonymizeScript(unittest.TestCase):
         original_ds = pydicom.dcmread(original_file)
         original_value = original_ds['RequestedProcedureDescription'].value
         
+        if os.environ.get("TEST_INITIALIZE_LLM_CACHE_FROM_TEST_DATA") == "1":
+            # Download pre-populated LLM cache from test data and copy to the test output folder for use in this test
+            src_cache = os.path.join(self.test_data_dir, "test_llm_cache.db")
+            dst_cache = os.path.join(self.llm_cache_folder, "llm_cache.db")
+            if not os.path.exists(src_cache):
+                token = os.environ.get("TEST_DATA_TOKEN")
+                download_github_asset_by_tag("ZentaLabs", "luwak", "testing-data", "test_llm_cache.db", src_cache, token)
+
+            shutil.copy2(src_cache, dst_cache)
+            self.logger.info(f"Initialized LLM cache from {src_cache}")
+
         # Create test config with basic profile (which should trigger date shifting)
         config_path = self.create_test_config(
             input_folder=original_file,
