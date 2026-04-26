@@ -1,3 +1,4 @@
+import gc
 import zipfile
 import numpy as np
 import SimpleITK as sitk
@@ -99,6 +100,17 @@ class TestDefacerProfile(unittest.TestCase):
         self.logger = get_logger('test_defacer_profile')
 
         print("\n######################START TEST######################")
+
+    def tearDown(self):
+        import logging
+        root_logger = logging.getLogger('luwak')
+        for handler in root_logger.handlers[:]:
+            handler.close()
+            root_logger.removeHandler(handler)
+        gc.collect()
+        if os.path.exists(self.test_output_dir):
+            shutil.rmtree(self.test_output_dir)
+        print("\n######################END TEST######################")
 
     def test_defacer_service_makes_defacing(self):    
         # Test the defacer service directly without full anonymization
