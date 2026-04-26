@@ -13,6 +13,7 @@ htmlcov/
 venv/
 env/
 .venv/
+.env/
 
 # IDE
 .vscode/
@@ -30,6 +31,9 @@ test_output/
 *.tar.gz
 **llm_cache/
 **/analysis_output/
+
+# Local secrets
+.env.local
 
 # Logs and temp files
 *.log
