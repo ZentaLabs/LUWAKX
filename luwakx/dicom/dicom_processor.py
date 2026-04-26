@@ -970,11 +970,14 @@ class DicomProcessor:
             original_value = "unknown"
         
         # Get LLM config
-        base_url = self.config.get('cleanDescriptorsLlmBaseUrl', "https://api.openai.com/v1")
-        model = self.config.get('cleanDescriptorsLlmModel', "gpt-4o-mini")
-        api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar', "")
-        api_key = os.environ.get(api_key_env, "")
-        
+        # Precedence: config dict > env var >  > default
+        base_url = self.config.get('cleanDescriptorsLlmBaseUrl') or os.environ.get("CLEAN_DESCRIPTORS_LLM_BASE_URL")
+        model = self.config.get('cleanDescriptorsLlmModel') or os.environ.get("CLEAN_DESCRIPTORS_LLM_MODEL", "gpt-4o-mini")
+        api_key = self.config.get('cleanDescriptorsLlmApiKey')
+        if not api_key:
+            api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar') or 'CLEAN_DESCRIPTORS_LLM_API_KEY'
+            api_key = os.environ.get(api_key_env)
+
         # Check shared cache first
         result = None
         if self.llm_cache:

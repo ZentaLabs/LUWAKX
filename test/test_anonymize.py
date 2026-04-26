@@ -21,10 +21,13 @@ class TestAnonymizeScript(unittest.TestCase):
         # Create a temporary output directory
         cls.test_output_dir = "test_output"
 
-        # Create llm_cache folder in the same directory as test_output and test_input
+        # Create llm_cache folder, clearing stale DB files from previous runs
         cls.llm_cache_folder = "test_llm_cache"
-        if not os.path.exists(cls.llm_cache_folder):
-            os.makedirs(cls.llm_cache_folder, exist_ok=True)
+        os.makedirs(cls.llm_cache_folder, exist_ok=True)
+        for db_file in ("job_checkpoint.db", "llm_cache.db", "patient_uid.db"):
+            db_path = os.path.join(cls.llm_cache_folder, db_file)
+            if os.path.exists(db_path):
+                os.remove(db_path)
         if not os.path.isabs(cls.llm_cache_folder):
             cls.llm_cache_folder = os.path.abspath(cls.llm_cache_folder)
         # Path to the decompressed test data directory
@@ -160,9 +163,6 @@ class TestAnonymizeScript(unittest.TestCase):
             "outputPrivateMappingFolder": output_private_mapping_folder,
             "recipesFolder": recipes_folder,
             "recipes": recipes if recipes is not None else "deid.dicom",
-            "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
-            "cleanDescriptorsLlmModel": "gpt-4o-mini",
-            "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
         }
         
         # Add patientIdPrefix if provided

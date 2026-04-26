@@ -108,29 +108,35 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Detect PHI/PII in a DICOM file.")
     parser.add_argument("--fpath", required=True, help="Path to the input DICOM file")
-    parser.add_argument("--model", required=True, help="Name of model")
+    parser.add_argument("--base-url", default=None, help="LLM API base URL (use env var CLEAN_DESCRIPTORS_LLM_BASE_URL if not provided)")
+    parser.add_argument("--model", default=None, help="Name of LLM model to use (use env var CLEAN_DESCRIPTORS_LLM_MODEL if not provided, default: gpt-4o-mini)")
+    parser.add_argument("--api-key", default=None, help="LLM API key (use env var CLEAN_DESCRIPTORS_LLM_API_KEY if not provided)")
     parser.add_argument(
         "--dev_mode", action="store_true", help="Run in development mode (no LLM calls)"
-    )
-    parser.add_argument(
-        "--use_local", action="store_true", help="Use local LLM via local host"
     )
     args = parser.parse_args()
 
     fpath = args.fpath
-    model = args.model
     dev_mode = args.dev_mode
-    use_local = args.use_local
+
+    base_url = args.base_url or os.environ.get("CLEAN_DESCRIPTORS_LLM_BASE_URL")
+    model = args.model or os.environ.get("CLEAN_DESCRIPTORS_LLM_MODEL", "gpt-4o-mini")
+    api_key = args.api_key or os.environ.get("CLEAN_DESCRIPTORS_LLM_API_KEY")
+
+    if not base_url and not api_key:
+        raise ValueError("You must provide either a base URL or an API key for the LLM.")
+
     print(f"Model: {model}")
     print(f"Development mode: {dev_mode}")
 
     # Set up client
-    if use_local:
-        print(f"Using local host: {'http://localhost:1234/v1'}")
-        client = OpenAI(base_url="http://localhost:1234/v1", api_key="")
-    else:
-        print("Using API")
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client_kwargs = {}
+    if base_url:
+        print(f"Using base URL: {base_url}")
+        client_kwargs["base_url"] = base_url
+    if api_key:
+        client_kwargs["api_key"] = api_key
+    client = OpenAI(**client_kwargs)
 
     # Read DICOM file
     dcm = dcmread(fpath)

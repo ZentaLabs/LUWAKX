@@ -32,6 +32,8 @@ The package is organised into sub-packages:
 
 ## Configuration File Format
 
+The `luwak-config.json` file is the main configuration file for the Luwak DICOM anonymization and metadata extraction pipeline. It defines all options for input/output paths, anonymization recipes, metadata export, and workflow parameters. JSON schema file: [config.schema.json](data/config.schema.json).
+
 Create a JSON configuration file with the following structure:
 
 ```json
@@ -46,9 +48,9 @@ Create a JSON configuration file with the following structure:
   "maxDateShiftDays": 1095,
   "excludedTagsFromParquet": ["(7FE0,0010)"],
   "logLevel": "INFO",
-  "cleanDescriptorsLlmBaseUrl": "https://api.openai.com/v1",
-  "cleanDescriptorsLlmModel": "gpt-4o-mini",
-  "cleanDescriptorsLlmApiKeyEnvVar": "ZENTA_OPENAI_API_KEY"
+  "cleanDescriptorsLlmBaseUrl": "https://openrouter.ai/api/v1",
+  "cleanDescriptorsLlmModel": "openai/gpt-4o-mini",
+  "cleanDescriptorsLlmApiKeyEnvVar": "OPENROUTER_API_KEY"
 }
 ```
 

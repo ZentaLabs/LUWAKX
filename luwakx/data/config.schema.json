@@ -77,15 +77,25 @@
     },
     "cleanDescriptorsLlmBaseUrl": {
       "type": "string",
-      "default": "https://api.openai.com/v1"
+      "description": "Base URL of the OpenAI-compatible LLM to be used for cleaning descriptors. If not specified then CLEAN_DESCRIPTORS_LLM_BASE_URL environment variable content is used.",
+      "default": "",
+      "examples": ["http://localhost:1234/v1", "https://api.openai.com/v1"]
     },
     "cleanDescriptorsLlmModel": {
       "type": "string",
-      "default": "gpt-4o-mini"
+      "description": "LLM model name to be used for cleaning descriptors. If not specified then CLEAN_DESCRIPTORS_LLM_MODEL environment variable content is used.",
+      "default": "",
+      "examples": ["openai/gpt-oss-20b", "gpt-4o-mini"]
+    },
+    "cleanDescriptorsLlmApiKey": {
+      "type": "string",
+      "description": "API key to be used for the LLM for cleaning descriptors. If not specified then value of environment variable specified in cleanDescriptorsLlmApiKeyEnvVar is used.",
+      "default": ""
     },
     "cleanDescriptorsLlmApiKeyEnvVar": {
       "type": "string",
-      "default": ""
+      "description": "Name of the environment variable that stores API key for CleanDescriptorsLlm. Deprecated. Use CLEAN_DESCRIPTORS_LLM_API_KEY environment variable instead.",
+      "default": "CLEAN_DESCRIPTORS_LLM_API_KEY"
     },
     "analysisCacheFolder": {
       "type": "string",
