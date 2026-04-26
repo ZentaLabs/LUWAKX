@@ -55,6 +55,12 @@ class TestDefacerProfile(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        # Close log file (open file would prevent rmtree)
+        import logging
+        root_logger = logging.getLogger('luwak')
+        for handler in root_logger.handlers[:]:
+            handler.close()
+            root_logger.removeHandler(handler)
         # Clean up output directory after all tests
         if os.path.exists(cls.test_output_dir):
             shutil.rmtree(cls.test_output_dir)

@@ -74,16 +74,18 @@ class TestExports(unittest.TestCase):
             shutil.copy2(src, dst)
 
     def tearDown(self):
-        # Log before cleanup
-        self.logger.info("Export test case completed and cleaned up")
-        
+        # Close log file (open file would prevent rmtree)
+        import logging
+        root_logger = logging.getLogger('luwak')
+        for handler in root_logger.handlers[:]:
+            handler.close()
+            root_logger.removeHandler(handler)
         # Clean up output directory after each test
         if os.path.exists(self.test_output_dir):
             shutil.rmtree(self.test_output_dir)
         # Clean up limited input directory
         if os.path.exists(self.limited_input_dir):
             shutil.rmtree(self.limited_input_dir)
-        
         print("\n######################END EXPORT TEST######################")
 
     def create_test_config(self, input_folder, output_folder, recipes=None, recipes_folder=None):

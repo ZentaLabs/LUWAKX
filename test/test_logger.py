@@ -3,6 +3,7 @@
 Test script to verify the new luwak_logger system works correctly.
 """
 
+import logging
 import unittest
 import sys
 import os
@@ -22,7 +23,11 @@ class TestLuwakLogger(unittest.TestCase):
 
     def tearDown(self):
         """Clean up after each test."""
-        # Remove test log file if it exists
+        # Close log file (open file would prevent rmtree)
+        root_logger = logging.getLogger('luwak')
+        for handler in root_logger.handlers[:]:
+            handler.close()
+            root_logger.removeHandler(handler)
         if os.path.exists(self.test_log_file):
             os.remove(self.test_log_file)
         if os.path.exists(self.temp_dir):

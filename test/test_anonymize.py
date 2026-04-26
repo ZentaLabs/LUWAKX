@@ -91,6 +91,12 @@ class TestAnonymizeScript(unittest.TestCase):
             shutil.copy2(src, dst)
 
     def tearDown(self):
+        # Close log file (open file would prevent rmtree)
+        import logging
+        root_logger = logging.getLogger('luwak')
+        for handler in root_logger.handlers[:]:
+            handler.close()
+            root_logger.removeHandler(handler)
         # Clean up output directory after each test
         if os.path.exists(self.test_output_dir):
             shutil.rmtree(self.test_output_dir)
