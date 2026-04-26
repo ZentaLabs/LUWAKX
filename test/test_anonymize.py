@@ -989,7 +989,7 @@ class TestAnonymizeScript(unittest.TestCase):
             })()
             result_60 = processor.check_patient_age(original_ds, "func:check_patient_age", mock_field_60, "item1")
             self.assertEqual(result_60, "060Y", f"60Y should be kept as '060Y', got '{result_60}'")
-            self.logger.info(f"\u2713 PatientAge 060Y \u2192 {result_60} (kept)")
+            self.logger.info(f"[OK] PatientAge 060Y -> {result_60} (kept)")
 
             # 89Y: at threshold boundary -> keep original
             mock_field_89 = type('MockField', (), {
@@ -1001,7 +1001,7 @@ class TestAnonymizeScript(unittest.TestCase):
             })()
             result_89 = processor.check_patient_age(original_ds, "func:check_patient_age", mock_field_89, "item1")
             self.assertEqual(result_89, "089Y", f"89Y should be kept as '089Y', got '{result_89}'")
-            self.logger.info(f"\u2713 PatientAge 089Y \u2192 {result_89} (kept)")
+            self.logger.info(f"[OK] PatientAge 089Y -> {result_89} (kept)")
 
             # 91Y: over threshold -> cap to 90Y
             mock_field_91 = type('MockField', (), {
@@ -1013,7 +1013,7 @@ class TestAnonymizeScript(unittest.TestCase):
             })()
             result_91 = processor.check_patient_age(original_ds, "func:check_patient_age", mock_field_91, "item1")
             self.assertEqual(result_91, "090Y", f"91Y should be capped to '90Y', got '{result_91}'")
-            self.logger.info(f"\u2713 PatientAge 091Y \u2192 {result_91} (capped to 90Y)")
+            self.logger.info(f"[OK] PatientAge 091Y -> {result_91} (capped to 90Y)")
 
             # Empty value -> return empty string
             mock_field_empty = type('MockField', (), {
@@ -1025,13 +1025,13 @@ class TestAnonymizeScript(unittest.TestCase):
             })()
             result_empty = processor.check_patient_age(original_ds, "func:check_patient_age", mock_field_empty, "item1")
             self.assertEqual(result_empty, "", f"Empty age should return '', got '{result_empty}'")
-            self.logger.info(f"\u2713 PatientAge (empty) \u2192 '{result_empty}'")
+            self.logger.info(f"[OK] PatientAge (empty) -> '{result_empty}'")
 
             self.logger.info("All check_patient_age method tests passed!")
-            self.logger.info(f"    - 060Y \u2192 '{result_60}' (kept)")
-            self.logger.info(f"    - 089Y \u2192 '{result_89}' (kept)")
-            self.logger.info(f"    - 091Y \u2192 '{result_91}' (capped to 90Y)")
-            self.logger.info(f"    - (empty) \u2192 '{result_empty}'")
+            self.logger.info(f"    - 060Y -> '{result_60}' (kept)")
+            self.logger.info(f"    - 089Y -> '{result_89}' (kept)")
+            self.logger.info(f"    - 091Y -> '{result_91}' (capped to 90Y)")
+            self.logger.info(f"    - (empty) -> '{result_empty}'")
 
         finally:
             os.unlink(config_path)
@@ -1086,7 +1086,7 @@ class TestAnonymizeScript(unittest.TestCase):
                 actual_age = str(anon_ds.PatientAge) if hasattr(anon_ds, 'PatientAge') and anon_ds.PatientAge else ""
                 self.assertEqual(actual_age, expected_age,
                     f"PatientAge for {filename}: expected '{expected_age}', got '{actual_age}'")
-                self.logger.info(f"\u2713 PatientAge {input_age} \u2192 {actual_age} (expected: {expected_age})")
+                self.logger.info(f"[OK] PatientAge {input_age} -> {actual_age} (expected: {expected_age})")
 
                 # Check that PreMedication and SpecialNeeds are removed after deidentification using assertNotIn
                 self.assertNotIn(pydicom.tag.Tag(0x00400012), anon_ds,
