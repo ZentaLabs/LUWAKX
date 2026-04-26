@@ -30,11 +30,29 @@ def setup_deid_repo():
     # Set environment variable for deid's internal verbosity control
     if "MESSAGELEVEL" not in os.environ:
         os.environ["MESSAGELEVEL"] = "1"
-    
-    # Always reinstall deid from GitHub zip
+
     zip_url = "https://github.com/ZentaLabs/deid/archive/8d26fca2ea09793932877f285ad76e196f205b27.zip"
+
+    # Check if deid is already installed from the expected URL via pip's direct_url.json
     try:
-        logger.info("Installing deid from GitHub (fixed commit)...")
+        import importlib.metadata
+        dist = importlib.metadata.distribution("deid")
+        direct_url_path = os.path.join(str(dist._path), "direct_url.json")
+        if os.path.isfile(direct_url_path):
+            with open(direct_url_path) as f:
+                installed_url = json.load(f).get("url", "")
+            if installed_url == zip_url:
+                import deid
+                deid_location = os.path.dirname(os.path.abspath(deid.__file__))
+                logger.info(f"deid already installed from expected URL at: {deid_location}")
+                return
+        logger.info(f"deid installed from {installed_url}, reinstalling from {zip_url}")
+    except importlib.metadata.PackageNotFoundError:
+        logger.info(f"deid not found, installing from {zip_url}")
+    except Exception as e:
+        logger.warning(f"Could not check deid installation source: {e}, reinstalling...")
+
+    try:
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install", zip_url],
             stdout=subprocess.DEVNULL,
