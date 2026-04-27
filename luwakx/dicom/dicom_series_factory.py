@@ -95,6 +95,7 @@ class DicomSeriesFactory:
         Returns:
             List[DicomSeries]: List of created DicomSeries objects
         """
+        import pickle
         # Discover files if input is a path
         if isinstance(dicom_files, str):
             dicom_files = self.discover_files(dicom_files)
@@ -108,6 +109,21 @@ class DicomSeriesFactory:
             'clean_recognizable_visual_features' in self.config.get('recipes', [])
         )
 
+        # Per-file cache: maps file path to (mtime, extracted info).
+        # It can take hours to parse all the DICOM files, which would take restarts much more time-consuming.
+        cache_dir = self.config.get('outputPrivateMappingFolder')
+        if not cache_dir:
+            cache_dir = os.path.join(self.output_directory, 'privateMapping')
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_path = os.path.join(cache_dir, '.dicom_file_cache.pkl')
+        file_cache = {}
+        try:
+            if os.path.exists(cache_path):
+                with open(cache_path, 'rb') as f:
+                    file_cache = pickle.load(f)
+        except Exception as e:
+            self.logger.warning(f"Could not load DICOM file cache: {e}")
+
         # Single-pass read: precompute patients AND group series simultaneously
         series_groups: Dict[Tuple[str, str, str, str, str], List[str]] = {}
         series_metadata: Dict[Tuple[str, str, str, str, str], Dict[str, Any]] = {}
@@ -118,48 +134,34 @@ class DicomSeriesFactory:
         # Print a progress bar every ~1 % of total (at least every 1000 files)
         _progress_step = max(1000, total_files // 100)
 
+        updated_cache = False
         for _file_idx, file_path in enumerate(dicom_files, start=1):
-            if _file_idx % _progress_step == 0 or _file_idx == total_files:
+            if _file_idx % _progress_step == 1 or _file_idx == total_files:
                 _pct = _file_idx * 100 // total_files
                 print(
                     f"\r  Scanning files: {_pct:3d}%  ({_file_idx}/{total_files})",
                     end='', flush=True, file=sys.stderr,
                 )
             try:
-                ds = pydicom.dcmread(file_path, stop_before_pixels=True)
-                
-                # Extract patient identifiers
-                patient_id = str(getattr(ds, 'PatientID', ''))
-                patient_name = str(getattr(ds, 'PatientName', ''))
-                birthdate = str(getattr(ds, 'PatientBirthDate', ''))
-
-                # Extract modality and filter if selectedModalities is configured
-                modality = str(getattr(ds, 'Modality', ''))
-                selected_modalities = self.config.get('selectedModalities', [])
-                if selected_modalities and modality not in selected_modalities:
-                    continue
-
-                # PRE-COMPUTATION: Populate patient UID database on first encounter
-                if self.patient_uid_db:
-                    patient_key = (patient_id, patient_name, birthdate)
-                    if patient_key not in seen_patients:
-                        self.patient_uid_db.store_patient_id(patient_id, patient_name, birthdate)
-                        seen_patients.add(patient_key)
-                        patient_count += 1
-                        
-                        if patient_count % 10 == 0:
-                            self.logger.debug(f"Pre-computed mappings for {patient_count} patients...")
-                
-                # Extract study and series UIDs
-                study_uid = getattr(ds, 'StudyInstanceUID', 'unknown_study')
-                series_uid = getattr(ds, 'SeriesInstanceUID', 'unknown_series')
-                
-                # Create grouping key: (patient_id, patient_name, birthdate, study_uid, series_uid)
-                grouping_key = (patient_id, patient_name, birthdate, study_uid, series_uid)
-                
-                if grouping_key not in series_groups:
-                    series_groups[grouping_key] = []
-                    
+                mtime = os.path.getmtime(file_path)
+                cache_key = (file_path, mtime)
+                if cache_key in file_cache:
+                    # Use cached info
+                    (patient_id, patient_name, birthdate, modality, study_uid, series_uid, meta) = file_cache[cache_key]
+                else:
+                    ds = pydicom.dcmread(file_path, stop_before_pixels=True)
+                    # Extract patient identifiers
+                    patient_id = str(getattr(ds, 'PatientID', ''))
+                    patient_name = str(getattr(ds, 'PatientName', ''))
+                    birthdate = str(getattr(ds, 'PatientBirthDate', ''))
+                    # Extract modality and filter if selectedModalities is configured
+                    modality = str(getattr(ds, 'Modality', ''))
+                    selected_modalities = self.config.get('selectedModalities', [])
+                    if selected_modalities and modality not in selected_modalities:
+                        continue
+                    # Extract study and series UIDs
+                    study_uid = getattr(ds, 'StudyInstanceUID', 'unknown_study')
+                    series_uid = getattr(ds, 'SeriesInstanceUID', 'unknown_series')
                     # Extract metadata (once per series)
                     series_desc = getattr(ds, 'SeriesDescription', '')
                     series_number = getattr(ds, 'SeriesNumber', '')
@@ -196,7 +198,24 @@ class DicomSeriesFactory:
                             )
                             acq_dt = ''
                         meta['acquisition_datetime'] = acq_dt
+                    # Store in cache
+                    file_cache[cache_key] = (patient_id, patient_name, birthdate, modality, study_uid, series_uid, meta)
+                    updated_cache = True
 
+                # PRE-COMPUTATION: Populate patient UID database on first encounter
+                if self.patient_uid_db:
+                    patient_key = (patient_id, patient_name, birthdate)
+                    if patient_key not in seen_patients:
+                        self.patient_uid_db.store_patient_id(patient_id, patient_name, birthdate)
+                        seen_patients.add(patient_key)
+                        patient_count += 1
+                        if patient_count % 10 == 0:
+                            self.logger.debug(f"Pre-computed mappings for {patient_count} patients...")
+
+                # Create grouping key: (patient_id, patient_name, birthdate, study_uid, series_uid)
+                grouping_key = (patient_id, patient_name, birthdate, study_uid, series_uid)
+                if grouping_key not in series_groups:
+                    series_groups[grouping_key] = []
                     series_metadata[grouping_key] = meta
                 
                 series_groups[grouping_key].append(file_path)
@@ -217,6 +236,14 @@ class DicomSeriesFactory:
                         unknown_meta['acquisition_datetime'] = ''
                     series_metadata[unknown_key] = unknown_meta
                 series_groups[unknown_key].append(file_path)
+
+        # Save updated cache if needed
+        if updated_cache:
+            try:
+                with open(cache_path, 'wb') as f:
+                    pickle.dump(file_cache, f)
+            except Exception as e:
+                self.logger.warning(f"Could not save DICOM file cache: {e}")
 
         print(file=sys.stderr)  # newline after the progress bar
         self.logger.info(f"Pre-computed {patient_count} unique patients during file grouping")

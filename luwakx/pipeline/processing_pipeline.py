@@ -9,6 +9,7 @@ import os
 import shutil
 import threading
 from typing import Any, Dict, List, Optional, Set
+from tqdm import tqdm
 from ..dicom.dicom_series import DicomSeries
 from .processing_stage import ProcessingStage
 from .processing_status import ProcessingStatus
@@ -239,7 +240,8 @@ class ProcessingPipeline:
 
         # Iterate over a snapshot of UIDs so we can safely remove each series
         # from series_collection immediately after it is processed, freeing memory.
-        for series_uid in list(self.series_collection.keys()):
+        progress = tqdm(list(self.series_collection.keys()), total=total, unit="series", desc=f"Worker {self.worker_id}")
+        for series_uid in progress:
             series = self.series_collection[series_uid]
 
             # --- Graceful stop check ---
@@ -259,29 +261,32 @@ class ProcessingPipeline:
                         f"{series.anonymized_series_uid}"
                     )
                 skipped += 1
+                progress.set_postfix(done=completed, skipped=skipped, failed=failed)
                 del self.series_collection[series_uid]
                 del series
                 continue
 
             try:
+                series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
+                progress.set_postfix(done=completed, skipped=skipped, failed=failed)
                 if self.logger:
-                    # Use output_base_path basename for logging (contains UID hierarchy)
-                    series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
                     self.logger.info(
                         f"Worker {self.worker_id}: Processing series "
                         f"{completed + skipped + 1}/{total}: {series_display}"
                     )
-                
+
                 # Process this series through ALL stages
                 self._process_single_series(series)
-                
+
                 completed += 1
+                progress.set_postfix(done=completed, skipped=skipped, failed=failed)
                 if self.logger:
                     self.logger.info(f"(SUCCESS) Completed: {series_display}")
                 
             except Exception as e:
                 series_display = f"series:{series.anonymized_series_uid}, of study:{series.anonymized_study_uid}, for patient:{series.anonymized_patient_id}"
                 failed += 1
+                progress.set_postfix(done=completed, skipped=skipped, failed=failed)
                 series.processing_status = ProcessingStatus.FAILED
                 if self.logger:
                     self.logger.error(f"(ERROR) Failed: {series_display}: {e}")
@@ -425,7 +430,10 @@ class ProcessingPipeline:
             organized_path = os.path.join(series.organized_base_path, dicom_file.filename)
             
             try:
-                shutil.copy2(dicom_file.original_path, organized_path)
+                src_stat = os.stat(dicom_file.original_path)
+                dst_stat = os.stat(organized_path) if os.path.exists(organized_path) else None
+                if dst_stat is None or src_stat.st_size != dst_stat.st_size or src_stat.st_mtime != dst_stat.st_mtime:
+                    shutil.copy2(dicom_file.original_path, organized_path)
                 dicom_file.set_organized_path(organized_path)
             except Exception as e:
                 if self.logger:
