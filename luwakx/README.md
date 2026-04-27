@@ -83,6 +83,8 @@ Create a JSON configuration file with the following structure:
 - **`cleanDescriptorsLlmModel`**: LLM model name for descriptor cleaning (default: "openai/gpt-4o-mini")
 - **`cleanDescriptorsLlmApiKey`**: LLM model API key. It is recommended to use environment variable instead.
 - **`cleanDescriptorsLlmApiKeyEnvVar`**: Environment variable name containing the LLM API key (optional)
+- **`cleanDescriptorsLlmHttpHeaders`**: JSON object of HTTP headers injected into every LLM API request. Useful when the LLM endpoint sits behind a reverse proxy or API gateway that requires additional authentication headers. Example: `{"Authorization": "Bearer mytoken", "X-Custom-Header": "value"}`.
+  Note: If using CloudFlare tunnel then add a service token, add policy (action: `Service Auth`, selector: `Service Token`), and set up an application (path: `*`, select policy).
 - **`bypassCleanDescriptorsLlm`**: If `true`, skips the LLM call entirely in `clean_descriptors_with_llm`. The result is always treated as 0 (no PHI detected) and the tag is kept with its original value. Useful for testing or when LLM access is unavailable. (default: false)
 - **`bypassCleanPixelData`**: If `true` and the `clean_pixel_data` recipe is active, skips the `CleanPixelDataService` execution. Use this when burned-in pixel data has been verified absent by other means (e.g. manual review). The DICOM CID 7050 code 113101 (Clean Pixel Data Option) is still injected into `DeidentificationMethodCodeSequence` as if cleaning had been performed. (default: false)
 

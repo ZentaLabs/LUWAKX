@@ -1,11 +1,27 @@
 import argparse
+import json
 import os
 from time import perf_counter
+
+import httpx
 
 import pandas as pd
 from openai import OpenAI
 from pydicom import datadict, dcmread
 from pydicom.dataset import Dataset
+
+
+def create_openai_client(base_url, api_key, http_headers=None):
+    client_kwargs = {}
+    client_kwargs["base_url"] = base_url
+    client_kwargs["api_key"] = api_key or ""
+    if http_headers is None:
+        http_headers_raw = os.environ.get("CLEAN_DESCRIPTORS_HTTP_HEADERS")
+        if http_headers_raw:
+            http_headers = json.loads(http_headers_raw)
+    if http_headers:
+        client_kwargs["http_client"] = httpx.Client(headers=http_headers)
+    return OpenAI(**client_kwargs)
 
 
 def detect_phi_or_pii(
@@ -129,14 +145,9 @@ if __name__ == "__main__":
     print(f"Model: {model}")
     print(f"Development mode: {dev_mode}")
 
-    # Set up client
-    client_kwargs = {}
     if base_url:
         print(f"Using base URL: {base_url}")
-        client_kwargs["base_url"] = base_url
-    if api_key:
-        client_kwargs["api_key"] = api_key
-    client = OpenAI(**client_kwargs)
+    client = create_openai_client(base_url, api_key)
 
     # Read DICOM file
     dcm = dcmread(fpath)

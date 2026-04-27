@@ -963,8 +963,6 @@ class DicomProcessor:
                 )
             return original_value
 
-        from openai import OpenAI
-        
         # Extract original value
         try:
             original_value = str(field.element.value)
@@ -1022,7 +1020,8 @@ class DicomProcessor:
                 return original_value
         
             try:
-                client = OpenAI(base_url=base_url, api_key=api_key)
+                http_headers = self.config.get('cleanDescriptorsHttpHeaders') or None
+                client = detector.create_openai_client(base_url, api_key, http_headers=http_headers)
             except Exception as e:
                 tb = traceback.extract_tb(e.__traceback__)
                 line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""

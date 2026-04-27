@@ -97,6 +97,12 @@
       "description": "Name of the environment variable that stores API key for CleanDescriptorsLlm. Deprecated. Use CLEAN_DESCRIPTORS_LLM_API_KEY environment variable instead.",
       "default": "CLEAN_DESCRIPTORS_LLM_API_KEY"
     },
+    "cleanDescriptorsHttpHeaders": {
+      "type": "object",
+      "description": "Additional HTTP headers to include in requests to the LLM for cleaning descriptors. Should be a JSON object where keys are header names and values are header values. If not specified then CLEAN_DESCRIPTORS_HTTP_HEADERS environment variable content is used.",
+      "default": {},
+      "examples": [{"Authorization": "Bearer mytoken"}, {"CF-Access-Client-Id": "someid", "CF-Access-Client-Secret": "mysecret"}]
+    },
     "analysisCacheFolder": {
       "type": "string",
       "description": "Path to folder for analysis cache databases (patient_uid.db and llm_cache.db).\nIf specified and folder exists with databases, they will be loaded and updated; if not, new databases will be created.\nDatabases persist across anonymization runs to ensure consistent mappings.\nIf not specified, temporary databases are created in the private mapping folder and deleted after processing.",
