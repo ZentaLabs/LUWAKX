@@ -102,6 +102,19 @@ class LuwakAnonymizer:
         except ConfigurationError as e:
             tb = traceback.extract_tb(e.__traceback__)
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
+            orig = getattr(e, 'original_exception', None)
+            details = None
+            if orig is not None:
+                import jsonschema
+                if isinstance(orig, jsonschema.ValidationError):
+                    # Only print the error message and path, not schema/instance or context
+                    details = orig.message
+                    if orig.path:
+                        details += f" at: {'.'.join([str(x) for x in orig.path])}"
+            if details:
+                print(f"Configuration file error: {details}", file=sys.stderr)
+            else:
+                print(f"Configuration file validation failed: {e}", file=sys.stderr)
             log_project_stacktrace(self.logger, e)
             sys.exit(1)
         
