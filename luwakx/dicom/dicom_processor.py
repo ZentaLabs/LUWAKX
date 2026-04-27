@@ -580,8 +580,14 @@ class DicomProcessor:
         if not original_uid:
             return field.element.value
 
-        # Extract file path from the dicom dataset filename attribute
-        file_path = f"{getattr(dicom, 'filename', str(dicom))}"
+        # Extract unique identifier from the dicom dataset filename attribute
+        if hasattr(dicom, 'filename'):
+            file_path = dicom.filename
+        elif hasattr(dicom, 'SOPInstanceUID') and dicom.SOPInstanceUID:
+            file_path = str(dicom.SOPInstanceUID)
+        else:
+            file_path = str(id(dicom))
+
         if file_path not in self.current_file_mappings:
             self.current_file_mappings[file_path] = {}
 
