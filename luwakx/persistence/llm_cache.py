@@ -74,9 +74,17 @@ class LLMResultCache:
                     input_text TEXT NOT NULL,
                     llm_model TEXT NOT NULL,
                     phi_result INTEGER NOT NULL,
+                    reasoning TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # Migrate existing databases that predate the reasoning column
+            try:
+                cursor.execute("ALTER TABLE llm_phi_cache ADD COLUMN reasoning TEXT")
+                self.conn.commit()
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             
             # Create index for cleanup by timestamp
             cursor.execute("""
@@ -132,16 +140,16 @@ class LLMResultCache:
             cursor = self.conn.cursor()
             
             cursor.execute("""
-                SELECT phi_result 
-                FROM llm_phi_cache 
+                SELECT phi_result, reasoning
+                FROM llm_phi_cache
                 WHERE cache_key = ?
             """, (cache_key,))
-            
+
             result = cursor.fetchone()
             if result:
                 self.logger.debug(f"Cache HIT for key: {cache_key[:16]}...")
-                return result[0]
-            
+                return result[0], result[1]  # (phi_result, reasoning)
+
             self.logger.debug(f"Cache MISS for key: {cache_key[:16]}...")
             return None
             
@@ -149,31 +157,32 @@ class LLMResultCache:
             self.logger.warning(f"Error retrieving from LLM cache: {e}")
             return None
     
-    def store_result(self, input_text, model, phi_result):
+    def store_result(self, input_text, model, phi_result, reasoning=None):
         """
         Store LLM result in cache.
-        
+
         This method creates a new cache entry with write locking to prevent
         race conditions. Thread-safe with write serialization.
-        
+
         Args:
             input_text (str): Input text that was processed
             model (str): LLM model name used
             phi_result (int): PHI detection result (0 or 1)
+            reasoning (str or None): Model reasoning text, if available
         """
         try:
             cache_key = self._generate_cache_key(input_text, model)
-            
+
             # Acquire write lock to serialize write operations
             with self._write_lock:
                 cursor = self.conn.cursor()
-                
+
                 # Use INSERT OR REPLACE to handle duplicates
                 cursor.execute("""
-                    INSERT OR REPLACE INTO llm_phi_cache 
-                    (cache_key, input_text, llm_model, phi_result, created_at)
-                    VALUES (?, ?, ?, ?, datetime('now'))
-                """, (cache_key, input_text, model, phi_result))
+                    INSERT OR REPLACE INTO llm_phi_cache
+                    (cache_key, input_text, llm_model, phi_result, reasoning, created_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                """, (cache_key, input_text, model, phi_result, reasoning))
                 
                 self.conn.commit()
                 self.logger.private(f"Cached result for key: {cache_key[:16]}... -> {phi_result}")

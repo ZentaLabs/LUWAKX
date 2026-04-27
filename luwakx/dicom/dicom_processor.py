@@ -980,7 +980,7 @@ class DicomProcessor:
         # Get LLM config
         # Precedence: config dict > env var >  > default
         base_url = self.config.get('cleanDescriptorsLlmBaseUrl') or os.environ.get("CLEAN_DESCRIPTORS_LLM_BASE_URL")
-        model = self.config.get('cleanDescriptorsLlmModel') or os.environ.get("CLEAN_DESCRIPTORS_LLM_MODEL", "gpt-4o-mini")
+        model = self.config.get('cleanDescriptorsLlmModel') or os.environ.get("CLEAN_DESCRIPTORS_LLM_MODEL", "openai/gpt-oss-20b")
         api_key = self.config.get('cleanDescriptorsLlmApiKey')
         if not api_key:
             api_key_env = self.config.get('cleanDescriptorsLlmApiKeyEnvVar') or 'CLEAN_DESCRIPTORS_LLM_API_KEY'
@@ -988,12 +988,15 @@ class DicomProcessor:
 
         # Check shared cache first
         result = None
+        reasoning = None
         if self.llm_cache:
-            result = self.llm_cache.get_cached_result(original_value, model)
-            self.logger.debug(
-                f"LLM cache result for tag {field.element.tag} "
-                f"({getattr(field.element, 'keyword', '')}): {result}"
-            )
+            cached = self.llm_cache.get_cached_result(original_value, model)
+            if cached is not None:
+                result, reasoning = cached
+                self.logger.debug(
+                    f"LLM cache result for tag {field.element.tag} "
+                    f"({getattr(field.element, 'keyword', '')}): {result}"
+                )
         
         if result is None:
             # No cache hit - proceed with LLM call
@@ -1043,13 +1046,15 @@ class DicomProcessor:
                     f"{getattr(field.element, 'keyword', '')}: {original_value}"
                 )
                 # Call the LLM for PHI/PII detection
-                result = detector.detect_phi_or_pii(client, tag_desc, model=model, dev_mode=False)
+                result, reasoning = detector.detect_phi_or_pii(client, tag_desc, model=model, dev_mode=False)
+                if reasoning:
+                    self.logger.private(f"PHI/PII detection reasoning for tag {tag_desc}: {reasoning}")
                 self.logger.private(f"PHI/PII detection result for tag {tag_desc}: {result}")
-            
+
                 # Store result in shared cache
                 if self.llm_cache:
                     try:
-                        self.llm_cache.store_result(original_value, model, int(str(result).strip()))
+                        self.llm_cache.store_result(original_value, model, int(str(result).strip()), reasoning)
                     except Exception as cache_error:
                         self.logger.warning(f"Failed to cache LLM result: {cache_error}")
             except Exception as e:

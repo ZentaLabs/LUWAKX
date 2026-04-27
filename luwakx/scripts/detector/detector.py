@@ -32,10 +32,15 @@ def detect_phi_or_pii(
 ):
     """
     Detect if the DICOM tag description contains PHI/PII.
+
+    Returns:
+        tuple: (content, reasoning) where content is the binary classification
+               result ("0" or "1") and reasoning is the model's reasoning text
+               if available, or None otherwise.
     """
     # Development mode, returns always 0
     if dev_mode:
-        return 0
+        return 0, None
 
     result = client.chat.completions.create(
         model=model,
@@ -54,7 +59,9 @@ def detect_phi_or_pii(
         temperature=0,  # greedy decoding, removes randomness
         top_p=1,  # disables nucleus sampling
     )
-    return result.choices[0].message.content
+    content = result.choices[0].message.content
+    reasoning = getattr(result.choices[0].message, 'reasoning', None)
+    return content, reasoning
 
 
 def process_dataset(
@@ -100,11 +107,12 @@ def process_dataset(
             if not value:
                 result = 0
                 run_time = 0
+                reasoning = "empty value"
             else:
 
                 # Start time
                 start_time = perf_counter()
-                result = detect_phi_or_pii(
+                result, reasoning = detect_phi_or_pii(
                     client, f"{tag} {tag_path}: {value}", dev_mode, model
                 )
                 # End time
@@ -117,6 +125,7 @@ def process_dataset(
             out_dict["Value"].append(value)
             out_dict["VR"].append(vr)
             out_dict["PII_or_PHI"].append(result)
+            out_dict["Reasoning"].append(reasoning)
             out_dict["Runtime_in_ms"].append(run_time)
 
 
@@ -125,7 +134,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Detect PHI/PII in a DICOM file.")
     parser.add_argument("--fpath", required=True, help="Path to the input DICOM file")
     parser.add_argument("--base-url", default=None, help="LLM API base URL (use env var CLEAN_DESCRIPTORS_LLM_BASE_URL if not provided)")
-    parser.add_argument("--model", default=None, help="Name of LLM model to use (use env var CLEAN_DESCRIPTORS_LLM_MODEL if not provided, default: gpt-4o-mini)")
+    parser.add_argument("--model", default=None, help="Name of LLM model to use (use env var CLEAN_DESCRIPTORS_LLM_MODEL if not provided, default: openai/gpt-oss-20b)")
     parser.add_argument("--api-key", default=None, help="LLM API key (use env var CLEAN_DESCRIPTORS_LLM_API_KEY if not provided)")
     parser.add_argument(
         "--dev_mode", action="store_true", help="Run in development mode (no LLM calls)"
@@ -136,7 +145,7 @@ if __name__ == "__main__":
     dev_mode = args.dev_mode
 
     base_url = args.base_url or os.environ.get("CLEAN_DESCRIPTORS_LLM_BASE_URL")
-    model = args.model or os.environ.get("CLEAN_DESCRIPTORS_LLM_MODEL", "gpt-4o-mini")
+    model = args.model or os.environ.get("CLEAN_DESCRIPTORS_LLM_MODEL", "openai/gpt-oss-20b")
     api_key = args.api_key or os.environ.get("CLEAN_DESCRIPTORS_LLM_API_KEY")
 
     if not base_url and not api_key:
@@ -159,6 +168,7 @@ if __name__ == "__main__":
         "Value": [],
         "VR": [],
         "PII_or_PHI": [],
+        "Reasoning": [],
         "Runtime_in_ms": [],
     }
 
