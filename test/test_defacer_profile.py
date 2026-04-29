@@ -39,7 +39,7 @@ class TestDefacerProfile(unittest.TestCase):
         dcm_zip_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_dcm.zip")
         if not os.path.exists(os.path.join(cls.test_volume_dir, "CT_Vol_002_STD_dcm")):
             download_github_asset_by_tag(
-                "ZentaLabs", "luwak", "testing-data", "CT_Vol_002_STD_dcm.zip", dcm_zip_path, token
+                "ZentaLabs", "LUWAKX", "testing-data", "CT_Vol_002_STD_dcm.zip", dcm_zip_path, token
             )
             target_dir = os.path.join(cls.test_volume_dir, "CT_Vol_002_STD_dcm")
             os.makedirs(target_dir, exist_ok=True)
@@ -51,7 +51,7 @@ class TestDefacerProfile(unittest.TestCase):
         nii_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd")
         if not os.path.exists(nii_path):
             download_github_asset_by_tag(
-                "ZentaLabs", "luwak", "testing-data", "CT_Vol_002_STD_face_mask.nrrd", nii_path, token
+                "ZentaLabs", "LUWAKX", "testing-data", "CT_Vol_002_STD_face_mask.nrrd", nii_path, token
             )
 
     @classmethod

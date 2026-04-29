@@ -33,13 +33,12 @@ class TestAnonymizeScript(unittest.TestCase):
         # Path to the decompressed test data directory
         cls.test_data_dir = "test_data"
         token = os.environ.get("TEST_DATA_TOKEN")
-        #target_dir = os.path.join(cls.test_data_dir, "test-dicom-files-Midi-B-2024")
-        # Check if the test data directory exists
-        if not os.path.exists(cls.test_data_dir):
-            os.makedirs(cls.test_data_dir, exist_ok=True)
+        archive_download_completed_path = os.path.join(cls.test_data_dir, ".test-dicom-files-Midi-B-2024-download-completed")
+        if not os.path.exists(archive_download_completed_path):
             archive_path = os.path.join(cls.test_data_dir, "test-dicom-files-Midi-B-2024.tar.gz")
+            os.makedirs(cls.test_data_dir, exist_ok=True)
             download_github_asset_by_tag(
-                "ZentaLabs", "luwak", "testing-data", "test-dicom-files-Midi-B-2024.tar.gz", archive_path, token
+                "ZentaLabs", "LUWAKX", "testing-data", "test-dicom-files-Midi-B-2024.tar.gz", archive_path, token
             )
             # Extract the archive
             with tarfile.open(archive_path, "r:gz") as tar:
@@ -50,7 +49,9 @@ class TestAnonymizeScript(unittest.TestCase):
                     tar.extract(member, path=cls.test_data_dir, filter='data')
             # Clean up the downloaded archive
             os.remove(archive_path)
-
+            # Create a marker file to indicate download completion
+            with open(archive_download_completed_path, "w") as f:
+                f.write("Download completed")
 
     def setUp(self):
         # Ensure the output directory is clean before each test
@@ -736,7 +737,7 @@ class TestAnonymizeScript(unittest.TestCase):
             dst_cache = os.path.join(self.llm_cache_folder, "llm_cache.db")
             if not os.path.exists(src_cache):
                 token = os.environ.get("TEST_DATA_TOKEN")
-                download_github_asset_by_tag("ZentaLabs", "luwak", "testing-data", "test_llm_cache.db", src_cache, token)
+                download_github_asset_by_tag("ZentaLabs", "LUWAKX", "testing-data", "test_llm_cache.db", src_cache, token)
 
             shutil.copy2(src_cache, dst_cache)
             self.logger.info(f"Initialized LLM cache from {src_cache}")
@@ -760,7 +761,8 @@ class TestAnonymizeScript(unittest.TestCase):
             self.assertTrue(os.path.exists(expected_output_path), f"Anonymized file not found at expected path: {expected_output_path}")
             anonymized_ds = pydicom.dcmread(expected_output_path)
             # Check that the RequestedProcedureDescription has been cleaned (tag should be removed)
-            self.assertNotIn('RequestedProcedureDescription', anonymized_ds, f"Unexpected tag RequestedProcedureDescription found in file {expected_output_path}.")
+            if 'RequestedProcedureDescription' in anonymized_ds:
+                self.fail(f"RequestedProcedureDescription tag should have been removed from file {expected_output_path} with value {anonymized_ds.get('RequestedProcedureDescription').value}.\n")
             self.logger.info(f"RequestedProcedureDescription cleaned: {original_value} -> removed")
             self.assertEqual(anonymized_ds['PerformedProcedureStepDescription'].value, original_ds['PerformedProcedureStepDescription'].value,
                         "PerformedProcedureStepDescription should be empty: expected {original_ds['PerformedProcedureStepDescription'].value}, got {anonymized_ds['PerformedProcedureStepDescription'].value}")

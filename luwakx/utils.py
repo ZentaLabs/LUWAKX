@@ -168,15 +168,16 @@ def download_github_asset_by_tag(owner, repo, tag, asset_name, dest_path, token)
         RuntimeError: If the asset is not found in the specified release.
     """
     api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
-    headers = {"Authorization": f"token {token}"}
+    headers = {}
+    if token:
+        headers["Authorization"] = f"token {token}"
     release = requests.get(api_url, headers=headers).json()
     for asset in release.get("assets", []):
         if asset["name"] == asset_name:
             asset_url = asset["url"]
-            download_headers = {
-                "Authorization": f"token {token}",
-                "Accept": "application/octet-stream"
-            }
+            download_headers = {"Accept": "application/octet-stream"}
+            if token:
+                download_headers["Authorization"] = f"token {token}"
             r = requests.get(asset_url, headers=download_headers)
             r.raise_for_status()
             with open(dest_path, "wb") as f:

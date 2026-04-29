@@ -30,7 +30,7 @@ class TestExports(unittest.TestCase):
             os.makedirs(cls.test_data_dir, exist_ok=True)
             archive_path = os.path.join(cls.test_data_dir, "test-dicom-files-Midi-B-2024.tar.gz")
             download_github_asset_by_tag(
-                "ZentaLabs", "luwak", "testing-data", "test-dicom-files-Midi-B-2024.tar.gz", archive_path, token
+                "ZentaLabs", "LUWAKX", "testing-data", "test-dicom-files-Midi-B-2024.tar.gz", archive_path, token
             )
             # Extract the archive
             with tarfile.open(archive_path, "r:gz") as tar:
