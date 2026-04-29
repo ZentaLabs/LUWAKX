@@ -19,7 +19,7 @@ from luwakx.defacing.deface_service import DefaceService
 from luwakx.dicom.dicom_series import DicomSeries
 from luwakx.dicom.dicom_file import DicomFile
 from luwakx.logging.luwak_logger import get_logger, setup_logger
-from luwakx.utils import has_gpu, download_github_asset_by_tag
+from luwakx.utils import download_github_asset_by_tag
 
 class TestDefacerProfile(unittest.TestCase):
     
@@ -116,10 +116,8 @@ class TestDefacerProfile(unittest.TestCase):
         # Test the defacer service directly without full anonymization
         print("Testing defacer service directly...")
 
-        # Simple GPU check
-        HAS_GPU = has_gpu()
-
-        if not HAS_GPU:
+        simulate = os.environ.get("DEFACER_SIMULATE", "0") == "1"
+        if simulate:
             useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
             config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir, [useExistingMaskDefacer])
         else:
@@ -239,7 +237,7 @@ class TestDefacerProfile(unittest.TestCase):
         if nrrd_image and nrrd_defaced:
             self.assertTrue(os.path.exists(nrrd_image), f"NRRD image not found at {nrrd_image}")
             self.assertTrue(os.path.exists(nrrd_defaced), f"NRRD defaced not found at {nrrd_defaced}")
-            if not HAS_GPU:
+            if simulate:
                 return
 
             # Plot image.nrrd and image_defaced.nrrd side by side
@@ -303,9 +301,8 @@ class TestDefacerProfile(unittest.TestCase):
         # Test the full luwak anonymization with defacer recipe
         print("Testing luwak full anonymization with defacer recipe...")
         # Simple GPU check
-        HAS_GPU = has_gpu()
-
-        if not HAS_GPU:
+        simulate = os.environ.get("DEFACER_SIMULATE", "0") == "1"
+        if simulate:
             useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
             config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir, [useExistingMaskDefacer])
         else:

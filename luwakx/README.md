@@ -406,7 +406,8 @@ python -m unittest test.test_anonymize.TestAnonymizeScript.test_keep_specific_pr
 The following environment variables control testing:
 - **`TEST_DATA_TOKEN`**: GitHub token that allows downloading release assets.
 - **`TEST_INTERACTIVE_VISUALIZATION`**: set to `1` to show interactive visualizations (use interaction is needed to complete the testing).
-- **`TEST_INITIALIZE_LLM_CACHE_FROM_TEST_DATA`**: Set to `1` to download default LLM analysis cache from test data repository. It allows running tests successfully without having access to an LLM.
+- **`DEFACER_SIMULATE`**: Set to 1 to read pre-computed mask instead of using a GPU to get the face mask. It allows running tests successfully without having access to a GPU.
+- **`CLEAN_DESCRIPTORS_LLM_SIMULATE`**: Set to `1` to download default LLM analysis cache from test data repository. It allows running tests successfully without having access to an LLM.
 
 ## Troubleshooting
 

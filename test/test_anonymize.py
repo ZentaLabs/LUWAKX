@@ -731,7 +731,7 @@ class TestAnonymizeScript(unittest.TestCase):
         original_ds = pydicom.dcmread(original_file)
         original_value = original_ds['RequestedProcedureDescription'].value
         
-        if os.environ.get("TEST_INITIALIZE_LLM_CACHE_FROM_TEST_DATA") == "1":
+        if os.environ.get("CLEAN_DESCRIPTORS_LLM_SIMULATE") == "1":
             # Download pre-populated LLM cache from test data and copy to the test output folder for use in this test
             src_cache = os.path.join(self.test_data_dir, "test_llm_cache.db")
             dst_cache = os.path.join(self.llm_cache_folder, "llm_cache.db")

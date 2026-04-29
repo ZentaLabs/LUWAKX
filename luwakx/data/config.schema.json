@@ -99,7 +99,7 @@
     },
     "cleanDescriptorsHttpHeaders": {
       "type": "object",
-      "description": "Additional HTTP headers to include in requests to the LLM for cleaning descriptors. Should be a JSON object where keys are header names and values are header values. If not specified then CLEAN_DESCRIPTORS_HTTP_HEADERS environment variable content is used.",
+      "description": "Additional HTTP headers to include in requests to the LLM for cleaning descriptors. Should be a JSON object where keys are header names and values are header values. If not specified then CLEAN_DESCRIPTORS_LLM_HTTP_HEADERS environment variable content is used.",
       "default": {},
       "examples": [{"Authorization": "Bearer mytoken"}, {"CF-Access-Client-Id": "someid", "CF-Access-Client-Secret": "mysecret"}]
     },

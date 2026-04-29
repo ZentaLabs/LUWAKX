@@ -16,7 +16,7 @@ def create_openai_client(base_url, api_key, http_headers=None):
     client_kwargs["base_url"] = base_url
     client_kwargs["api_key"] = api_key or ""
     if http_headers is None:
-        http_headers_raw = os.environ.get("CLEAN_DESCRIPTORS_HTTP_HEADERS")
+        http_headers_raw = os.environ.get("CLEAN_DESCRIPTORS_LLM_HTTP_HEADERS")
         if http_headers_raw:
             http_headers = json.loads(http_headers_raw)
     if http_headers:
