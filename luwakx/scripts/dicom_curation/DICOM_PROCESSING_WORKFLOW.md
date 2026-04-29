@@ -844,6 +844,6 @@ python delete_rejected_series.py ./plot_output ./clean_dicom_data
 ## Questions or Issues?
 
 - Check that all file paths in config are absolute or relative to config location
-- Verify Python environment has required packages (pydicom, numpy, matplotlib, opencv-python)
+- Verify Python environment has required packages (pydicom, numpy, matplotlib, SimpleITK)
 - Review log files for error messages
 - Ensure sufficient disk space for plots and working copies

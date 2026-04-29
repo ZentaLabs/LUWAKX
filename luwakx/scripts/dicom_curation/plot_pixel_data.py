@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from collections import defaultdict
-import cv2
+import SimpleITK as sitk
 import logging
 import json
 import sys
@@ -409,7 +409,7 @@ def load_series_volume(series_data, extract_overlays=False, log_callback=None):
         # Check if RGB (3 channels) and convert to grayscale if needed
         if len(first_array.shape) == 3:
             # RGB image - convert to grayscale
-            first_array = cv2.cvtColor(first_array, cv2.COLOR_RGB2GRAY)
+            first_array = _rgb_to_gray(first_array)
 
         expected_shape = first_array.shape
 
@@ -444,7 +444,7 @@ def load_series_volume(series_data, extract_overlays=False, log_callback=None):
 
             # Convert RGB to grayscale if needed
             if len(pixel_array.shape) == 3:
-                pixel_array = cv2.cvtColor(pixel_array, cv2.COLOR_RGB2GRAY)
+                pixel_array = _rgb_to_gray(pixel_array)
 
             # Check if dimensions match
             if pixel_array.shape != expected_shape:
@@ -561,13 +561,36 @@ def compute_projections(volume, modality='CT'):
 
     return projections
 
+def _rgb_to_gray(array):
+    sitk_img = sitk.GetImageFromArray(array, isVector=True)
+    r = sitk.VectorIndexSelectionCast(sitk_img, 0, sitk.sitkFloat32)
+    g = sitk.VectorIndexSelectionCast(sitk_img, 1, sitk.sitkFloat32)
+    b = sitk.VectorIndexSelectionCast(sitk_img, 2, sitk.sitkFloat32)
+    return sitk.GetArrayFromImage(r * 0.299 + g * 0.587 + b * 0.114)
+
+
+def _resize_nearest(array, target_shape):
+    img = sitk.GetImageFromArray(array)
+    new_size = [target_shape[1], target_shape[0]]
+    orig_size = list(img.GetSize())
+    new_spacing = [orig_size[i] / new_size[i] for i in range(2)]
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetSize(new_size)
+    resampler.SetOutputSpacing(new_spacing)
+    resampler.SetInterpolator(sitk.sitkNearestNeighbor)
+    resampler.SetOutputOrigin(img.GetOrigin())
+    resampler.SetOutputDirection(img.GetDirection())
+    return sitk.GetArrayFromImage(resampler.Execute(img))
+
+
 def normalize_image(img):
     """Normalize image to 0-255 range."""
     if img is None or img.size == 0:
         return np.zeros((100, 100), dtype=np.uint8)
 
-    img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
-    return img_norm.astype(np.uint8)
+    sitk_img = sitk.GetImageFromArray(img.astype(np.float32))
+    img_norm = sitk.RescaleIntensity(sitk_img, 0, 255)
+    return sitk.GetArrayFromImage(sitk.Cast(img_norm, sitk.sitkUInt8))
 
 def sanitize_folder_name(name):
     """Convert a string to a valid folder name."""
@@ -944,7 +967,7 @@ def create_single_overlay_plot(series, folder_path, index):
 
         # Bottom-left: Combined First
         if overlay_first.shape != img_first.shape:
-            overlay_first = cv2.resize(overlay_first, (img_first.shape[1], img_first.shape[0]), interpolation=cv2.INTER_NEAREST)
+            overlay_first = _resize_nearest(overlay_first, img_first.shape)
         combined_first = np.maximum(img_first, overlay_first)
         axes[1, 0].imshow(combined_first, cmap='gray')
         axes[1, 0].set_title('Combined First', fontsize=10)
@@ -952,7 +975,7 @@ def create_single_overlay_plot(series, folder_path, index):
 
         # Bottom-right: Combined Mean
         if overlay_second.shape != img_second.shape:
-            overlay_second = cv2.resize(overlay_second, (img_second.shape[1], img_second.shape[0]), interpolation=cv2.INTER_NEAREST)
+            overlay_second = _resize_nearest(overlay_second, img_second.shape)
         combined_second = np.maximum(img_second, overlay_second)
         axes[1, 1].imshow(combined_second, cmap='gray')
         axes[1, 1].set_title('Combined Mean', fontsize=10)
@@ -989,11 +1012,11 @@ def create_single_overlay_plot(series, folder_path, index):
         # Bottom row: Combined
         # Resize overlays if needed
         if overlay_mip.shape != img_mip.shape:
-            overlay_mip = cv2.resize(overlay_mip, (img_mip.shape[1], img_mip.shape[0]), interpolation=cv2.INTER_NEAREST)
+            overlay_mip = _resize_nearest(overlay_mip, img_mip.shape)
         if overlay_second.shape != img_second.shape:
-            overlay_second = cv2.resize(overlay_second, (img_second.shape[1], img_second.shape[0]), interpolation=cv2.INTER_NEAREST)
+            overlay_second = _resize_nearest(overlay_second, img_second.shape)
         if overlay_mean.shape != img_mean.shape:
-            overlay_mean = cv2.resize(overlay_mean, (img_mean.shape[1], img_mean.shape[0]), interpolation=cv2.INTER_NEAREST)
+            overlay_mean = _resize_nearest(overlay_mean, img_mean.shape)
 
         combined_mip = np.maximum(img_mip, overlay_mip)
         axes[1, 0].imshow(combined_mip, cmap='gray')
