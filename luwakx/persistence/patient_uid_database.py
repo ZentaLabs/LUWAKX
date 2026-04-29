@@ -19,7 +19,7 @@ class PatientUIDDatabase:
     on single or multiple nodes.
     
     See conformance documentation ("Patient UID Database" section):
-    https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
+    https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
     """
     
     def __init__(self, db_path: str, patient_id_prefix: str, project_hash_root: str = ''):

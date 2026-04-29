@@ -28,7 +28,7 @@ class LLMResultCache:
     on single or multiple nodes (with shared filesystem).
     
     See conformance documentation ("LLM Cache Database" section):
-    https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
+    https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
     """
     
     def __init__(self, cache_file_path):

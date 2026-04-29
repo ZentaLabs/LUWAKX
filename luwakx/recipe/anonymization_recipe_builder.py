@@ -9,7 +9,7 @@ Key Components:
 - _collect_actions_for_row: Helper function to process template rows (simplified)
 
 See conformance documentation for details:
-https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-4---5
+https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-4---5
 """
 
 import os
@@ -116,8 +116,8 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
         str: Path to the generated recipe file, or None if generation fails
     
     See conformance documentation:
-    - Recipe generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#61-recipe-builder-overview
-    - Action translation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+    - Recipe generation: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#61-recipe-builder-overview
+    - Action translation: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
     """
     logger = get_logger("make_recipe_file")
     logger.info(f"Generating recipe file for profiles: {recipes_to_process}")
@@ -128,8 +128,8 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
     input_private_template = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "TagsArchive", "private_tags_template.csv")
 
     # Custom tag templates can override defaults
-    # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#55-custom-tag-templates
-    # See configuration documentation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#912-optional-configuration-options
+    # See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#55-custom-tag-templates
+    # See configuration documentation: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#912-optional-configuration-options
     if config and 'customTags' in config:
         manually_revised = config['customTags']
         
@@ -152,7 +152,7 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                 logger.warning(f"Manually revised private tags file not found: {custom_private_path}, using default")
 
     # Map recipe names to column names in the CSV (original mapping)
-    # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#62-deidentification-profiles
+    # See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#62-deidentification-profiles
     recipe_column_map = {
         'basic_profile': 'Basic Prof.',
         'retain_uid': 'Rtn. UIDs Opt.',
@@ -192,7 +192,7 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
             reader = csv.DictReader(csvfile)
             for row in reader:
                 # Support nested sequence tag syntax in standard tag CSV only
-                # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#514-nested-sequence-support
+                # See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#514-nested-sequence-support
                 group_val = row['Group']
                 elem_val = row['Element']
                 if '__' in group_val and '__' in elem_val:
@@ -236,25 +236,25 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                 line = f"{comment}\n"
                 outfile.write(line)
                 if final_action == 'keep':
-                    # See keep action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See keep action: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"KEEP {tag}\n"
                 elif final_action == 'remove':
-                    # See remove action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See remove action: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     if name.lower() == 'private attributes':
                         remove_private = True
                     else:
                         line = f"REMOVE {tag}\n"
                 elif final_action == 'blank':
-                    # See blank action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
-                    # See blank implementation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#632-blank-action---empty-value-generation
+                    # See blank action: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See blank implementation: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#632-blank-action---empty-value-generation
                     if vr in ['OD', 'OL', 'OV', 'SV', 'UV', 'DS', 'IS', 'FD', 
                                 'FL', 'SS', 'US', 'SL', 'UL']:
                         line = f"REPLACE {tag} {set_empty_value(vr)}\n"
                     else:
                         line = f"BLANK {tag}\n"
                 elif final_action == 'replace':
-                    # See replace action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
-                    # See replace implementation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#631-replace-action---dummy-value-generation
+                    # See replace action: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See replace implementation: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#631-replace-action---dummy-value-generation
                     if  vr in ["AE", "LO", "LT", "SH", "CS", "ST", "UT", "UC", "UR"]:
                         line = f"REPLACE {tag} ANONYMIZED\n"
                     elif vr == "PN":
@@ -267,29 +267,29 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     else:
                         logger.warning(f"Tag {tag} with VR={vr} requires custom template/manual review for replacement.")
                 elif final_action == 'func:sq_keep_original_with_review':
-                    # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"REPLACE {tag} func:sq_keep_original_with_review\n"
                 elif final_action == 'func:generate_hmacuid':
-                    # See UID generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See UID generation: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"REPLACE {tag} func:generate_hmacuid\n"
                 elif final_action == 'func:set_fixed_datetime':
-                    # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"REPLACE {tag} func:set_fixed_datetime\n"
                 elif final_action == 'func:generate_hmacdate_shift':
-                    # See date shifting: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See date shifting: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"JITTER {tag} func:generate_hmacdate_shift\n"
                 elif final_action == 'func:clean_descriptors_with_llm':
-                    # See LLM cleaning: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See LLM cleaning: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"REPLACE {tag} func:clean_descriptors_with_llm\n"
                 elif final_action == 'func:generate_patient_id':
-                    # See patient ID generation: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See patient ID generation: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"REPLACE {tag} func:generate_patient_id\n"
                 elif final_action == 'func:check_patient_age':
-                    # See check patient age: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # See check patient age: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                     line = f"REPLACE {tag} func:check_patient_age\n"
                 elif final_action == 'clean_manually':
-                    # See clean_manually action: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
-                    # Note: clean_manually is used for unsupported profiles - see: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#31-overview
+                    # See clean_manually action: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                    # Note: clean_manually is used for unsupported profiles - see: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#31-overview
                     line = f"# REPLACE {tag} CLEANED NEEDS MANUAL REVIEW\n"
                     logger.warning(f"Tag {tag} with VR={vr} requires manual cleaning.")
                 elif final_action == 'manual_review':
@@ -344,7 +344,7 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                     'Rationale': rationale,
                 })
         
-        _directives_ref = 'https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives'
+        _directives_ref = 'https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives'
 
         # Add PatientIdentityRemoved if basic_profile is in the recipe list (original logic)
         if 'basic_profile' in recipes_to_process:
@@ -353,7 +353,7 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
             csv_writer.writerow({'Tag': _tag, 'Tag Name': _name, 'Action': 'ADD', 'Replacement Value': 'YES', 'Rationale': _directives_ref})
 
             # Remove all curve data/overlay data/overlay comments tags
-            # See "If basic_profile is selected" paragraph in: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
+            # See "If basic_profile is selected" paragraph in: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
             # TOCHECK : are these tags supposed to be removed always and
             # not only if the basic profile is requested? if yes move the line below outside if block
             outfile.write(f"REMOVE ALL func:is_curve_or_overlay_tag\n")
@@ -381,14 +381,14 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
 
         # Remove DeidentificationMethodCodeSequence if exists from previous runs. It will be added 
         # again later at the end of the series deidentification.
-        # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6
+        # See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6
         outfile.write(f"# DeidentificationMethodCodeSequence\n")
         outfile.write(f"REMOVE (0012,0064)\n")
         _, _dcs_name = _lookup_tag_by_keyword('DeidentificationMethodCodeSequence')
-        csv_writer.writerow({'Tag': '(0012,0064)', 'Tag Name': _dcs_name, 'Action': 'REMOVE', 'Replacement Value': '', 'Rationale': 'https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6'})
+        csv_writer.writerow({'Tag': '(0012,0064)', 'Tag Name': _dcs_name, 'Action': 'REMOVE', 'Replacement Value': '', 'Rationale': 'https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6'})
 
         # Handle private tags
-        # See "Private tag handling" paragraph in: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+        # See "Private tag handling" paragraph in: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
         if 'retain_safe_private_tags' in recipes_to_process:
             with open(input_private_template, 'r') as privfile:
                 privreader = csv.DictReader(privfile)
@@ -408,11 +408,11 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                         line = f"REPLACE ({group},\"{private_creator}\",{element}) func:generate_hmacuid\n"
                     elif action.lower() == 'func:generate_hmacdate_shift' and 'retain_long_modified_dates' in recipes_to_process:
                         # Jitter is only applied if retain_long_modified_dates is selected
-                        # See "func:generate_hmacdate_shift" conditional logic in "Private tag handling" paragraph: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                        # See "func:generate_hmacdate_shift" conditional logic in "Private tag handling" paragraph: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                         line = f"JITTER ({group},\"{private_creator}\",{element}) func:generate_hmacdate_shift\n"
                     elif action.lower() == 'func:generate_hmacdate_shift' and not 'retain_long_modified_dates' in recipes_to_process:
                         # Skip private date tags if retain_long_modified_dates is not selected
-                        # See "func:generate_hmacdate_shift" conditional logic in "Private tag handling" paragraph: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
+                        # See "func:generate_hmacdate_shift" conditional logic in "Private tag handling" paragraph: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#641-translation-logic-by-action
                         continue
                     else:
                         logger.warning(f"Unrecognized action '{action}' for private tag ({group},\"{private_creator}\",{element}), skipping.")
@@ -428,7 +428,7 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
 
         if remove_private:
             # Add line to remove all private tags
-            # See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
+            # See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#642-additional-recipe-directives
             line = f"REMOVE ALL func:is_tag_private\n"
             outfile.write(line)
 
@@ -453,7 +453,7 @@ def _determine_final_action(actions, vr):
             These differ only when func:clean_descriptors_with_llm is translated
             to 'remove' or 'manual_review' based on VR.
     
-    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#65-action-priority-rules
+    See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#65-action-priority-rules
     """
     # If any action is 'keep', final action is 'keep'
     if 'keep' in actions:
@@ -525,7 +525,7 @@ def set_values_to_zero(vr):
     If more numerical VRs need to be supported in the future, they can be added here.
     Make sure that this stays updated if more tags are addedd to DICOM PS3.15 Table E.1-1.
     
-    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#631-replace-action---dummy-value-generation
+    See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#631-replace-action---dummy-value-generation
     """
     logger = get_logger("set_values_to_zero")
 
@@ -561,7 +561,7 @@ def set_empty_value(vr):
     If more numerical VRs need to be supported in the future, they can be added here.
     Make sure that this stays updated if more tags are addedd to DICOM PS3.15 Table E.1-1.
     
-    See: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#632-blank-action---empty-value-generation
+    See: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#632-blank-action---empty-value-generation
     """
     logger = get_logger("set_empty_value")
     # Text VRs

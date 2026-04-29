@@ -23,7 +23,7 @@ Two tables live in the same database file:
     is filled in by :class:`DefaceService`.
 
 See conformance documentation ("Deface Mask Cache Database" section):
-https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md
+https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md
 """
 
 import json

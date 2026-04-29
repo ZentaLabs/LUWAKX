@@ -80,8 +80,8 @@ class LuwakAnonymizer:
         """Initialize the anonymizer with configuration from JSON file.
         
         See conformance documentation:
-        - LuwakAnonymizer: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#922-core-classes-and-relationships
-        - Configuration: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#91-configuration-file
+        - LuwakAnonymizer: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#922-core-classes-and-relationships
+        - Configuration: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#91-configuration-file
         """
         self.config_path = config_path
         
@@ -332,7 +332,7 @@ class LuwakAnonymizer:
             - Other exceptions: Exits with generic error message
             
         See conformance documentation:
-        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#91-configuration-file
+        https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#91-configuration-file
         """
         # Load config JSON
         try:
@@ -549,7 +549,7 @@ class LuwakAnonymizer:
             - Invalid recipe types: Treated as custom recipe filenames
             
         See conformance documentation:
-        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-4---5
+        https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#6-deidentification-recipe-creation-pipeline-stage-4---5
         """
         # Import DeidRecipe here, after deid has been set up
         from deid.config import DeidRecipe

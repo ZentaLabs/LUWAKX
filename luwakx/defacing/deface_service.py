@@ -105,7 +105,7 @@ class DefaceService:
                 - 'defaced_dicom_files': List of defaced DICOM file paths
 
         See conformance documentation:
-        https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#41-clean-recognizable-visual-features-defacing----pipeline-stage-3
+        https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#41-clean-recognizable-visual-features-defacing----pipeline-stage-3
         """
         import pydicom
 

@@ -65,10 +65,10 @@ test = [
 luwakx = "luwakx.luwakx:main"
 
 [project.urls]
-Homepage = "https://github.com/ZentaLabs/luwak"
-Repository = "https://github.com/ZentaLabs/luwak"
-Documentation = "https://github.com/ZentaLabs/luwak/blob/main/docs/deidentification_conformance.md"
-"Bug Tracker" = "https://github.com/ZentaLabs/luwak/issues"
+Homepage = "https://github.com/ZentaLabs/LUWAKX"
+Repository = "https://github.com/ZentaLabs/LUWAKX"
+Documentation = "https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md"
+"Bug Tracker" = "https://github.com/ZentaLabs/LUWAKX/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -14,7 +14,7 @@ pip install luwakx
 ### From source
 
 ```bash
-git clone https://github.com/ZentaLabs/luwak.git
+git clone https://github.com/ZentaLabs/LUWAKX.git
 cd luwak
 pip install -e ".[test]"
 ```

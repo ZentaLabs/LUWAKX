@@ -17,9 +17,9 @@ Usage:
     logger.info("Processing started")
     
 See conformance documentation:
-- Log Files: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
-- Log Levels: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#935-log-files
-- Configuration: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#912-optional-configuration-options
+- Log Files: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
+- Log Levels: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#935-log-files
+- Configuration: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#912-optional-configuration-options
 """
 
 import logging
@@ -71,8 +71,8 @@ def setup_logger(log_level: str = 'INFO',
         Subsequent calls will reconfigure the existing loggers.
         
     See conformance documentation:
-    - Log Levels: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#935-log-files
-    - Logging Options: https://github.com/ZentaLabs/luwak/blob/conformance-document-creation/docs/deidentification_conformance.md#912-optional-configuration-options
+    - Log Levels: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#935-log-files
+    - Logging Options: https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#912-optional-configuration-options
     """
     global _logger_configured, _default_config
     
