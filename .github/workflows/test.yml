@@ -43,7 +43,8 @@ jobs:
     # Run tests
     - name: Run tests
       env:
-        ZENTA_OPENAI_API_KEY: ${{ secrets.ZENTA_OPENAI_API_KEY }}
+        DEFACER_SIMULATE: 1
+        CLEAN_DESCRIPTORS_LLM_SIMULATE: 1
       run: |
         echo "Disk space before tests:"
         df -h
