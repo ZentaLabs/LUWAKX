@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "luwakx"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Config-driven DICOM anonymization tool based on the 2025b DICOM standard"
 readme = "README.md"
 license = { file = "LICENSE.txt" }
@@ -52,6 +52,8 @@ Homepage = "https://github.com/ZentaLabs/LUWAKX"
 Repository = "https://github.com/ZentaLabs/LUWAKX"
 Documentation = "https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md"
 "Bug Tracker" = "https://github.com/ZentaLabs/LUWAKX/issues"
+
+[tool.setuptools_scm]
 
 [tool.setuptools.packages.find]
 where = ["."]
