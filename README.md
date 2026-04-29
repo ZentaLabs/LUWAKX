@@ -1,5 +1,7 @@
 # LuwakX - Config-Driven DICOM Anonymization
 
+[![PyPI version](https://img.shields.io/pypi/v/luwakx)](https://pypi.org/project/luwakx/)
+
 LuwakX is a powerful, config-driven tool for anonymizing DICOM files using the `deid` library. It supports flexible configuration through JSON files and provides both command-line and programmatic interfaces.
 It is based on the 2025b DICOM standards.
 
