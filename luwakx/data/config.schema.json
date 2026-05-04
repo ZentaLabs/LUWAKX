@@ -168,6 +168,11 @@
       "description": "If true, skips the CleanPixelDataService execution when the clean_pixel_data recipe is active. Use this when burned-in pixel data has been verified absent by other means (e.g. manual review). The DICOM CID 7050 code 113101 (Clean Pixel Data Option) is still injected into DeidentificationMethodCodeSequence as if cleaning had been performed.",
       "default": false
     },
+    "cleanPreamble": {
+      "type": "boolean",
+      "description": "If true (default), blanks the 128-byte DICOM file preamble (ds.preamble) of every anonymized file by overwriting it with null bytes. The preamble is not governed by any DICOM tag and is therefore not cleaned by deid automatically; it may contain PHI or identifying text in some equipment implementations.",
+      "default": true
+    },
     "saveDefaceMasks": {
       "type": "boolean",
       "description": "When true, the ML-generated face mask is saved as a compressed NRRD file in the private mapping folder for every series that runs ML inference, and the mask database persists after the run for re-run cache hits.\nWhen false or absent, a temporary mask database is still created during the run to support PET/CT mask projection (the CT mask is resampled onto the paired PET), but both the database and all mask files are deleted at the end of the run.",
