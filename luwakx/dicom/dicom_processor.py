@@ -199,9 +199,11 @@ class DicomProcessor:
             for dicom_file in self.series.files:
                 output_path = os.path.join(self.series.output_base_path, dicom_file.filename)
                 dicom_file.set_anonymized_path(output_path)
-                        
-            # 7. Inject DeidentificationMethodCodeSequence into anonymized files
-            self.inject_deidentification_method_code_sequence()
+
+            # 7. Inject DeidentificationMethodCodeSequence into anonymized files.
+            # Preamble cleaning (cleanPreamble option) is performed inside this
+            # method to avoid an extra read/write pass over every file.
+            self._finalize_anonymized_files()
 
             # 8. Warn about LLM-verified clean tags that need manual verification.
             # Query the review_collector buffer BEFORE flushing so it still holds
@@ -1397,7 +1399,7 @@ class DicomProcessor:
         
         return False
         
-    def inject_deidentification_method_code_sequence(self):
+    def _finalize_anonymized_files(self):
         """Inject DeidentificationMethodCodeSequence with child tags into anonymized DICOM files.
         
         This method loops through the anonymized DICOM files in the series, reads the recipes
@@ -1507,10 +1509,14 @@ class DicomProcessor:
             try:
                 # Read the DICOM file
                 ds = pydicom.dcmread(path, stop_before_pixels=False)
-                
+
+                # Blank the 128-byte preamble.
+                if self.config.get('cleanPreamble', True):
+                    ds.preamble = b'\x00' * 128
+
                 # Inject the DeidentificationMethodCodeSequence with all recipe items
                 ds.DeidentificationMethodCodeSequence = sequence_items
-                
+
                 # Add RecognizableVisualFeatures tag if defacing was performed
                 if defacing_performed:
                     ds.RecognizableVisualFeatures = "NO"
