@@ -1116,6 +1116,55 @@ class TestAnonymizeScript(unittest.TestCase):
             self.logger.info("Patient age integration test completed and config cleaned up")
 
 
+    def test_preamble_is_blanked_after_anonymization(self):
+        """Test that the DICOM preamble is blanked to 128 null bytes after anonymization."""
+        print("Test that the DICOM preamble is blanked after anonymization")
+
+        first_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(first_file), "File `00000001.dcm` not found in the dataset.")
+
+        # Create a copy of the file with a known non-blank preamble so the test
+        # is self-contained and does not depend on the original file's content.
+        input_with_preamble = os.path.join(self.test_output_dir, "preamble_input.dcm")
+        known_preamble = b'LUWAKX_TEST_PREAMBLE_' + b'X' * (128 - len(b'LUWAKX_TEST_PREAMBLE_'))
+
+        self.logger.info("Starting preamble blanking test")
+
+        # Write the known preamble into the copy and verify it is set correctly.
+        original_ds = pydicom.dcmread(first_file)
+        original_ds.preamble = known_preamble
+        original_ds.save_as(input_with_preamble, enforce_file_format=True)
+
+        written_ds = pydicom.dcmread(input_with_preamble)
+        self.assertEqual(written_ds.preamble, known_preamble,
+            "Setup failed: preamble was not written correctly to the input file")
+        self.assertNotEqual(written_ds.preamble, b'\x00' * 128,
+            "Setup failed: input file preamble should not be all null bytes before anonymization")
+        self.logger.info(f"Input preamble set to known value (first 21 bytes): {written_ds.preamble[:21]!r}")
+
+        config_path = self.create_test_config(
+            input_folder=input_with_preamble,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile"],
+        )
+
+        try:
+            anonymizer = LuwakAnonymizer(config_path)
+            coordinator = anonymizer.anonymize()
+
+            output_path = self.get_output_path_for_file(coordinator, input_with_preamble)
+            self.assertIsNotNone(output_path, f"Could not find output path for {input_with_preamble}")
+            self.assertTrue(os.path.exists(output_path), f"Anonymized file not found at: {output_path}")
+
+            ds = pydicom.dcmread(output_path)
+            self.assertEqual(ds.preamble, b'\x00' * 128,
+                "DICOM preamble should be 128 null bytes after anonymization")
+            self.logger.info("Preamble is correctly blanked (128 null bytes)")
+        finally:
+            os.unlink(config_path)
+            self.logger.info("Preamble blanking test completed and config cleaned up")
+
+
 if __name__ == "__main__":
     unittest.main()
 
