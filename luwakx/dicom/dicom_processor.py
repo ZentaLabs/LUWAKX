@@ -1528,6 +1528,10 @@ class DicomProcessor:
                 if defacing_performed:
                     ds.RecognizableVisualFeatures = "NO"
 
+                # Add BurnedInAnnotation tag if pixel cleaning was performed
+                if pixel_cleaning_performed:
+                    ds.BurnedInAnnotation = "NO"
+
                 # Save the file (overwrite)
                 ds.save_as(path, enforce_file_format=True)
                 
