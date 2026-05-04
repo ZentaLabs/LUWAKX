@@ -1461,19 +1461,22 @@ REMOVE ALL func:is_tag_private
 
 ---
 
-## 7. DeidentificationMethodCodeSequence Attribute Injection (pipeline stage 5)
+## 7. Anonymized File Post-Processing (pipeline stage 5)
 
 ### 7.1 Purpose
-After deidentification, Luwak injects the DeidentificationMethodCodeSequence (0012,0064) tag to document which deidentification methods were applied per DICOM PS3.15 requirements.
+After deidentification, Luwak performs a final single-pass post-processing step on every anonymized file. This step combines two operations to avoid redundant I/O:
+1. **Preamble blanking** — overwrites the 128-byte DICOM preamble with null bytes (controlled by `cleanPreamble` config option, default `true`). The preamble is not covered by any tag-level deid recipe and may contain PHI or vendor-specific text written by the acquisition equipment.
+2. **DeidentificationMethodCodeSequence injection** — injects the (0012,0064) tag to document which deidentification methods were applied per DICOM PS3.15 requirements.
 
 ### 7.2 Implementation
-**Module:** `DicomProcessor.inject_deidentification_method_code_sequence()`
+**Module:** `DicomProcessor._finalize_anonymized_files()`
 
 **Process:**
-1. Maps selected recipe profiles to CID 7050 codes
-2. Conditionally includes defacing code (113101) only if defacing was performed
-3. Sorts sequence items by CodeValue for consistency
-4. Injects sequence into all anonymized files in series
+1. Optionally blanks the 128-byte preamble (`ds.preamble = b'\x00' * 128`) if `cleanPreamble` is true
+2. Maps selected recipe profiles to CID 7050 codes
+3. Conditionally includes defacing code (113101) only if defacing was performed
+4. Sorts sequence items by CodeValue for consistency
+5. Injects sequence into all anonymized files in series
 
 ### 7.3 Code Mapping
 Each recipe profile maps to a specific DICOM CID 7050 code (see [§3.1](#31-overview)).
@@ -1690,6 +1693,7 @@ Luwak uses a JSON configuration file (`luwak-config.json`) to control all aspect
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `bypassCleanPixelData` | boolean | false | When `true` and the `clean_pixel_data` recipe is active, the `CleanPixelDataService` execution is skipped. Use this when burned-in pixel data has been verified absent by other means (e.g. manual review). The DICOM CID 7050 code 113101 (Clean Pixel Data Option) is still injected into `DeidentificationMethodCodeSequence` as if cleaning had been performed. |
+| `cleanPreamble` | boolean | true | When `true` (default), blanks the 128-byte DICOM file preamble of every anonymized file by overwriting it with null bytes. The preamble is not governed by any DICOM tag and is therefore not cleaned by deid automatically; it may contain PHI or identifying text written by the acquisition equipment. Set to `false` only if preamble content has been verified as non-identifying. |
 
 #### 9.1.3 Example Configuration
 
@@ -1822,7 +1826,7 @@ Luwak follows an object-oriented design with clear separation of concerns:
   - `generate_patient_id()` - Generate anonymized patient IDs
   - `generate_hmacdate_shift()` - Shift dates consistently
   - `clean_descriptors_with_llm()` - Clean text descriptors
-  - `inject_deidentification_method_code_sequence()` - Add CID 7050 codes
+  - `_finalize_anonymized_files()` - Blank preamble and add CID 7050 codes
 
 **`DefaceService`**
 - **Purpose:** Defacing for CT/PET imaging volumes
