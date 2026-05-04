@@ -14,6 +14,44 @@ This script validates DICOM series using [dciodvfy](https://www.dclunie.com/dico
 - [dciodvfy](https://www.dclunie.com/dicom3tools.html) installed and available on your PATH
 - [pydicom](https://pydicom.github.io/) (optional, for Modality/SeriesNumber extraction)
 
+### Installing dciodvfy (dicom3tools)
+
+#### 1. Install required system dependencies (if not already present)
+
+
+`bzip2` is needed to extract the .tar.bz2 archive.
+`xutils-dev` provides the `imake` build tooling required by dicom3tools.
+`gcc`, `g++`, and `make` are required to build dicom3tools from source.
+
+```sh
+sudo apt-get install bzip2
+sudo apt-get install xutils-dev
+sudo apt-get install gcc g++ make
+```
+
+#### 2. Download the archive
+
+```sh
+curl -L -O https://www.dclunie.com/dicom3tools/workinprogress/dicom3tools_1.00.snapshot.20260320044638.tar.bz2
+```
+
+#### 3. Extract, build, and install
+
+```sh
+# Extract the archive
+tar xjf dicom3tools_1.00.snapshot.20260320044638.tar.bz2
+
+# Enter the extracted directory
+cd dicom3tools_1.00.snapshot.20260320044638
+
+# Configure, build, and install
+./Configure
+make
+sudo make install
+```
+
+By default, binaries are installed to `~/bin`. 
+
 ## Usage
 ```sh
 python validate_dciodvfy.py \
