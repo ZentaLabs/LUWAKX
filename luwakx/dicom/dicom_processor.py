@@ -1400,20 +1400,27 @@ class DicomProcessor:
         return False
         
     def _finalize_anonymized_files(self):
-        """Inject DeidentificationMethodCodeSequence with child tags into anonymized DICOM files.
-        
-        This method loops through the anonymized DICOM files in the series, reads the recipes
-        from the config, maps them to DICOM CID 7050 De-identification Method codes, and adds
-        the DeidentificationMethodCodeSequence tag with appropriate child tags for each recipe.
-        
-        The mapping follows DICOM PS3.16 CID 7050 standard codes.
-        Additionally if defacing was performed, the RecognizableVisualFeatures tag is set to "NO".
-        
+        """Perform final post-processing on every anonymized file in the series.
+
+        This method combines two operations in a single read/write pass to avoid
+        redundant I/O:
+
+        1. **Preamble blanking** (controlled by ``cleanPreamble`` config option,
+           default ``true``): overwrites the 128-byte DICOM preamble with null bytes.
+           The preamble is not governed by any DICOM tag and is therefore not cleaned
+           by deid automatically; some equipment vendors write proprietary strings or
+           scanner identifiers into this area which may constitute PHI.
+
+        2. **DeidentificationMethodCodeSequence injection**: adds the (0012,0064) tag
+           with DICOM CID 7050 codes documenting the applied de-identification methods,
+           per DICOM PS3.15 requirements. Additionally sets ``RecognizableVisualFeatures``
+           to ``"NO"`` when defacing was performed.
+
         Note:
             This should be called after anonymization but before cleanup/deletion of files.
-            
+
         See conformance documentation:
-        https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#7-deidentificationmethodcodesequence-attribute-injection-pipeline-stage-6
+        https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#7-anonymized-file-post-processing-pipeline-stage-5
         """
         # Mapping of recipe names to DICOM CID 7050 De-identification Method codes
         # Based on DICOM PS3.16 CID 7050 - https://dicom.nema.org/medical/dicom/current/output/chtml/part16/sect_CID_7050.html

@@ -75,7 +75,8 @@ Create a JSON configuration file with the following structure:
 - **`saveDefaceMasks`**: Controls face mask persistence across runs (boolean, default: `false`). When `true`, every series that runs ML inference saves its face mask to the private mapping folder and the database persists after the run, enabling full re-run cache hits. When `false` (default), only CT masks paired with a PET series are kept for the duration of the run. PET/CT pairing is **automatic** when the `clean_recognizable_visual_features` recipe is active.
 - **`keepTempFiles`**: If `true`, temporary directories created during processing (`temp_organized_input`, `temp_defaced_organized`) are retained after the workflow completes. Useful for step-by-step validation of the deidentification pipeline. (default: false)
 - **`selectedModalities`**: List of DICOM modalities to include in processing. If empty or not set, all modalities are included. Example: `["MR", "CT"]` (default: empty)
-
+- **`bypassCleanPixelData`**: If `true` and the `clean_pixel_data` recipe is active, skips the `CleanPixelDataService` execution. Use this when burned-in pixel data has been verified absent by other means (e.g. manual review). The DICOM CID 7050 code 113101 (Clean Pixel Data Option) is still injected into `DeidentificationMethodCodeSequence` as if cleaning had been performed. (default: false)
+- **`cleanPreamble`**: If `true` (default), overwrites the 128-byte DICOM file preamble with null bytes in every anonymized file. The preamble precedes the `DICM` magic bytes and is not governed by any DICOM tag, so it is not cleaned by deid automatically. Some equipment vendors write proprietary strings or scanner identifiers into this area, which may constitute PHI. Set to `false` only if the preamble content has been verified as non-identifying. (default: true)
 
 #### LLM Integration Parameters
 
@@ -86,7 +87,6 @@ Create a JSON configuration file with the following structure:
 - **`cleanDescriptorsLlmHttpHeaders`**: JSON object of HTTP headers injected into every LLM API request. Useful when the LLM endpoint sits behind a reverse proxy or API gateway that requires additional authentication headers. Example: `{"Authorization": "Bearer mytoken", "X-Custom-Header": "value"}`.
   Note: If using CloudFlare tunnel then add a service token, add policy (action: `Service Auth`, selector: `Service Token`), and set up an application (path: `*`, select policy).
 - **`bypassCleanDescriptorsLlm`**: If `true`, skips the LLM call entirely in `clean_descriptors_with_llm`. The result is always treated as 0 (no PHI detected) and the tag is kept with its original value. Useful for testing or when LLM access is unavailable. (default: false)
-- **`bypassCleanPixelData`**: If `true` and the `clean_pixel_data` recipe is active, skips the `CleanPixelDataService` execution. Use this when burned-in pixel data has been verified absent by other means (e.g. manual review). The DICOM CID 7050 code 113101 (Clean Pixel Data Option) is still injected into `DeidentificationMethodCodeSequence` as if cleaning had been performed. (default: false)
 
 #### Analysis Cache Parameters
 
