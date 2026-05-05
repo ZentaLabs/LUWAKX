@@ -4,9 +4,8 @@ import shutil
 import pydicom
 import json
 import tempfile
-import sys
 import tarfile
-import csv
+import sqlite3
 import pandas as pd
 
 from luwakx.anonymize import LuwakAnonymizer
@@ -127,7 +126,7 @@ class TestExports(unittest.TestCase):
         return config_file.name
 
     def test_uid_mapping_file_creation(self):
-        """Test that the UID mapping CSV file is created correctly with proper format."""
+        """Test that the UID mapping database is created correctly with proper format."""
         print("Test UID mapping CSV file creation")
         
         # Use the first file for testing
@@ -158,7 +157,7 @@ class TestExports(unittest.TestCase):
             coordinator = anonymizer.anonymize()
             
             # Check that the mapping file was created - use absolute path to match what anonymizer uses
-            mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "uid_mappings.csv")
+            mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "uid_mappings.db")
             
             # List all files in the privateMapping directory
             private_mapping_dir = os.path.join(os.path.abspath(self.test_output_dir), "private")
@@ -168,35 +167,37 @@ class TestExports(unittest.TestCase):
             else:
                 self.logger.warning("Private directory doesn't exist")
             
-            self.assertTrue(os.path.exists(mapping_file), "UID mapping CSV file was not created")
-            self.logger.info(f" UID mapping CSV file created at: {mapping_file}")
+            self.assertTrue(os.path.exists(mapping_file), "UID mapping database was not created")
+            self.logger.info(f" UID mapping database created at: {mapping_file}")
 
-            # Read and verify the mapping file content
-            with open(mapping_file, 'r', newline='') as csvfile:
-                reader = csv.DictReader(csvfile)
-                rows = list(reader)
+            # Read and verify the mapping database content
+            conn = sqlite3.connect(mapping_file)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute("SELECT * FROM Instance").fetchall()
                 
                 # Should have exactly one row for our single file
-                self.assertEqual(len(rows), 1, f"Expected 1 row in mapping file, got {len(rows)}")
-                self.logger.info(f" CSV contains {len(rows)} row(s) as expected")
+                self.assertEqual(len(rows), 1, f"Expected 1 row in mapping database, got {len(rows)}")
+                self.logger.info(f" Database contains {len(rows)} row(s) as expected")
                 
                 row = rows[0]
+                col_names = row.keys()
                 
                 # Check that required columns exist
                 required_columns = [
-                    'anonymized_file_path',
+                    'FilePath_anonymized',
                     'StudyInstanceUID_original', 'StudyInstanceUID_anonymized',
                     'SeriesInstanceUID_original', 'SeriesInstanceUID_anonymized', 
                     'SOPInstanceUID_original', 'SOPInstanceUID_anonymized'
                 ]
                 
                 for column in required_columns:
-                    self.assertIn(column, row, f"Required column '{column}' missing from mapping file")
+                    self.assertIn(column, col_names, f"Required column '{column}' missing from mapping database")
                 self.logger.info(f" All required columns present: {required_columns}")
                 
                 # Verify file path (now includes series folder as relative path)
                 # The path should be like: 'series_folder/000001.dcm' (sequential filename)
-                anonymized_path = row['anonymized_file_path']
+                anonymized_path = row['FilePath_anonymized']
                 # For single file, should be 000001.dcm
                 self.assertTrue(anonymized_path.endswith('000001.dcm'), 
                               f"File path should end with '000001.dcm' (sequential filename), got: {anonymized_path}")
@@ -217,7 +218,9 @@ class TestExports(unittest.TestCase):
                                           f"Anonymized {uid_name} should be different from original")
                         self.logger.info(f" {uid_name}: {original_uid} -> {mapped_anonymized}")
                 
-                self.logger.info("UID mapping CSV file creation test completed successfully")
+                self.logger.info("UID mapping database creation test completed successfully")
+            finally:
+                conn.close()
         
         finally:
             # Clean up config file
@@ -401,7 +404,7 @@ class TestExports(unittest.TestCase):
             self.logger.info("Test completed and config cleaned up")
 
     def test_csv_and_parquet_consistency(self):
-        """Test that CSV mapping and Parquet export are consistent with each other."""
+        """Test that UID mapping database and Parquet export are consistent with each other."""
         print("Test CSV and Parquet export consistency")
         
         # Use a few files for testing consistency
@@ -419,38 +422,40 @@ class TestExports(unittest.TestCase):
             coordinator = anonymizer.anonymize()
 
             # Check that both files were created
-            mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "uid_mappings.csv")
+            mapping_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "uid_mappings.db")
             parquet_file = os.path.join(os.path.abspath(self.test_output_dir), "private", "metadata.parquet")
             
-            self.assertTrue(os.path.exists(mapping_file), "CSV mapping file was not created")
+            self.assertTrue(os.path.exists(mapping_file), "UID mapping database was not created")
             self.assertTrue(os.path.exists(parquet_file), "Parquet metadata file was not created")
-            self.logger.info(f" Both CSV and Parquet files created successfully")
+            self.logger.info(f" Both database and Parquet files created successfully")
 
             # Read both files
-            with open(mapping_file, 'r', newline='') as csvfile:
-                reader = csv.DictReader(csvfile)
-                csv_rows = list(reader)
+            conn = sqlite3.connect(mapping_file)
+            try:
+                db_rows = conn.execute("SELECT FilePath_anonymized FROM Instance").fetchall()
+            finally:
+                conn.close()
             
             df = pd.read_parquet(parquet_file)
             
             # Should have same number of series processed (not files)
-            self.assertEqual(len(csv_rows), 20, 
-                           f"CSV has {len(csv_rows)} rows but should be 20 rows (should match series count)")
+            self.assertEqual(len(db_rows), 20, 
+                           f"Database has {len(db_rows)} rows but should be 20 rows (should match series count)")
             self.assertEqual(len(df), 1, 
                            f"Parquet has {len(df)} rows but should be 1 row (should have 1 row per series)")
 
             self.logger.info(f" Both files contain the right amount of lines per series")
             
             # Check that file names are consistent
-            csv_files = set(row['anonymized_file_path'] for row in csv_rows)
+            db_files = set(row[0] for row in db_rows)
             parquet_files = set(df['AnonymizedFilePath'].tolist())
 
-            self.assertTrue(parquet_files.issubset(csv_files),
-                f"Parquet file names should be a subset of CSV file names: CSV={csv_files}, Parquet={parquet_files}")
+            self.assertTrue(parquet_files.issubset(db_files),
+                f"Parquet file names should be a subset of database file names: DB={db_files}, Parquet={parquet_files}")
             
-            self.logger.info(f" File names consistent between formats: {csv_files}")
-            self.logger.info(f"Successfully verified consistency between CSV ({len(csv_rows)} files) and Parquet ({len(df)} files)")
-            self.logger.info("CSV and Parquet consistency test completed successfully")
+            self.logger.info(f" File names consistent between formats: {db_files}")
+            self.logger.info(f"Successfully verified consistency between database ({len(db_rows)} files) and Parquet ({len(df)} files)")
+            self.logger.info("Database and Parquet consistency test completed successfully")
                 
         finally:
             # Clean up config file
