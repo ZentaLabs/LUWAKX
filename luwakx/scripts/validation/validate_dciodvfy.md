@@ -3,7 +3,7 @@
 This script validates DICOM series using [dciodvfy](https://www.dclunie.com/dicom3tools.html) by comparing the output between original and anonymized datasets. It highlights new errors and warnings introduced by anonymization.
 
 ## Features
-- Runs `dciodvfy` on both original and anonymized DICOM series (matched via `uid_mappings.csv`)
+- Runs `dciodvfy` on both original and anonymized DICOM series (matched via `uid_mappings.db`)
 - Reports only **new** errors/warnings found in the anonymized data (not present in the original)
 - Outputs:
   - `dciodvfy_validation.csv`: Per-series table of new issues
@@ -55,19 +55,19 @@ By default, binaries are installed to `~/bin`.
 ## Usage
 ```sh
 python validate_dciodvfy.py \
-    --uid_mapping /path/to/uid_mappings.csv \
+    --uid_mapping /path/to/uid_mappings.db \
     --original_folder /path/to/original_data \
     --anonymized_folder /path/to/anonymized_data
 ```
 
 ### Arguments
-- `--uid_mapping` : Path to the `uid_mappings.csv` file produced by luwak
-- `--original_folder` : Base directory for original (pre-anonymization) DICOM files. `original_file_path` in the CSV is resolved relative to this folder.
-- `--anonymized_folder` : Base directory for anonymized DICOM files. `anonymized_file_path` in the CSV is resolved relative to this folder.
+- `--uid_mapping` : Path to the `uid_mappings.db` SQLite database produced by luwak
+- `--original_folder` : Base directory for original (pre-anonymization) DICOM files. `FilePath_original` in the database is resolved relative to this folder.
+- `--anonymized_folder` : Base directory for anonymized DICOM files. `FilePath_anonymized` in the database is resolved relative to this folder.
 
 ### Output
-- `dciodvfy_validation.csv` : Table of new errors/warnings per series (saved in the same folder as the `uid_mappings.csv` file)
-- `dciodvfy_summary.log` : Deduplicated summary of unique issues (saved in the same folder as the `uid_mappings.csv` file)
+- `dciodvfy_validation.csv` : Table of new errors/warnings per series (saved in the same folder as the `uid_mappings.db` file)
+- `dciodvfy_summary.log` : Deduplicated summary of unique issues (saved in the same folder as the `uid_mappings.db` file)
 
 ## Notes
 - Log files (`.log`) and NRRD files (`.nrrd`) are automatically excluded.
@@ -77,10 +77,10 @@ python validate_dciodvfy.py \
 ## Example
 ```sh
 python validate_dciodvfy.py \
-    --uid_mapping /data/privateMapping/uid_mappings.csv \
+    --uid_mapping /data/privateMapping/uid_mappings.db \
     --original_folder /data/full_dataset/ \
     --anonymized_folder /data/deidentified/
 ```
 
 ## Troubleshooting
-- If you see `dciodvfy` errors about missing files, check that the folder arguments and CSV paths are correct.
+- If you see `dciodvfy` errors about missing files, check that the folder arguments and database path are correct.

@@ -20,10 +20,10 @@ Usage:
 Arguments:
     --uid_mapping       Path to uid_mappings.db produced by luwak.
     --original_folder   Base directory for original (pre-anonymization) DICOM
-                        files. original_file_path values in the CSV are
+                        files. FilePath_original values in the database are
                         resolved relative to this folder.
     --anonymized_folder Base directory for anonymized DICOM files.
-                        anonymized_file_path values in the CSV are resolved
+                        FilePath_anonymized values in the database are resolved
                         relative to this folder.
 
 Notes:
@@ -526,7 +526,7 @@ def main() -> None:
                 print(
                     "  [WARN] No original files resolved for this series - "
                     "all anonymized findings will be reported as new. "
-                    "Check --original_folder and the original_file_path column in the CSV.",
+                    "Check --original_folder and the FilePath_original column in the database.",
                     file=sys.stderr,
                 )
 

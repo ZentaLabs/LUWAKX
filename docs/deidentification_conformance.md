@@ -1521,13 +1521,15 @@ Luwak produces several output files during the deidentification pipeline, each s
   - Content: Fully deidentified DICOM files, with all PHI removed or replaced according to the selected recipe and profiles
   - Generation: Created at the end of the deidentification pipeline stage 6.
 
-**2. UID Mappings CSV (`uid_mappings.csv`)**
+**2. UID Mappings Database (`uid_mappings.db`)**
   - Location: Private mapping folder
-  - Content: Table mapping original UIDs (e.g., StudyInstanceUID, SeriesInstanceUID, SOPInstanceUID) to anonymized UIDs for each file, including patient identifiers
-  - Generation: Incrementally appended after each series is processed, using the `MetadataExporter.append_series_uid_mappings()` method
+  - Format: SQLite database (WAL mode), table `Instance`
+  - Content: Table mapping original UIDs (e.g., StudyInstanceUID, SeriesInstanceUID, SOPInstanceUID) to anonymized UIDs for each file, including patient identifiers and file paths
+  - Generation: Incrementally appended after each series is processed, using the `MetadataExporter.append_series_uid_mappings()` method. New UID columns discovered in later series are added on-the-fly via `ALTER TABLE ADD COLUMN` (no file rewrite needed).
+  - Core columns (always present, all indexed): `FilePath_original`, `FilePath_anonymized`, `PatientName_original`, `PatientName_anonymized`, `PatientID_original`, `PatientID_anonymized`, `PatientBirthDate`, `StudyInstanceUID_original`, `StudyInstanceUID_anonymized`, `SeriesInstanceUID_original`, `SeriesInstanceUID_anonymized`, `SOPInstanceUID_original`, `SOPInstanceUID_anonymized`
   - Column Naming for UID fields:
     - **Standard tags**: Use the official DICOM keyword (e.g., `StudyInstanceUID`, `SeriesInstanceUID`)
-    - **Private tags**: Constructed using the same convention as the `metadata.parquet` export - `{PrivateCreator}_{TagName}` if the tag name is known (e.g., `Siemens_CSA_Image_Header_Info`), or `{PrivateCreator}_{GGGG}xx{EE}` if the name is unknown (e.g., `PHILIPS_MR_IMAGING_0019xx10`). Spaces in the private creator string are replaced with underscores. Tags with no private creator block fall back to `str(tag)`.
+    - **Private tags**: Constructed using the same convention as the `metadata.parquet` export - `{PrivateCreator}_{TagName}` if the tag name is known (e.g., `Siemens_CSA_Image_Header_Info`), or `{PrivateCreator}_{GGGG}xx{EE}` if the name is unknown (e.g., `PHILIPS_MR_IMAGING_0019xx10`). Spaces in the private creator string are replaced with underscores. Tags with no private creator block fall back to `str(tag)`. Dots are deleted and brackets/commas/spaces are replaced with `_` to produce valid SQLite column identifiers.
 
 **3. DICOM Metadata Parquet (`metadata.parquet`)**
   - Location: Private mapping folder
@@ -2104,7 +2106,7 @@ outputDeidentifiedFolder/
             └── image_defaced.nrrd (if defacing performed)
 
 outputPrivateMappingFolder/
-├── uid_mappings.csv
+├── uid_mappings.db
 ├── metadata.parquet
 ├── review_flags.csv
 ├── patient_uid.db (if persistent database configured)
