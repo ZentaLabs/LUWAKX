@@ -2,7 +2,6 @@ import unittest
 import os
 import json
 import tempfile
-import sys
 from luwakx.anonymize import LuwakAnonymizer
 
 class TestConfigOptions(unittest.TestCase):

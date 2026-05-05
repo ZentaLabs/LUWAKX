@@ -73,11 +73,13 @@ def _open_uid_mappings_db(db_path: str) -> sqlite3.Connection:
 def _ensure_uid_columns(conn: sqlite3.Connection, columns: List[str]) -> None:
     """Add any missing columns to the Instance table via ALTER TABLE."""
     cursor = conn.execute('PRAGMA table_info(Instance)')
-    existing = {row[1] for row in cursor.fetchall()}
+    # Use lower-cased set: SQLite column names are case-insensitive in ALTER TABLE
+    existing = {row[1].lower() for row in cursor.fetchall()}
     added = False
     for col in columns:
-        if col not in existing:
+        if col.lower() not in existing:
             conn.execute(f'ALTER TABLE Instance ADD COLUMN "{col}" TEXT')
+            existing.add(col.lower())  # prevent duplicate attempts within the same call
             added = True
     if added:
         conn.commit()
@@ -226,18 +228,20 @@ class MetadataExporter:
             file_map[input_path] = dicom_file
 
         # Build rows and collect the full set of sanitized column names.
+        # Use lower-cased seen_columns to deduplicate case-insensitively, matching
+        # SQLite's case-insensitive column name handling in ALTER TABLE ADD COLUMN.
         rows: List[Dict[str, str]] = []
         all_columns: List[str] = list(_UID_CORE_COLUMNS)
-        seen_columns: Set[str] = set(_UID_CORE_COLUMNS)
+        seen_columns: Set[str] = {c.lower() for c in _UID_CORE_COLUMNS}
         for file_path, file_mappings in mappings.items():
             raw_row = self._build_uid_mapping_row(
                 file_path, file_mappings, series, file_map, input_folder, output_folder
             )
             sanitized_row = {_sanitize_uid_column(k): v for k, v in raw_row.items()}
             for col in sanitized_row:
-                if col not in seen_columns:
+                if col.lower() not in seen_columns:
                     all_columns.append(col)
-                    seen_columns.add(col)
+                    seen_columns.add(col.lower())
             rows.append(sanitized_row)
 
         os.makedirs(os.path.dirname(os.path.abspath(uid_mappings_file)), exist_ok=True)
