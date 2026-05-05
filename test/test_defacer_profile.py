@@ -8,7 +8,6 @@ import shutil
 import pydicom
 import tempfile
 import json
-import sys
 import warnings
 
 # Suppress deprecation warnings from batchgenerators/scipy
