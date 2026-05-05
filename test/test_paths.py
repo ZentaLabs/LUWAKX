@@ -2,7 +2,6 @@
 
 import unittest
 import os
-import sys
 from luwakx.logging.luwak_logger import setup_logger, get_logger
 
 class TestPaths(unittest.TestCase):

@@ -5,7 +5,6 @@ Test script to verify the new luwak_logger system works correctly.
 
 import logging
 import unittest
-import sys
 import os
 import tempfile
 
