@@ -113,7 +113,7 @@ class ProcessingPipeline:
         # Files are written incrementally after each series for immediate availability
         private_folder = config.get('outputPrivateMappingFolder')
         
-        self.uid_mappings_file = os.path.join(private_folder, 'uid_mappings.csv')
+        self.uid_mappings_file = os.path.join(private_folder, 'uid_mappings.db')
         self.metadata_file = os.path.join(private_folder, 'metadata.parquet')
         self.review_flags_file = os.path.join(private_folder, 'review_flags.csv')
 

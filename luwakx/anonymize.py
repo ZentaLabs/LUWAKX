@@ -689,7 +689,7 @@ class LuwakAnonymizer:
                 incomplete_rows = checkpoint_db.get_incomplete_series_rows(job_id)
                 if incomplete_rows:
                     incomplete_uids = {row['anonymized_series_uid'] for row in incomplete_rows}
-                    uid_mappings_file = os.path.join(private_folder, 'uid_mappings.csv')
+                    uid_mappings_file = os.path.join(private_folder, 'uid_mappings.db')
                     metadata_file = os.path.join(private_folder, 'metadata.parquet')
                     review_flags_file = os.path.join(private_folder, 'review_flags.csv')
                     checkpoint_db.purge_series_from_export_files(

@@ -421,15 +421,16 @@ class JobCheckpointDatabase:
         in the export files (partial export crash).  It is safe to call this for
         all incomplete series - rows simply won't be found for earlier stages.
 
-        ``uid_mappings.csv`` and ``review_flags.csv`` are rewritten in-place.
+        ``uid_mappings.db`` is pruned via SQLite DELETE.
+        ``review_flags.csv`` is rewritten in-place.
         ``metadata.parquet`` is rewritten via pyarrow.
-        A truncated last line in any CSV is repaired before row-removal.
+        A truncated last line in ``review_flags.csv`` is repaired before row-removal.
         """
         if not incomplete_series_uids:
             return
 
-        for csv_path in (uid_mappings_file, review_flags_file):
-            _purge_csv_rows(csv_path, 'anonymized_series_uid', incomplete_series_uids, logger)
+        _purge_uid_mappings_db(uid_mappings_file, incomplete_series_uids, logger)
+        _purge_csv_rows(review_flags_file, 'anonymized_series_uid', incomplete_series_uids, logger)
 
         _purge_parquet_rows(metadata_file, 'anonymized_series_uid', incomplete_series_uids, logger)
 
@@ -521,6 +522,31 @@ def _repair_truncated_csv(path: str, logger) -> None:
     except Exception as exc:
         if logger:
             logger.warning(f'Could not repair truncated CSV {path}: {exc}')
+
+
+def _purge_uid_mappings_db(
+    db_path: str,
+    uids_to_remove: Set[str],
+    logger,
+) -> None:
+    """Delete rows for *uids_to_remove* from the UID mappings SQLite database."""
+    if not os.path.exists(db_path):
+        return
+    import sqlite3
+    try:
+        conn = sqlite3.connect(db_path)
+        placeholders = ', '.join('?' * len(uids_to_remove))
+        conn.execute(
+            f'DELETE FROM Instance WHERE SeriesInstanceUID_anonymized IN ({placeholders})',
+            list(uids_to_remove),
+        )
+        conn.commit()
+        conn.close()
+        if logger:
+            logger.debug(f'Purged {len(uids_to_remove)} series from {db_path}')
+    except Exception as exc:
+        if logger:
+            logger.warning(f'Could not purge rows from {db_path}: {exc}')
 
 
 def _purge_parquet_rows(
