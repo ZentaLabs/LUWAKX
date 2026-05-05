@@ -13,17 +13,17 @@ Output files are saved in the same directory as the uid_mapping CSV:
 
 Usage:
     python validate_dciodvfy.py \\
-        --uid_mapping /path/to/uid_mappings.csv \\
+        --uid_mapping /path/to/uid_mappings.db \\
         --original_folder /path/to/original_data \\
         --anonymized_folder /path/to/anonymized_data
 
 Arguments:
-    --uid_mapping       Path to uid_mappings.csv produced by luwak.
+    --uid_mapping       Path to uid_mappings.db produced by luwak.
     --original_folder   Base directory for original (pre-anonymization) DICOM
-                        files. original_file_path values in the CSV are
+                        files. FilePath_original values in the database are
                         resolved relative to this folder.
     --anonymized_folder Base directory for anonymized DICOM files.
-                        anonymized_file_path values in the CSV are resolved
+                        FilePath_anonymized values in the database are resolved
                         relative to this folder.
 
 Notes:
@@ -38,6 +38,7 @@ Notes:
 import argparse
 import csv
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -81,7 +82,7 @@ def parse_args():
         "--uid_mapping",
         required=True,
         metavar="PATH",
-        help="Path to the uid_mappings.csv file produced by luwak.",
+        help="Path to the uid_mappings.db file produced by luwak.",
     )
     parser.add_argument(
         "--original_folder",
@@ -89,7 +90,7 @@ def parse_args():
         metavar="PATH",
         help=(
             "Base directory for original (pre-anonymization) DICOM files. "
-            "original_file_path values in uid_mappings.csv are resolved "
+            "FilePath_original values in uid_mappings.db are resolved "
             "relative to this folder."
         ),
     )
@@ -99,7 +100,7 @@ def parse_args():
         metavar="PATH",
         help=(
             "Base directory for anonymized DICOM files. "
-            "anonymized_file_path values in uid_mappings.csv are resolved "
+            "FilePath_anonymized values in uid_mappings.db are resolved "
             "relative to this folder."
         ),
     )
@@ -124,12 +125,11 @@ def _resolve_path(rel_or_abs: str, base_folder: str) -> str:
 
 def iter_series_mapping(uid_mapping_path: str, original_folder: str, anonymized_folder: str):
     """
-    Stream uid_mappings.csv one series at a time.
+    Stream uid_mappings.db one series at a time.
 
-    The CSV is read sequentially.  Files belonging to the same series
-    (same SeriesInstanceUID_original) are grouped together, then the
-    completed series dict is yielded and immediately discarded, so only
-    one series worth of data is in memory at any point.
+    Rows are fetched ordered by SeriesInstanceUID_original so that all files
+    for a series arrive consecutively.  Only one series worth of data is held
+    in memory at any point.
 
     Yields dicts with keys::
 
@@ -138,60 +138,71 @@ def iter_series_mapping(uid_mapping_path: str, original_folder: str, anonymized_
         series_uid_original, series_uid_anonymized,
         original_files,      anonymized_files
     """
-    current_uid: str = ""
-    current: dict = {}
+    conn = sqlite3.connect(f"file:{uid_mapping_path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute(
+            """
+            SELECT
+                FilePath_original,
+                FilePath_anonymized,
+                PatientID_original,
+                PatientID_anonymized,
+                StudyInstanceUID_original,
+                StudyInstanceUID_anonymized,
+                SeriesInstanceUID_original,
+                SeriesInstanceUID_anonymized
+            FROM Instance
+            ORDER BY SeriesInstanceUID_original
+            """
+        )
 
-    def _make_entry(row: dict) -> dict:
-        series_uid = (row.get("SeriesInstanceUID_original") or "").strip()
-        return {
-            "patient_id_original":   (row.get("PatientID_original")          or "").strip(),
-            "patient_id_anonymized": (row.get("PatientID_anonymized")         or "").strip(),
-            "study_uid_original":    (row.get("StudyInstanceUID_original")    or "").strip(),
-            "study_uid_anonymized":  (row.get("StudyInstanceUID_anonymized")  or "").strip(),
-            "series_uid_original":   series_uid,
-            "series_uid_anonymized": (row.get("SeriesInstanceUID_anonymized") or "").strip(),
-            "original_files":        [],
-            "anonymized_files":      [],
-        }
+        current_uid: str = ""
+        current: dict = {}
 
-    with open(uid_mapping_path, newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            series_uid = (row.get("SeriesInstanceUID_original") or "").strip()
+        for row in cursor:
+            series_uid = (row["SeriesInstanceUID_original"] or "").strip()
             if not series_uid:
                 continue
 
             if series_uid != current_uid:
                 if current:
-                    yield current          # emit completed series, drop reference
+                    yield current
                 current_uid = series_uid
-                current = _make_entry(row)
+                current = {
+                    "patient_id_original":   (row["PatientID_original"]          or "").strip(),
+                    "patient_id_anonymized": (row["PatientID_anonymized"]         or "").strip(),
+                    "study_uid_original":    (row["StudyInstanceUID_original"]    or "").strip(),
+                    "study_uid_anonymized":  (row["StudyInstanceUID_anonymized"]  or "").strip(),
+                    "series_uid_original":   series_uid,
+                    "series_uid_anonymized": (row["SeriesInstanceUID_anonymized"] or "").strip(),
+                    "original_files":        [],
+                    "anonymized_files":      [],
+                }
 
-            orig_path = _resolve_path(
-                (row.get("original_file_path") or "").strip(), original_folder
-            )
-            anon_path = _resolve_path(
-                (row.get("anonymized_file_path") or "").strip(), anonymized_folder
-            )
+            orig_path = _resolve_path((row["FilePath_original"]   or "").strip(), original_folder)
+            anon_path = _resolve_path((row["FilePath_anonymized"] or "").strip(), anonymized_folder)
             if orig_path:
                 current["original_files"].append(orig_path)
             if anon_path:
                 current["anonymized_files"].append(anon_path)
 
-    if current:                            # emit last series
-        yield current
+        if current:
+            yield current
+    finally:
+        conn.close()
 
 
 def count_series(uid_mapping_path: str) -> int:
-    """Count distinct SeriesInstanceUID_original values in the CSV (for progress display)."""
-    seen: set = set()
-    with open(uid_mapping_path, newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        for row in reader:
-            uid = (row.get("SeriesInstanceUID_original") or "").strip()
-            if uid:
-                seen.add(uid)
-    return len(seen)
+    """Count distinct SeriesInstanceUID_original values in the database (for progress display)."""
+    conn = sqlite3.connect(f"file:{uid_mapping_path}?mode=ro", uri=True)
+    try:
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT SeriesInstanceUID_original) FROM Instance"
+        ).fetchone()
+        return row[0] if row else 0
+    finally:
+        conn.close()
 
 
 # --------------------------------------------------------------------------- #
@@ -452,7 +463,7 @@ def main() -> None:
 
     uid_mapping_path = os.path.abspath(args.uid_mapping)
     if not os.path.isfile(uid_mapping_path):
-        print(f"ERROR: uid_mapping file not found: {uid_mapping_path}", file=sys.stderr)
+        print(f"ERROR: uid_mapping database not found: {uid_mapping_path}", file=sys.stderr)
         sys.exit(1)
 
     anonymized_folder = args.anonymized_folder
@@ -470,10 +481,10 @@ def main() -> None:
     print()
 
     # Count series first (single fast pass) so we can show [idx/total] progress.
-    print("Counting series in CSV...")
+    print("Counting series in database...")
     total_series = count_series(uid_mapping_path)
     if total_series == 0:
-        print("No series found in uid_mapping CSV. Nothing to validate.")
+        print("No series found in uid_mapping database. Nothing to validate.")
         sys.exit(0)
     print(f"Series to validate: {total_series}\n")
 
@@ -515,7 +526,7 @@ def main() -> None:
                 print(
                     "  [WARN] No original files resolved for this series - "
                     "all anonymized findings will be reported as new. "
-                    "Check --original_folder and the original_file_path column in the CSV.",
+                    "Check --original_folder and the FilePath_original column in the database.",
                     file=sys.stderr,
                 )
 

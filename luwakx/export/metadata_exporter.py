@@ -1,8 +1,8 @@
 """Metadata exporter service for UID mappings and Parquet export.
 
 This module provides the MetadataExporter class which handles exporting
-UID mappings to CSV and DICOM metadata to Parquet format, plus handling
-NRRD file movement to final destinations.
+UID mappings to a SQLite database and DICOM metadata to Parquet format,
+plus handling NRRD file movement to final destinations.
 
 """
 
@@ -10,6 +10,7 @@ import os
 import csv
 import re
 import shutil
+import sqlite3
 import traceback
 from typing import Any, Dict, List, Set
 import pydicom
@@ -17,6 +18,71 @@ import pandas as pd
 
 from ..dicom.dicom_series import DicomSeries
 from ..logging.luwak_logger import log_project_stacktrace
+
+# ---------------------------------------------------------------------------
+# SQLite UID-mappings helpers
+# ---------------------------------------------------------------------------
+
+# Core columns written for every row (in display order).
+_UID_CORE_COLUMNS: List[str] = [
+    'FilePath_original',
+    'FilePath_anonymized',
+    'PatientName_original',
+    'PatientName_anonymized',
+    'PatientID_original',
+    'PatientID_anonymized',
+    'PatientBirthDate',
+    'StudyInstanceUID_original',
+    'StudyInstanceUID_anonymized',
+    'SeriesInstanceUID_original',
+    'SeriesInstanceUID_anonymized',
+    'SOPInstanceUID_original',
+    'SOPInstanceUID_anonymized',
+]
+
+
+def _sanitize_uid_column(name: str) -> str:
+    """Replace characters invalid in SQLite unquoted identifiers with underscores.
+
+    Dots are deleted (not replaced) so that the sequence notation ``[0].``
+    becomes ``_0_`` rather than ``_0__``.
+    """
+    sanitized = re.sub(r'\.', '', name)          # delete dots
+    sanitized = re.sub(r'[\[\],\s]+', '_', sanitized)  # brackets/commas/spaces → _
+    return sanitized.strip('_')
+
+
+def _open_uid_mappings_db(db_path: str) -> sqlite3.Connection:
+    """Open (or create) the UID mappings SQLite database.
+
+    Enables WAL mode for safe concurrent writes and creates the Instance
+    table with core columns and indexes on the first call.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.execute('PRAGMA journal_mode=WAL')
+    cols_def = ', '.join(f'"{col}" TEXT' for col in _UID_CORE_COLUMNS)
+    conn.execute(f'CREATE TABLE IF NOT EXISTS Instance ({cols_def})')
+    for col in _UID_CORE_COLUMNS:
+        conn.execute(
+            f'CREATE INDEX IF NOT EXISTS "idx_{col}" ON Instance ("{col}")'
+        )
+    conn.commit()
+    return conn
+
+
+def _ensure_uid_columns(conn: sqlite3.Connection, columns: List[str]) -> None:
+    """Add any missing columns to the Instance table via ALTER TABLE."""
+    cursor = conn.execute('PRAGMA table_info(Instance)')
+    # Use lower-cased set: SQLite column names are case-insensitive in ALTER TABLE
+    existing = {row[1].lower() for row in cursor.fetchall()}
+    added = False
+    for col in columns:
+        if col.lower() not in existing:
+            conn.execute(f'ALTER TABLE Instance ADD COLUMN "{col}" TEXT')
+            existing.add(col.lower())  # prevent duplicate attempts within the same call
+            added = True
+    if added:
+        conn.commit()
 
 
 class MetadataExporter:
@@ -126,88 +192,33 @@ class MetadataExporter:
                     f"to {review_flags_file}: {e}"
                 )
 
-    def append_series_uid_mappings(self, uid_mappings_file: str, 
+    def append_series_uid_mappings(self, uid_mappings_file: str,
                                    series: 'DicomSeries',
                                    mappings: Dict[str, Any],
                                    input_folder: str,
                                    output_folder: str) -> None:
-        """Append UID mappings for one series to worker's CSV file.
-        
-        Creates file with headers on first write, then appends data.
-        CSV structure:
-        - One row per DICOM file
-        - Dynamic columns for each UID type found
-        - Patient info: PatientName, PatientID, PatientBirthDate
-        - UID pairs: {field}_original and {field}_anonymized
-        
+        """Append UID mappings for one series to the SQLite UID mappings database.
+
+        Creates the database with the core schema on the first call, then
+        appends one row per DICOM file.  New UID columns discovered in later
+        series are added via ALTER TABLE ADD COLUMN (no file rewrite needed).
+
         Args:
-            uid_mappings_file: Path to worker's UID mappings CSV file
+            uid_mappings_file: Path to the SQLite database file (uid_mappings.db)
             series: DicomSeries object containing file information
             mappings: File-based UID mappings {file_path: {field: {original, anonymized}}}
             input_folder: Input directory from config (for relative paths)
             output_folder: Output directory from config (for relative paths)
-            
-        See conformance documentation ("UID Mappings CSV" section):
+
+        See conformance documentation ("UID Mappings" section):
         https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deidentification_conformance.md#81-output-files-generated-by-luwak
         """
         if not mappings:
             return
-        
-        # Check if file exists and read existing headers for column alignment
-        file_exists = os.path.exists(uid_mappings_file)
-        existing_fieldnames = []
-        existing_rows = []
-        
-        if file_exists:
-            # Read existing CSV to get current fieldnames and data
-            try:
-                with open(uid_mappings_file, 'r', newline='') as csvfile:
-                    reader = csv.DictReader(csvfile)
-                    existing_fieldnames = reader.fieldnames or []
-                    # Read all existing rows in case we need to rewrite with new columns
-                    existing_rows = list(reader)
-            except Exception as e:
-                self.logger.warning(f"Could not read existing CSV headers from {uid_mappings_file}: {e}")
-                existing_fieldnames = []
-                existing_rows = []
-        
-        # Discover all modified fields in this batch
-        all_modified_fields = set()
-        for file_path, file_mappings in mappings.items():
-            all_modified_fields.update(file_mappings.keys())
-        
-        # Sort for consistent column ordering
-        sorted_fields = sorted(all_modified_fields)
-        
-        # Build CSV structure with dynamic columns for this batch
-        patient_columns = ['PatientName_original', 'PatientName_anonymized', 'PatientID_original', 'PatientID_anonymized', 'PatientBirthDate']
-        new_fieldnames = ['original_file_path', 'anonymized_file_path'] + patient_columns
-        for field in sorted_fields:
-            new_fieldnames.extend([f'{field}_original', f'{field}_anonymized'])
-        
-        # Merge existing and new fieldnames, preserving order and adding new columns at end
-        if existing_fieldnames:
-            # Start with existing columns
-            merged_fieldnames = list(existing_fieldnames)
-            # Add any new columns that don't exist yet
-            for field in new_fieldnames:
-                if field not in merged_fieldnames:
-                    merged_fieldnames.append(field)
-            fieldnames = merged_fieldnames
-            
-            # Check if we have new columns - if so, we need to rewrite the file
-            has_new_columns = len(merged_fieldnames) > len(existing_fieldnames)
-        else:
-            # First write - use new fieldnames
-            fieldnames = new_fieldnames
-            has_new_columns = False
-        
-        # Create a map from input paths to DicomFile objects for quick lookup
-        # The mappings dict uses the path that was INPUT to anonymization (defaced or organized)
-        # not the anonymized output path
-        file_map = {}
+
+        # Build file→DicomFile lookup keyed by the path used as input to anonymization.
+        file_map: Dict[str, Any] = {}
         for dicom_file in series.files:
-            # Get the path that was used as input during anonymization
             if dicom_file.defaced_path:
                 input_path = dicom_file.defaced_path
             elif dicom_file.organized_path:
@@ -215,36 +226,54 @@ class MetadataExporter:
             else:
                 input_path = dicom_file.original_path
             file_map[input_path] = dicom_file
-        
-        # If we have new columns, rewrite entire file with updated headers
-        if has_new_columns:
-            self.logger.debug(f"Detected new columns in UID mappings, rewriting {uid_mappings_file} with updated headers")
-            # Write everything back with new headers
-            with open(uid_mappings_file, 'w', newline='') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-                # Write existing rows (missing columns will be empty)
-                for row in existing_rows:
-                    writer.writerow(row)
-                # Now append new rows
-                for file_path, file_mappings in mappings.items():
-                    row = self._build_uid_mapping_row(file_path, file_mappings, series, 
-                                                      file_map, input_folder, output_folder)
-                    writer.writerow(row)
-        else:
-            # No new columns - just append
-            with open(uid_mappings_file, 'a', newline='') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                
-                # Write header only on first write
-                if not file_exists:
-                    writer.writeheader()
-                
-                # Write one row per file
-                for file_path, file_mappings in mappings.items():
-                    row = self._build_uid_mapping_row(file_path, file_mappings, series, 
-                                                      file_map, input_folder, output_folder)
-                    writer.writerow(row)
+
+        # Build rows and collect the full set of sanitized column names.
+        # Use lower-cased seen_columns to deduplicate case-insensitively, matching
+        # SQLite's case-insensitive column name handling in ALTER TABLE ADD COLUMN.
+        rows: List[Dict[str, str]] = []
+        all_columns: List[str] = list(_UID_CORE_COLUMNS)
+        seen_columns: Set[str] = {c.lower() for c in _UID_CORE_COLUMNS}
+        for file_path, file_mappings in mappings.items():
+            raw_row = self._build_uid_mapping_row(
+                file_path, file_mappings, series, file_map, input_folder, output_folder
+            )
+            sanitized_row = {_sanitize_uid_column(k): v for k, v in raw_row.items()}
+            for col in sanitized_row:
+                if col.lower() not in seen_columns:
+                    all_columns.append(col)
+                    seen_columns.add(col.lower())
+            rows.append(sanitized_row)
+
+        os.makedirs(os.path.dirname(os.path.abspath(uid_mappings_file)), exist_ok=True)
+        conn = None
+        try:
+            conn = _open_uid_mappings_db(uid_mappings_file)
+            _ensure_uid_columns(conn, all_columns)
+            for row in rows:
+                cols = list(row.keys())
+                placeholders = ', '.join('?' * len(cols))
+                col_names = ', '.join(f'"{c}"' for c in cols)
+                conn.execute(
+                    f'INSERT INTO Instance ({col_names}) VALUES ({placeholders})',
+                    [row[c] for c in cols],
+                )
+            conn.commit()
+            if self.logger:
+                self.logger.debug(
+                    f'MetadataExporter: wrote {len(rows)} UID mapping row(s) to {uid_mappings_file}'
+                )
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(
+                    f'MetadataExporter: failed to write {len(rows)} UID mapping row(s) '
+                    f'to {uid_mappings_file}: {e}'
+                )
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
     
     def _build_uid_mapping_row(self, file_path: str, file_mappings: Dict[str, Any],
                                 series: 'DicomSeries', file_map: Dict[str, Any],
@@ -279,8 +308,8 @@ class MetadataExporter:
             anonymized_rel_path = os.path.basename(file_path)
         
         row = {
-            'original_file_path': original_rel_path,
-            'anonymized_file_path': anonymized_rel_path
+            'FilePath_original': original_rel_path,
+            'FilePath_anonymized': anonymized_rel_path,
         }
         
         # Try to extract patient info from original file
@@ -298,7 +327,6 @@ class MetadataExporter:
         except Exception as e:
             self.logger.warning(f"Could not read patient info from {file_path}: {e}")
         
-        # Add UID mappings
         # Add UID mappings
         for field, mapping in file_mappings.items():
             row[f'{field}_original'] = mapping.get('original', '')
