@@ -247,7 +247,7 @@ class PipelineCoordinator:
         self.logger.info("Export finalization: Files already written directly during processing")
         
         # Verify final files exist
-        uid_mappings_path = os.path.join(private_folder, 'uid_mappings.csv')
+        uid_mappings_path = os.path.join(private_folder, 'uid_mappings.db')
         metadata_path = os.path.join(private_folder, 'metadata.parquet')
         
         if os.path.exists(uid_mappings_path):
