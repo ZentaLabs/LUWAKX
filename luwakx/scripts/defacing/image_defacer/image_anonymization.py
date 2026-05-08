@@ -1,7 +1,11 @@
+import logging
+import os
+
 import SimpleITK
 import numpy as np
-import os
 from moosez import moose
+
+logger = logging.getLogger(__name__)
 
 
 def blur_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, sigma: float = 3.0):
@@ -31,17 +35,54 @@ def prepare_face_mask(image: SimpleITK.Image | None = None, modality: str | None
     else:
         raise ValueError("Either the path or image and modality must be provided.")
 
-    face_segmentation_image_largest_label = keep_largest_component(image_face_segmentation)
+    # Reject unsupported labels so the caller (pipeline) routes the series to manual review.
+    label_stats = SimpleITK.LabelShapeStatisticsImageFilter()
+    label_stats.Execute(image_face_segmentation)
+    present_labels = set(label_stats.GetLabels())
+    unexpected_labels = sorted(present_labels - {1, 2})
+    if unexpected_labels:
+        raise RuntimeError(
+            f"Unexpected mask labels {unexpected_labels}; only label 1 (face) and "
+            "label 2 (ears) are supported. Manual review required."
+        )
+
+    # Face (label 1) comes from ML and may contain stray components — keep largest only.
+    if 1 in present_labels:
+        face_label = SimpleITK.Cast(SimpleITK.Equal(image_face_segmentation, 1), SimpleITK.sitkUInt8)
+        face_label_largest = keep_largest_component(face_label)
+    else:
+        face_label_largest = None
+
+    # Ears (label 2) are typically two disjoint blobs — keep all components.
+    if 2 in present_labels:
+        ears_label = SimpleITK.Cast(SimpleITK.Equal(image_face_segmentation, 2), SimpleITK.sitkUInt8)
+    else:
+        ears_label = None
+
+    if face_label_largest is not None and ears_label is not None:
+        combined_mask = SimpleITK.Or(face_label_largest, ears_label)
+    elif face_label_largest is not None:
+        combined_mask = face_label_largest
+    elif ears_label is not None:
+        combined_mask = ears_label
+    else:
+        # Empty mask raises so the pipeline falls back to copy-without-defacing.
+        raise RuntimeError(
+            "Face segmentation mask contains no foreground voxels (no label 1 or 2). "
+            "The volume may not contain a face/head region."
+        )
+
+    combined_mask = SimpleITK.Cast(combined_mask, SimpleITK.sitkUInt8)
 
     if dilation_margin_mm > 0:
-        min_spacing = min(face_segmentation_image_largest_label.GetSpacing())
+        min_spacing = min(combined_mask.GetSpacing())
         dilation_radius = int(np.ceil(dilation_margin_mm / min_spacing))
         dilate_filter = SimpleITK.BinaryDilateImageFilter()
         dilate_filter.SetKernelRadius(dilation_radius)
         dilate_filter.SetForegroundValue(1)
-        face_segmentation_image_largest_label = dilate_filter.Execute(face_segmentation_image_largest_label)
+        combined_mask = dilate_filter.Execute(combined_mask)
 
-    return face_segmentation_image_largest_label
+    return combined_mask
 
 
 def pixelate_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, target_block_size_mm: float = 8.5) -> SimpleITK.Image:
