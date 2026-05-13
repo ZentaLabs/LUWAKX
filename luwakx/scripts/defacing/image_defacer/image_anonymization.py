@@ -114,12 +114,6 @@ def pixelate_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, target_blo
                                        outputOrigin=image.GetOrigin(),
                                        outputDirection=image.GetDirection())
 
-    mask_low_res = SimpleITK.Resample(face_mask, transform=transform, interpolator=interpolator,
-                                      size=down_size,
-                                      outputSpacing=down_spacing,
-                                      outputOrigin=face_mask.GetOrigin(),
-                                      outputDirection=face_mask.GetDirection())
-
     image_pixelated_f = SimpleITK.Resample(image_low_res, transform=transform, interpolator=interpolator,
                                            size=image.GetSize(),
                                            outputSpacing=image.GetSpacing(),
@@ -127,16 +121,12 @@ def pixelate_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, target_blo
                                            outputDirection=image.GetDirection(),
                                            outputPixelType=SimpleITK.sitkFloat32)
 
-    mask_pixelated_f = SimpleITK.Resample(mask_low_res, transform=transform, interpolator=interpolator,
-                                          size=image.GetSize(),
-                                          outputSpacing=image.GetSpacing(),
-                                          outputOrigin=face_mask.GetOrigin(),
-                                          outputDirection=face_mask.GetDirection(),
-                                          outputPixelType=SimpleITK.sitkFloat32)
+    # Use the mask at its original resolution: down/up-resampling drops thin structures (e.g. ears).
+    mask_f = SimpleITK.Cast(face_mask, SimpleITK.sitkFloat32)
 
     image_f = SimpleITK.Cast(image, SimpleITK.sitkFloat32)
-    image_face = SimpleITK.Multiply(image_pixelated_f, mask_pixelated_f)
-    image_background = SimpleITK.Multiply(image_f, 1.0 - mask_pixelated_f)
+    image_face = SimpleITK.Multiply(image_pixelated_f, mask_f)
+    image_background = SimpleITK.Multiply(image_f, 1.0 - mask_f)
     image_blended = SimpleITK.Add(image_face, image_background)
 
     return SimpleITK.Cast(image_blended, image.GetPixelID())
