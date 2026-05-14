@@ -28,6 +28,7 @@ https://github.com/ZentaLabs/LUWAKX/blob/conformance-document-creation/docs/deid
 
 import json
 import os
+import pathlib
 import sqlite3
 import threading
 import hashlib
@@ -306,12 +307,23 @@ class DefaceMaskDatabase:
             # file during pre-resume cleanup).  Treat a missing file as a cache
             # miss so the pipeline re-runs ML inference and updates the entry.
             mask_path = row['mask_path']
-            if mask_path and not os.path.exists(mask_path):
-                self.logger.warning(
-                    f'DefaceMaskDatabase: cached mask file missing on disk, '
-                    f'treating as cache miss: {mask_path}'
-                )
-                return None
+            if mask_path:
+                # mask_path is stored relative to private_folder, which is the
+                # directory containing this database file.  Resolve to an
+                # absolute path before the existence check so that the check
+                # is correct regardless of the process working directory.
+                # pathlib.Path.resolve() also handles the Windows \\?\ long-path
+                # prefix transparently, avoiding silent False on paths > 260 chars.
+                abs_mask_path = pathlib.Path(
+                    mask_path if os.path.isabs(mask_path)
+                    else os.path.join(os.path.dirname(self.db_path), mask_path)
+                ).resolve()
+                if not abs_mask_path.exists():
+                    self.logger.warning(
+                        f'DefaceMaskDatabase: cached mask file missing on disk, '
+                        f'treating as cache miss: {mask_path}'
+                    )
+                    return None
 
             return {
                 'mask_path':              mask_path,
