@@ -115,6 +115,13 @@
       "minimum": 1.0,
       "examples": [8.5, 10.0, 5.0]
     },
+    "faceDilationMarginMm": {
+      "type": "number",
+      "description": "Margin in millimeters by which the face mask is dilated before pixelation. A larger margin grows the anonymized region outward, tolerating segmentation under-coverage at the cost of pixelating more surrounding tissue. Set to 0 to disable dilation.",
+      "default": 15.0,
+      "minimum": 0.0,
+      "examples": [15.0, 3.0, 0.0]
+    },
     "selectedModalities": {
       "type": "array",
       "description": "List of DICOM modalities to include in processing. If empty or not set, all modalities are included.",
