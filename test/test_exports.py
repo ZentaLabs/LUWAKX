@@ -22,14 +22,13 @@ class TestExports(unittest.TestCase):
 
         # Path to the decompressed test data directory
         cls.test_data_dir = "test_data"
-        token = os.environ.get("TEST_DATA_TOKEN")
         #target_dir = os.path.join(cls.test_data_dir, "test-dicom-files-Midi-B-2024")
         # Check if the test data directory exists
         if not os.path.exists(cls.test_data_dir):
             os.makedirs(cls.test_data_dir, exist_ok=True)
             archive_path = os.path.join(cls.test_data_dir, "test-dicom-files-Midi-B-2024.tar.gz")
             download_github_asset_by_tag(
-                "ZentaLabs", "LUWAKX", "testing-data", "test-dicom-files-Midi-B-2024.tar.gz", archive_path, token
+                "ZentaLabs", "LUWAKX", "testing-data", "test-dicom-files-Midi-B-2024.tar.gz", archive_path
             )
             # Extract the archive
             with tarfile.open(archive_path, "r:gz") as tar:

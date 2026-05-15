@@ -33,12 +33,11 @@ class TestDefacerProfile(unittest.TestCase):
 
         # Create required directories
         os.makedirs(cls.test_volume_dir, exist_ok=True)
-        token = os.environ.get("TEST_DATA_TOKEN")
         # Download and extract CT_Vol_002_STD_dcm.zip into test_data_defacer/test_volume
         dcm_zip_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_dcm.zip")
         if not os.path.exists(os.path.join(cls.test_volume_dir, "CT_Vol_002_STD_dcm")):
             download_github_asset_by_tag(
-                "ZentaLabs", "LUWAKX", "testing-data", "CT_Vol_002_STD_dcm.zip", dcm_zip_path, token
+                "ZentaLabs", "LUWAKX", "testing-data", "CT_Vol_002_STD_dcm.zip", dcm_zip_path
             )
             target_dir = os.path.join(cls.test_volume_dir, "CT_Vol_002_STD_dcm")
             os.makedirs(target_dir, exist_ok=True)
@@ -46,11 +45,11 @@ class TestDefacerProfile(unittest.TestCase):
                 zip_ref.extractall(target_dir)
             os.remove(dcm_zip_path)
 
-        # Download CT_Vol_002_STD_face_mask.nrrd into test_data_defacer/
-        nii_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd")
+        # Download CT_Vol_002_STD_face-ears_mask.nrrd into test_data_defacer/
+        nii_path = os.path.join(cls.test_data_dir, "CT_Vol_002_STD_face-ears_mask.nrrd")
         if not os.path.exists(nii_path):
             download_github_asset_by_tag(
-                "ZentaLabs", "LUWAKX", "testing-data", "CT_Vol_002_STD_face_mask.nrrd", nii_path, token
+                "ZentaLabs", "LUWAKX", "testing-data", "CT_Vol_002_STD_face-ears_mask.nrrd", nii_path
             )
 
     @classmethod
@@ -117,7 +116,7 @@ class TestDefacerProfile(unittest.TestCase):
 
         simulate = os.environ.get("DEFACER_SIMULATE", "0") == "1"
         if simulate:
-            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
+            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face-ears_mask.nrrd"))
             config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir, [useExistingMaskDefacer])
         else:
             config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir)
@@ -198,7 +197,7 @@ class TestDefacerProfile(unittest.TestCase):
         # Load face mask and apply the same preparation as DefaceService (prepare_face_mask),
         # so the reference mask matches exactly what defacing operated on.
         from luwakx.scripts.defacing.image_defacer.image_anonymization import prepare_face_mask
-        face_mask_path = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
+        face_mask_path = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face-ears_mask.nrrd"))
         face_dilation_margin_mm = config.get('faceDilationMarginMm', 15.0)
         block_size_mm = config.get('physicalFacePixelationSizeMm', 8.5)
         min_spacing = min(original_vol.GetSpacing())
@@ -302,7 +301,7 @@ class TestDefacerProfile(unittest.TestCase):
         # Simple GPU check
         simulate = os.environ.get("DEFACER_SIMULATE", "0") == "1"
         if simulate:
-            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face_mask.nrrd"))
+            useExistingMaskDefacer = os.path.abspath(os.path.join(self.test_data_dir, "CT_Vol_002_STD_face-ears_mask.nrrd"))
             config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir, [useExistingMaskDefacer])
         else:
             config_path = self.create_test_config(self.test_volume_dir, self.test_output_dir)
