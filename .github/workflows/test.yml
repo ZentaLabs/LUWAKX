@@ -12,8 +12,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      TEST_DATA_TOKEN: ${{ secrets.TEST_DATA_TOKEN }}
 
     steps:
     # Checkout the repository
@@ -39,7 +37,7 @@ jobs:
           test_data
           test_data_defacer
           test_llm_cache
-        key: ${{ runner.os }}-test-data-v1
+        key: ${{ runner.os }}-test-data-v2
         restore-keys: |
           ${{ runner.os }}-test-data-
 
@@ -64,4 +62,4 @@ jobs:
           test_data
           test_data_defacer
           test_llm_cache
-        key: ${{ runner.os }}-test-data-v1
+        key: ${{ runner.os }}-test-data-v2

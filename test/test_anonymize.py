@@ -32,13 +32,12 @@ class TestAnonymizeScript(unittest.TestCase):
             cls.llm_cache_folder = os.path.abspath(cls.llm_cache_folder)
         # Path to the decompressed test data directory
         cls.test_data_dir = "test_data"
-        token = os.environ.get("TEST_DATA_TOKEN")
         archive_download_completed_path = os.path.join(cls.test_data_dir, ".test-dicom-files-Midi-B-2024-download-completed")
         if not os.path.exists(archive_download_completed_path):
             archive_path = os.path.join(cls.test_data_dir, "test-dicom-files-Midi-B-2024.tar.gz")
             os.makedirs(cls.test_data_dir, exist_ok=True)
             download_github_asset_by_tag(
-                "ZentaLabs", "LUWAKX", "testing-data", "test-dicom-files-Midi-B-2024.tar.gz", archive_path, token
+                "ZentaLabs", "LUWAKX", "testing-data", "test-dicom-files-Midi-B-2024.tar.gz", archive_path
             )
             # Extract the archive
             with tarfile.open(archive_path, "r:gz") as tar:
@@ -736,8 +735,7 @@ class TestAnonymizeScript(unittest.TestCase):
             src_cache = os.path.join(self.test_data_dir, "test_llm_cache.db")
             dst_cache = os.path.join(self.llm_cache_folder, "llm_cache.db")
             if not os.path.exists(src_cache):
-                token = os.environ.get("TEST_DATA_TOKEN")
-                download_github_asset_by_tag("ZentaLabs", "LUWAKX", "testing-data", "test_llm_cache.db", src_cache, token)
+                download_github_asset_by_tag("ZentaLabs", "LUWAKX", "testing-data", "test_llm_cache.db", src_cache)
 
             shutil.copy2(src_cache, dst_cache)
             self.logger.info(f"Initialized LLM cache from {src_cache}")

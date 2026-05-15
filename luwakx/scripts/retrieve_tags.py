@@ -69,7 +69,6 @@ def read_tcia_csv(tcia_csv_path, tcia_url=None):
     """
     foldername = os.path.dirname(tcia_csv_path) or '.'
     filename = os.path.basename(tcia_csv_path)
-    token = os.environ.get("TEST_DATA_TOKEN")
     if os.path.exists(tcia_csv_path):
         print(f"File {filename} already in {foldername}.")
     else:
@@ -79,7 +78,7 @@ def read_tcia_csv(tcia_csv_path, tcia_url=None):
         #these new lines are necessary as the url is no longer available for download and the file is hosted on GitHub
         archive_path = os.path.join(foldername,filename)
         download_github_asset_by_tag(
-            "ZentaLabs", "LUWAKX", "dicom-dictionaries", filename, archive_path, token
+            "ZentaLabs", "LUWAKX", "dicom-dictionaries", filename, archive_path
         )
 
     tcia_df = pd.read_csv(tcia_csv_path)
