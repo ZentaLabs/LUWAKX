@@ -107,7 +107,12 @@ class MetadataExporter:
         """
         self.config = config
         self.logger = logger
-        
+
+        # Persistent connection to uid_mappings.db - opened lazily on the first
+        # append_series_uid_mappings call and kept open until close() is called.
+        self._uid_conn: Optional[sqlite3.Connection] = None
+        self._uid_conn_path: str = ''
+
         # Parse excluded tags from Parquet export
         self.excluded_tags_from_parquet = self._parse_excluded_tags(
             config.get('excludedTagsFromParquet', [])
@@ -245,9 +250,23 @@ class MetadataExporter:
             rows.append(sanitized_row)
 
         os.makedirs(os.path.dirname(os.path.abspath(uid_mappings_file)), exist_ok=True)
-        conn = None
         try:
-            conn = _open_uid_mappings_db(uid_mappings_file)
+            # Reuse the persistent connection when the path matches; open it
+            # lazily on the first call and keep it alive for the full run.
+            if self._uid_conn is None or self._uid_conn_path != uid_mappings_file:
+                if self._uid_conn is not None:
+                    # Path changed (shouldn't happen in normal use) - close old one.
+                    try:
+                        self._uid_conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                    except Exception:
+                        pass
+                    try:
+                        self._uid_conn.close()
+                    except Exception:
+                        pass
+                self._uid_conn = _open_uid_mappings_db(uid_mappings_file)
+                self._uid_conn_path = uid_mappings_file
+            conn = self._uid_conn
             _ensure_uid_columns(conn, all_columns)
             for row in rows:
                 cols = list(row.keys())
@@ -268,12 +287,6 @@ class MetadataExporter:
                     f'MetadataExporter: failed to write {len(rows)} UID mapping row(s) '
                     f'to {uid_mappings_file}: {e}'
                 )
-        finally:
-            if conn is not None:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
     
     def _build_uid_mapping_row(self, file_path: str, file_mappings: Dict[str, Any],
                                 series: 'DicomSeries', file_map: Dict[str, Any],
@@ -692,3 +705,17 @@ class MetadataExporter:
         except Exception as e:
             self.logger.error(f"Error exporting metadata to Parquet: {e}")
             return None
+
+    def close(self) -> None:
+        """Close the persistent uid_mappings.db connection, checkpointing the WAL first."""
+        if self._uid_conn is not None:
+            try:
+                self._uid_conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            except Exception:
+                pass
+            try:
+                self._uid_conn.close()
+            except Exception:
+                pass
+            self._uid_conn = None
+            self._uid_conn_path = ''
