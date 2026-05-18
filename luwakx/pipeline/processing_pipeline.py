@@ -353,7 +353,11 @@ class ProcessingPipeline:
         # Update checkpoint timestamp on clean exit (graceful stop or completion)
         if self.checkpoint_db and self.job_id:
             self.checkpoint_db.touch_job(self.job_id)
-        
+
+        # Close the persistent uid_mappings.db connection (checkpoints WAL → single .db file).
+        if self._exporter is not None:
+            self._exporter.close()
+
         # Mark export stage complete (exports happened incrementally during processing)
         self.current_stage = ProcessingStage.EXPORT_METADATA
         
