@@ -165,7 +165,16 @@ class DefaceService:
             series_folder = os.path.dirname(organized_files[0])
             gdcm_sorted_files = reader.GetGDCMSeriesFileNames(series_folder, series.original_series_uid)
             reader.SetFileNames(gdcm_sorted_files)
+
+            # Use float32 regardless of the declared DICOM storage type to prevent
+            # silent integer overflow. 
+            # Note: to use the DICOM-declared type instead (may overflow for PET),
+            # derive it from BitsAllocated + PixelRepresentation and pass
+            # _sitk_type_map[(_bits, _signed)] to SetOutputPixelType.
+            reader.SetOutputPixelType(SimpleITK.sitkFloat32)
+
             image = reader.Execute()
+            
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
@@ -246,6 +255,41 @@ class DefaceService:
                         f"{series.anonymized_series_uid!r}: {self._rel_path(cached_mask_path)}"
                     )
                     image_face_segmentation = SimpleITK.ReadImage(cached_mask_path)
+                    # If this CT is a primary deface candidate, update any pairing rows
+                    # that were inserted fresh in this run (mask_path = NULL) with the
+                    # cached mask path.  This handles the case where the deface mask DB
+                    # is persistent but new PET series have been added since the last run:
+                    # the CT hits the cache so _persist_mask_to_db is never called, but
+                    # the newly-inserted pairing rows still need mask_path filled in.
+                    if series.is_primary_deface_candidate and self.deface_mask_db is not None:
+                        try:
+                            rel_mask_path = os.path.relpath(cached_mask_path, self.private_folder)
+                            for_uid = series.frame_of_reference_uid or ''
+                            pairings = self.deface_mask_db.get_pairings_for_ct(
+                                study_instance_uid     = series.original_study_uid,
+                                frame_of_reference_uid = for_uid,
+                                ct_series_uid          = series.original_series_uid,
+                            )
+                            updated = 0
+                            for pairing in pairings:
+                                if not pairing.get('mask_path'):
+                                    self.deface_mask_db.update_pairing_mask_path(
+                                        study_instance_uid     = series.original_study_uid,
+                                        frame_of_reference_uid = for_uid,
+                                        pet_series_uid         = pairing['pet_series_uid'],
+                                        mask_path              = rel_mask_path,
+                                    )
+                                    updated += 1
+                            if updated:
+                                self.logger.private(
+                                    f"Updated mask_path in {updated} pairing row(s) from cached "
+                                    f"CT mask for CT {series.original_series_uid!r}"
+                                )
+                        except Exception as e:
+                            log_project_stacktrace(self.logger, e)
+                            self.logger.warning(
+                                f"Failed to update pairing rows from cached CT mask: {e}"
+                            )
 
                 if cached_mask_path is None:
                     # 3b: Run ML inference.
@@ -353,8 +397,27 @@ class DefaceService:
                 rescale_slope = getattr(ds, 'RescaleSlope', 1.0)
                 rescale_intercept = getattr(ds, 'RescaleIntercept', 0.0)
 
+                # Derive dtype from DICOM tags (avoids decoding pixel data just for dtype)
+                _bits = int(getattr(ds, 'BitsAllocated', 16))
+                _signed = int(getattr(ds, 'PixelRepresentation', 0)) == 1
+                _pixel_dtype = np.dtype(f"{'i' if _signed else 'u'}{_bits // 8}")
+
+                if (modality or '').upper() == 'PT' and file_idx == 0:
+                    _orig_pixels = ds.pixel_array
+
                 # Apply inverse scaling to get back to raw stored values
-                raw_pixels = ((slice_2d - rescale_intercept) / rescale_slope).round().astype(ds.pixel_array.dtype)
+                raw_pixels = ((slice_2d - rescale_intercept) / rescale_slope).round().astype(_pixel_dtype)
+
+                if (modality or '').upper() == 'PT' and file_idx == 0:
+                    self.logger.info(
+                        f"[DEBUG rescale] slice {file_idx}: "
+                        f"BitsAllocated={_bits}, PixelRepresentation={'signed' if _signed else 'unsigned'}, "
+                        f"dtype_from_tags={_pixel_dtype}, dtype_from_pixel_array={_orig_pixels.dtype} | "
+                        f"original_stored min={_orig_pixels.min()} max={_orig_pixels.max()} | "
+                        f"itk_defaced min={slice_2d.min():.4f} max={slice_2d.max():.4f} | "
+                        f"raw_pixels_computed min={raw_pixels.min()} max={raw_pixels.max()} | "
+                        f"rescale_slope={rescale_slope}, rescale_intercept={rescale_intercept}"
+                    )
                 ds.PixelData = raw_pixels.tobytes()
                 
                 # If the original file used a compressed transfer syntax, the raw
@@ -738,6 +801,10 @@ class DefaceService:
             defaced_reader = SimpleITK.ImageSeriesReader()
             defaced_files = defaced_reader.GetGDCMSeriesFileNames(defaced_dicom_dir, original_series_uid)
             defaced_reader.SetFileNames(defaced_files)
+            # Must match the pixel type of the original volume (float32) so that
+            # both arrays share the same dtype and np.isclose comparison is valid.
+            # See the overflow note on the main reader above for why float32 is used.
+            defaced_reader.SetOutputPixelType(SimpleITK.sitkFloat32)
             defaced_arr = SimpleITK.GetArrayFromImage(defaced_reader.Execute())
 
             face_margin_mm  = self.face_dilation_margin_mm

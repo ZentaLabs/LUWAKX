@@ -377,6 +377,11 @@ class ProcessingPipeline:
         if self.checkpoint_db and self.job_id:
             self.checkpoint_db.mark_series_status(self.job_id, uid, ProcessingStatus.ORGANIZED)
 
+        # Stage 1b: Apply DICOM file-level fixups before any pixel work.
+        # Only needed when a pixel-modifying recipe is active.
+        if self._needs_defacing(series) or self._needs_pixel_cleaning(series):
+            self._fix_organized_files(series)
+
         # Stage 2: Deface (if needed)
         if self._needs_defacing(series):
             self._deface_series(series)
@@ -449,6 +454,56 @@ class ProcessingPipeline:
         
         series.processing_status = ProcessingStatus.ORGANIZED
     
+    def _fix_organized_files(self, series: DicomSeries) -> None:
+        """Apply DICOM file-level fixups to organized temp files before pixel work.
+
+        This method is the single extension point for correcting encoding or
+        metadata issues that would cause downstream pixel-reading services
+        (DefaceService, CleanPixelDataService, …) to misinterpret pixel values.
+        It runs on the temp copies in the organized folder, so the original
+        source files are never modified.
+
+        Fixups applied here:
+          - MONOCHROME1 -> MONOCHROME2 (PhotometricInterpretation):
+            GDCM applies a bitwise complement (~v) to signed int16 pixels when
+            PhotometricInterpretation == MONOCHROME1, inverting all stored values.
+            Rewriting the tag before any GDCM/SimpleITK pixel read corrects this.
+
+        Args:
+            series: DicomSeries whose organized files should be fixed.
+        """
+        import pydicom
+
+        organized_files = series.get_organized_files()
+        if not organized_files:
+            return
+
+        first_ds = pydicom.dcmread(organized_files[0], stop_before_pixels=True)
+        original_pi = str(getattr(first_ds, 'PhotometricInterpretation', ''))
+        del first_ds
+
+        if original_pi == 'MONOCHROME1':
+            series.metadata['original_photometric_interpretation'] = 'MONOCHROME1'
+            if self.logger:
+                self.logger.info(
+                    f"Worker {self.worker_id}: Patching PhotometricInterpretation "
+                    f"MONOCHROME1 -> MONOCHROME2 in {len(organized_files)} file(s) "
+                    f"(series {series.anonymized_series_uid!r})"
+                )
+            for dicom_file in series.files:
+                if dicom_file.organized_path is None:
+                    continue
+                ds = pydicom.dcmread(dicom_file.organized_path)
+                ds.PhotometricInterpretation = 'MONOCHROME2'
+                ds.save_as(dicom_file.organized_path)
+                # Restore the original file's mtime on the organized copy so that
+                # _organize_series()'s mtime check still recognises the file as
+                # up-to-date on a resume.  Without this, pydicom's save_as() gives
+                # the file a new mtime, causing _organize_series() to re-copy every
+                # file from the source on resume (defeating the skip-copy optimisation).
+                orig_stat = os.stat(dicom_file.original_path)
+                os.utime(dicom_file.organized_path, (orig_stat.st_atime, orig_stat.st_mtime))
+
     def _deface_series(self, series: DicomSeries) -> None:
         """Deface a single series.
         
