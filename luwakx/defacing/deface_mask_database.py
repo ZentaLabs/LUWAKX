@@ -148,6 +148,18 @@ class DefaceMaskDatabase:
         if 'linked_pet_series_uid' in existing_cols:
             self._migrate_remove_pet_uid_from_mask_cache(cursor)
 
+        # The column was originally named ct_series_instance_uid but is used for
+        # any modality.  Rename it transparently on existing databases.
+        # Re-read column list in case the table was just rebuilt above.
+        existing_cols = {row[1] for row in cursor.execute('PRAGMA table_info(deface_mask_cache)')}
+        if 'ct_series_instance_uid' in existing_cols:
+            cursor.execute(
+                'ALTER TABLE deface_mask_cache RENAME COLUMN ct_series_instance_uid TO series_instance_uid'
+            )
+            self.logger.info(
+                'Migrated deface_mask_cache: renamed ct_series_instance_uid -> series_instance_uid'
+            )
+
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_dmc_cache_key
             ON deface_mask_cache (cache_key, modality, series_instance_uid)
