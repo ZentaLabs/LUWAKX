@@ -204,46 +204,57 @@ class DefaceService:
 
             elif series.primary_ct_series is not None:
                 # Strategy 2: PET paired with a CT primary.
-                # Retrieve the CT face mask from the database, resample it onto this
-                # series' geometry (same FrameOfReferenceUID guarantees spatial
-                # co-registration), and apply pixelation directly - no ML inference.
-                ct_mask_path = self._get_ct_mask_for_pet(series)
-                if ct_mask_path is None:
-                    self.logger.warning(
-                        f"CT face mask not yet available for secondary series "
-                        f"{series.anonymized_series_uid!r} "
-                        f"(primary CT: {series.primary_ct_series.anonymized_series_uid!r}); "
-                        f"falling back to copy without defacing."
+                # 2a: Check if this secondary series already has its own cached mask
+                #     saved from a previous run (only present when saveDefaceMasks=true
+                #     was active).  Reuse it directly - no CT lookup or resampling needed.
+                cached_pet_mask_path = self._get_cached_mask_path(series)
+                if cached_pet_mask_path is not None:
+                    self.logger.info(
+                        f"Reusing cached face mask for secondary series "
+                        f"{series.anonymized_series_uid!r}: {self._rel_path(cached_pet_mask_path)}"
                     )
-                    return self._copy_without_defacing(series)
+                    image_face_segmentation = SimpleITK.ReadImage(cached_pet_mask_path)
+                else:
+                    # 2b: Retrieve the CT face mask from the database, resample it onto
+                    # this series' geometry (same FrameOfReferenceUID guarantees spatial
+                    # co-registration), and apply pixelation directly - no ML inference.
+                    ct_mask_path = self._get_ct_mask_for_pet(series)
+                    if ct_mask_path is None:
+                        self.logger.warning(
+                            f"CT face mask not yet available for secondary series "
+                            f"{series.anonymized_series_uid!r} "
+                            f"(primary CT: {series.primary_ct_series.anonymized_series_uid!r}); "
+                            f"falling back to copy without defacing."
+                        )
+                        return self._copy_without_defacing(series)
 
-                self.logger.info(
-                    f"Projecting CT face mask onto secondary series "
-                    f"(modality={modality}): {self._rel_path(ct_mask_path)}"
-                )
-                # SimpleITK reads compressed NRRD automatically.
-                ct_mask_image = SimpleITK.ReadImage(ct_mask_path)
+                    self.logger.info(
+                        f"Projecting CT face mask onto secondary series "
+                        f"(modality={modality}): {self._rel_path(ct_mask_path)}"
+                    )
+                    # SimpleITK reads compressed NRRD automatically.
+                    ct_mask_image = SimpleITK.ReadImage(ct_mask_path)
 
-                # Resample CT mask onto target series geometry using nearest-neighbour
-                # interpolation (mask is binary - continuous interpolation would blur edges).
-                resampler = SimpleITK.ResampleImageFilter()
-                resampler.SetReferenceImage(image)
-                resampler.SetInterpolator(SimpleITK.sitkNearestNeighbor)
-                resampler.SetDefaultPixelValue(0)
-                image_face_segmentation = resampler.Execute(ct_mask_image)
+                    # Resample CT mask onto target series geometry using nearest-neighbour
+                    # interpolation (mask is binary - continuous interpolation would blur edges).
+                    resampler = SimpleITK.ResampleImageFilter()
+                    resampler.SetReferenceImage(image)
+                    resampler.SetInterpolator(SimpleITK.sitkNearestNeighbor)
+                    resampler.SetDefaultPixelValue(0)
+                    image_face_segmentation = resampler.Execute(ct_mask_image)
 
-                if self.save_all_masks:
-                    try:
-                        self._persist_mask_to_db(series, image_face_segmentation, image)
-                    except Exception as e:
-                        log_project_stacktrace(self.logger, e)
-                        self.logger.warning(f"Failed to persist resampled PET face mask to database: {e}")
+                    if self.save_all_masks:
+                        try:
+                            self._persist_mask_to_db(series, image_face_segmentation, image)
+                        except Exception as e:
+                            log_project_stacktrace(self.logger, e)
+                            self.logger.warning(f"Failed to persist resampled PET face mask to database: {e}")
 
             else:
                 # Strategy 3: CT-only or standalone modality.
                 # 3a: Check DB cache - reuse a mask saved during a *previous run of
                 #     this exact series*.  Cache hit is only valid when the stored
-                #     ct_series_instance_uid matches this series' UID, guaranteeing
+                #     series_instance_uid matches this series' UID, guaranteeing
                 #     identical geometry (no resampling needed).  Any other cached
                 #     entry (different source series) is ignored and
                 #     ML inference runs fresh.
@@ -408,16 +419,6 @@ class DefaceService:
                 # Apply inverse scaling to get back to raw stored values
                 raw_pixels = ((slice_2d - rescale_intercept) / rescale_slope).round().astype(_pixel_dtype)
 
-                if (modality or '').upper() == 'PT' and file_idx == 0:
-                    self.logger.info(
-                        f"[DEBUG rescale] slice {file_idx}: "
-                        f"BitsAllocated={_bits}, PixelRepresentation={'signed' if _signed else 'unsigned'}, "
-                        f"dtype_from_tags={_pixel_dtype}, dtype_from_pixel_array={_orig_pixels.dtype} | "
-                        f"original_stored min={_orig_pixels.min()} max={_orig_pixels.max()} | "
-                        f"itk_defaced min={slice_2d.min():.4f} max={slice_2d.max():.4f} | "
-                        f"raw_pixels_computed min={raw_pixels.min()} max={raw_pixels.max()} | "
-                        f"rescale_slope={rescale_slope}, rescale_intercept={rescale_intercept}"
-                    )
                 ds.PixelData = raw_pixels.tobytes()
                 
                 # If the original file used a compressed transfer syntax, the raw
@@ -607,7 +608,7 @@ class DefaceService:
         """Return the absolute path of a previously-saved mask for this series, or ``None``.
 
         Looks up ``deface_mask_cache`` by
-        (cache_key, modality, ct_series_instance_uid) - an exact per-series match.
+        (cache_key, modality, series_instance_uid) - an exact per-series match.
         Returns ``None`` when no DB is configured, no matching entry exists, or
         the file is missing on disk.
 
@@ -628,7 +629,7 @@ class DefaceService:
             series.original_study_uid,
             series.frame_of_reference_uid or '',
             modality,
-            ct_series_instance_uid=series.original_series_uid,
+            series_instance_uid=series.original_series_uid,
         )
 
         if not cached:
@@ -732,7 +733,7 @@ class DefaceService:
             direction              = direction,
             anonymized_patient_id  = series.anonymized_patient_id,
             anonymized_study_uid   = series.anonymized_study_uid,
-            ct_series_instance_uid = series.original_series_uid,
+            series_instance_uid     = series.original_series_uid,
         )
 
         # Update deface_series_pairing rows for every PET paired with this CT.
