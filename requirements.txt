@@ -12,4 +12,4 @@ vedo
 httpx
 numpy
 tqdm
-moosez
+git+https://github.com/ENHANCE-PET/MOOSE.git
