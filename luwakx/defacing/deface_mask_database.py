@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 from ..logging.luwak_logger import get_logger, log_project_stacktrace
 
 
-class DefaceMaskDatabase:
+class DefaceMaskDatabase:    
     """Thread-safe SQLite database for caching primary defacing masks per spatial reference.
 
     For each combination of (patient, FrameOfReferenceUID, modality) only the mask
@@ -353,7 +353,69 @@ class DefaceMaskDatabase:
             log_project_stacktrace(self.logger, e)
             self.logger.warning(f'DefaceMaskDatabase.get_primary_mask failed: {e}')
             return None
+        
+    def get_any_ct_mask_for_study(
+        self,
+        patient_id: str,
+        patient_name: str,
+        birthdate: str,
+        study_instance_uid: str,
+        frame_of_reference_uid: str
+    ) -> Optional[Dict[str, Any]]:
+        """Return the first available CT mask for the given patient, study, and frame of reference, or None if not found.
 
+        Args:
+            patient_id: Original DICOM PatientID.
+            patient_name: Original DICOM PatientName.
+            birthdate: Original DICOM PatientBirthDate.
+            study_instance_uid: DICOM StudyInstanceUID.
+            frame_of_reference_uid: DICOM FrameOfReferenceUID.
+
+        Returns:
+            Dict with mask info (same keys as get_primary_mask), or None if not found.
+        """
+        try:
+            cursor = self.conn.cursor()
+            # Find any CT mask for this patient, study, and frame of reference (any series)
+            # Only return if the mask file exists on disk
+            cursor.execute(
+                '''
+                SELECT mask_path, spacing, origin, direction, frame_of_reference_uid, study_instance_uid, series_instance_uid, anonymized_patient_id, anonymized_study_uid
+                FROM deface_mask_cache
+                WHERE anonymized_patient_id = (
+                    SELECT anonymized_patient_id FROM deface_mask_cache
+                    WHERE study_instance_uid = ? AND frame_of_reference_uid = ? AND mask_path IS NOT NULL LIMIT 1
+                )
+                  AND study_instance_uid = ?
+                  AND frame_of_reference_uid = ?
+                  AND modality = 'CT'
+                  AND mask_path IS NOT NULL
+                ORDER BY updated_at DESC
+                ''',
+                (study_instance_uid, frame_of_reference_uid, study_instance_uid, frame_of_reference_uid)
+            )
+            for row in cursor.fetchall():
+                mask_path = row['mask_path']
+                if mask_path:
+                    abs_mask_path = os.path.join(os.path.dirname(self.db_path), mask_path) if not os.path.isabs(mask_path) else mask_path
+                    if os.path.exists(abs_mask_path):
+                        return {
+                            'mask_path': mask_path,
+                            'spacing': json.loads(row['spacing']) if row['spacing'] else None,
+                            'origin': json.loads(row['origin']) if row['origin'] else None,
+                            'direction': json.loads(row['direction']) if row['direction'] else None,
+                            'frame_of_reference_uid': row['frame_of_reference_uid'],
+                            'study_instance_uid': row['study_instance_uid'],
+                            'series_instance_uid': row['series_instance_uid'],
+                            'anonymized_patient_id': row['anonymized_patient_id'],
+                            'anonymized_study_uid': row['anonymized_study_uid'],
+                        }
+            return None
+        except Exception as e:
+            log_project_stacktrace(self.logger, e)
+            self.logger.warning(f'DefaceMaskDatabase.get_any_ct_mask_for_study failed: {e}')
+            return None
+        
     def upsert_mask(
         self,
         patient_id: str,

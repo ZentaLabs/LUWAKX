@@ -220,18 +220,44 @@ class DefaceService:
                     # co-registration), and apply pixelation directly - no ML inference.
                     ct_mask_path = self._get_ct_mask_for_pet(series)
                     if ct_mask_path is None:
-                        self.logger.warning(
-                            f"CT face mask not yet available for secondary series "
-                            f"{series.anonymized_series_uid!r} "
-                            f"(primary CT: {series.primary_ct_series.anonymized_series_uid!r}); "
-                            f"falling back to copy without defacing."
+                        # Fallback: try to find any CT mask for this patient/study
+                        fallback_mask = None
+                        if self.deface_mask_db:
+                            fallback_mask = self.deface_mask_db.get_any_ct_mask_for_study(
+                                patient_id=series.original_patient_id,
+                                patient_name=series.original_patient_name,
+                                birthdate=series.original_patient_birthdate,
+                                study_instance_uid=series.original_study_uid,
+                                frame_of_reference_uid=series.frame_of_reference_uid or '',
+                            )
+                        if fallback_mask and fallback_mask.get('mask_path'):
+                            ct_mask_path = os.path.join(self.private_folder, fallback_mask['mask_path'])
+                            if not os.path.exists(ct_mask_path):
+                                ct_mask_path = None
+                                self.logger.warning(
+                                    f"Fallback CT face mask found in DB but file is missing on disk for secondary series "
+                                    f"{series.anonymized_series_uid!r} (primary CT: {series.primary_ct_series.anonymized_series_uid!r}); "
+                                    f"copying without defacing."
+                                )
+                                return self._copy_without_defacing(series)
+                            else:
+                                self.logger.warning(
+                                    f"CT face mask not available for paired CT, but found fallback CT mask for patient/study. "
+                                    f"Projecting fallback mask: {self._rel_path(ct_mask_path)}\n"
+                                    f"Check results for this defacing of PET series {series.anonymized_series_uid!r}"
+                                )
+                        else:
+                            self.logger.warning(
+                                f"No CT face mask available for secondary series "
+                                f"{series.anonymized_series_uid!r} (primary CT: {series.primary_ct_series.anonymized_series_uid!r}); "
+                                f"no fallback CT mask found for patient/study; copying without defacing."
+                            )
+                            return self._copy_without_defacing(series)
+                    else:
+                        self.logger.info(
+                            f"Projecting CT face mask onto secondary series "
+                            f"(modality={modality}): {self._rel_path(ct_mask_path)}"
                         )
-                        return self._copy_without_defacing(series)
-
-                    self.logger.info(
-                        f"Projecting CT face mask onto secondary series "
-                        f"(modality={modality}): {self._rel_path(ct_mask_path)}"
-                    )
                     # SimpleITK reads compressed NRRD automatically.
                     ct_mask_image = SimpleITK.ReadImage(ct_mask_path)
 

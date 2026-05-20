@@ -148,7 +148,8 @@ class DefacePriorityElector:
                     uid = ct.original_series_uid
                     elected_cts[uid] = ct
                     self.logger.info(
-                        f"PET/CT pairing  study={sec.anonymized_study_uid!r}: "
+                        f"PET/CT pairing patient={sec.anonymized_patient_id!r} "
+                        f"study={sec.anonymized_study_uid!r}: "
                         f"PET series {sec.anonymized_series_uid!r} "
                         f"with CT series {ct.anonymized_series_uid!r} "
                     )
