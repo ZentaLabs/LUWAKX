@@ -7,7 +7,7 @@ Two tables live in the same database file:
 
 ``deface_mask_cache``
     Content store.  One row per (patient, study, FrameOfReference, modality,
-    ct_series_instance_uid).  Written by :class:`DefaceService` after the ML
+    series_instance_uid).  Written by :class:`DefaceService` after the ML
     face mask is computed for each CT series.  Cache hit requires an exact
     series UID match so that geometry is guaranteed to be identical.
 
@@ -108,7 +108,7 @@ class DefaceMaskDatabase:
             CREATE TABLE IF NOT EXISTS deface_mask_cache (
                 cache_key              TEXT    NOT NULL,
                 modality               TEXT    NOT NULL,
-                ct_series_instance_uid TEXT    NOT NULL DEFAULT '',
+                series_instance_uid    TEXT    NOT NULL DEFAULT '',
                 mask_path              TEXT    NOT NULL,
                 spacing                TEXT,
                 origin                 TEXT,
@@ -119,7 +119,7 @@ class DefaceMaskDatabase:
                 anonymized_study_uid   TEXT,
                 created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (cache_key, modality, ct_series_instance_uid)
+                PRIMARY KEY (cache_key, modality, series_instance_uid)
             )
         ''')
 
@@ -150,7 +150,7 @@ class DefaceMaskDatabase:
 
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_dmc_cache_key
-            ON deface_mask_cache (cache_key, modality, ct_series_instance_uid)
+            ON deface_mask_cache (cache_key, modality, series_instance_uid)
         ''')
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_dsp_ct_series
@@ -181,7 +181,7 @@ class DefaceMaskDatabase:
                 direction              TEXT,
                 frame_of_reference_uid TEXT,
                 study_instance_uid     TEXT,
-                ct_series_instance_uid TEXT,
+                series_instance_uid    TEXT,
                 anonymized_patient_id  TEXT,
                 anonymized_study_uid   TEXT,
                 created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -257,11 +257,11 @@ class DefaceMaskDatabase:
         study_instance_uid: str,
         frame_of_reference_uid: str,
         modality: str,
-        ct_series_instance_uid: str = '',
+        series_instance_uid: str = '',
     ) -> Optional[Dict[str, Any]]:
         """Retrieve the cached mask for the given series.
 
-        Looks up the exact row using ``(cache_key, modality, ct_series_instance_uid)``
+        Looks up the exact row using ``(cache_key, modality, series_instance_uid)``
         so that geometry is guaranteed to be identical on a cache hit.
         PET lookups use :meth:`get_pairing` instead.
 
@@ -274,7 +274,7 @@ class DefaceMaskDatabase:
             study_instance_uid: DICOM StudyInstanceUID.
             frame_of_reference_uid: DICOM FrameOfReferenceUID.
             modality: DICOM Modality string (e.g. ``"CT"``, ``"MR"``).
-            ct_series_instance_uid: Original SeriesInstanceUID of the CT series.
+            series_instance_uid: Original SeriesInstanceUID of the series that produced the mask.
 
         Returns:
             Dictionary with keys
@@ -291,12 +291,12 @@ class DefaceMaskDatabase:
                 SELECT mask_path,
                        spacing, origin, direction,
                        frame_of_reference_uid, study_instance_uid,
-                       ct_series_instance_uid,
+                       series_instance_uid,
                        anonymized_patient_id, anonymized_study_uid
                 FROM   deface_mask_cache
-                WHERE  cache_key = ? AND modality = ? AND ct_series_instance_uid = ?
+                WHERE  cache_key = ? AND modality = ? AND series_instance_uid = ?
                 ''',
-                (cache_key, modality, ct_series_instance_uid or ''),
+                (cache_key, modality, series_instance_uid or ''),
             )
             row = cursor.fetchone()
             if row is None:
@@ -332,7 +332,7 @@ class DefaceMaskDatabase:
                 'direction':              json.loads(row['direction'])  if row['direction'] else None,
                 'frame_of_reference_uid': row['frame_of_reference_uid'],
                 'study_instance_uid':     row['study_instance_uid'],
-                'ct_series_instance_uid': row['ct_series_instance_uid'],
+                'series_instance_uid':    row['series_instance_uid'],
                 'anonymized_patient_id':  row['anonymized_patient_id'],
                 'anonymized_study_uid':   row['anonymized_study_uid'],
             }
@@ -356,7 +356,7 @@ class DefaceMaskDatabase:
         direction: Optional[list] = None,
         anonymized_patient_id: Optional[str] = None,
         anonymized_study_uid: Optional[str] = None,
-        ct_series_instance_uid: Optional[str] = None,
+        series_instance_uid: Optional[str] = None,
     ) -> None:
         """Insert or replace a mask entry in ``deface_mask_cache``.
 
@@ -378,7 +378,7 @@ class DefaceMaskDatabase:
             direction: SimpleITK direction as 9-float row-major list.
             anonymized_patient_id: Anonymised patient ID for path reconstruction.
             anonymized_study_uid: Anonymised study UID for path reconstruction.
-            ct_series_instance_uid: Original SeriesInstanceUID of the CT that
+            series_instance_uid: Original SeriesInstanceUID of the series that
                 produced the mask (stored for auditability).
         """
         cache_key = self._compute_key(patient_id, patient_name, birthdate, study_instance_uid, frame_of_reference_uid)
@@ -390,16 +390,16 @@ class DefaceMaskDatabase:
         with self._write_lock:
             try:
                 cursor = self.conn.cursor()
-                _ct_uid = ct_series_instance_uid or ''
+                _series_uid = series_instance_uid or ''
                 cursor.execute(
                     '''
                     INSERT INTO deface_mask_cache
-                        (cache_key, modality, ct_series_instance_uid, mask_path,
+                        (cache_key, modality, series_instance_uid, mask_path,
                          spacing, origin, direction, frame_of_reference_uid, study_instance_uid,
                          anonymized_patient_id, anonymized_study_uid,
                          updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(cache_key, modality, ct_series_instance_uid) DO UPDATE SET
+                    ON CONFLICT(cache_key, modality, series_instance_uid) DO UPDATE SET
                         mask_path              = excluded.mask_path,
                         spacing                = excluded.spacing,
                         origin                 = excluded.origin,
@@ -411,7 +411,7 @@ class DefaceMaskDatabase:
                         updated_at             = CURRENT_TIMESTAMP
                     ''',
                     (
-                        cache_key, modality, _ct_uid, mask_path,
+                        cache_key, modality, _series_uid, mask_path,
                         spacing_json, origin_json, direction_json,
                         frame_of_reference_uid, study_instance_uid,
                         anonymized_patient_id, anonymized_study_uid,
