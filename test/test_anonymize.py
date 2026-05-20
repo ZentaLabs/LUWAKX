@@ -760,7 +760,7 @@ class TestAnonymizeScript(unittest.TestCase):
             anonymized_ds = pydicom.dcmread(expected_output_path)
             # Check that the RequestedProcedureDescription has been cleaned (tag should be removed)
             if 'RequestedProcedureDescription' in anonymized_ds:
-                self.fail(f"RequestedProcedureDescription tag should have been removed from file {expected_output_path} with value {anonymized_ds.get('RequestedProcedureDescription').value}.\n")
+                self.fail(f"RequestedProcedureDescription tag should have been removed from file {expected_output_path} with value {anonymized_ds['RequestedProcedureDescription'].value}.\n")
             self.logger.info(f"RequestedProcedureDescription cleaned: {original_value} -> removed")
             self.assertEqual(anonymized_ds['PerformedProcedureStepDescription'].value, original_ds['PerformedProcedureStepDescription'].value,
                         "PerformedProcedureStepDescription should be empty: expected {original_ds['PerformedProcedureStepDescription'].value}, got {anonymized_ds['PerformedProcedureStepDescription'].value}")
