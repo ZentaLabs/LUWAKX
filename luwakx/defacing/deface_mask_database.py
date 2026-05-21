@@ -356,18 +356,12 @@ class DefaceMaskDatabase:
         
     def get_any_ct_mask_for_study(
         self,
-        patient_id: str,
-        patient_name: str,
-        birthdate: str,
         study_instance_uid: str,
-        frame_of_reference_uid: str
+        frame_of_reference_uid: str,
     ) -> Optional[Dict[str, Any]]:
-        """Return the first available CT mask for the given patient, study, and frame of reference, or None if not found.
+        """Return the first available CT mask for the given study and frame of reference, or None if not found.
 
         Args:
-            patient_id: Original DICOM PatientID.
-            patient_name: Original DICOM PatientName.
-            birthdate: Original DICOM PatientBirthDate.
             study_instance_uid: DICOM StudyInstanceUID.
             frame_of_reference_uid: DICOM FrameOfReferenceUID.
 
@@ -376,29 +370,26 @@ class DefaceMaskDatabase:
         """
         try:
             cursor = self.conn.cursor()
-            # Find any CT mask for this patient, study, and frame of reference (any series)
-            # Only return if the mask file exists on disk
             cursor.execute(
                 '''
                 SELECT mask_path, spacing, origin, direction, frame_of_reference_uid, study_instance_uid, series_instance_uid, anonymized_patient_id, anonymized_study_uid
                 FROM deface_mask_cache
-                WHERE anonymized_patient_id = (
-                    SELECT anonymized_patient_id FROM deface_mask_cache
-                    WHERE study_instance_uid = ? AND frame_of_reference_uid = ? AND mask_path IS NOT NULL LIMIT 1
-                )
-                  AND study_instance_uid = ?
+                WHERE study_instance_uid = ?
                   AND frame_of_reference_uid = ?
                   AND modality = 'CT'
                   AND mask_path IS NOT NULL
                 ORDER BY updated_at DESC
                 ''',
-                (study_instance_uid, frame_of_reference_uid, study_instance_uid, frame_of_reference_uid)
+                (study_instance_uid, frame_of_reference_uid)
             )
             for row in cursor.fetchall():
                 mask_path = row['mask_path']
                 if mask_path:
-                    abs_mask_path = os.path.join(os.path.dirname(self.db_path), mask_path) if not os.path.isabs(mask_path) else mask_path
-                    if os.path.exists(abs_mask_path):
+                    abs_mask_path = pathlib.Path(
+                        mask_path if os.path.isabs(mask_path)
+                        else os.path.join(os.path.dirname(self.db_path), mask_path)
+                    ).resolve()
+                    if abs_mask_path.exists():
                         return {
                             'mask_path': mask_path,
                             'spacing': json.loads(row['spacing']) if row['spacing'] else None,

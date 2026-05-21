@@ -224,9 +224,6 @@ class DefaceService:
                         fallback_mask = None
                         if self.deface_mask_db:
                             fallback_mask = self.deface_mask_db.get_any_ct_mask_for_study(
-                                patient_id=series.original_patient_id,
-                                patient_name=series.original_patient_name,
-                                birthdate=series.original_patient_birthdate,
                                 study_instance_uid=series.original_study_uid,
                                 frame_of_reference_uid=series.frame_of_reference_uid or '',
                             )
