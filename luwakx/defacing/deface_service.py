@@ -224,9 +224,6 @@ class DefaceService:
                         fallback_mask = None
                         if self.deface_mask_db:
                             fallback_mask = self.deface_mask_db.get_any_ct_mask_for_study(
-                                patient_id=series.original_patient_id,
-                                patient_name=series.original_patient_name,
-                                birthdate=series.original_patient_birthdate,
                                 study_instance_uid=series.original_study_uid,
                                 frame_of_reference_uid=series.frame_of_reference_uid or '',
                             )
@@ -438,9 +435,6 @@ class DefaceService:
                 _bits = int(getattr(ds, 'BitsAllocated', 16))
                 _signed = int(getattr(ds, 'PixelRepresentation', 0)) == 1
                 _pixel_dtype = np.dtype(f"{'i' if _signed else 'u'}{_bits // 8}")
-
-                if (modality or '').upper() == 'PT' and file_idx == 0:
-                    _orig_pixels = ds.pixel_array
 
                 # Apply inverse scaling to get back to raw stored values
                 raw_pixels = ((slice_2d - rescale_intercept) / rescale_slope).round().astype(_pixel_dtype)
