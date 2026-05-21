@@ -142,16 +142,10 @@ class DefaceMaskDatabase:
         if 'study_instance_uid' not in existing_cols:
             cursor.execute('ALTER TABLE deface_mask_cache ADD COLUMN study_instance_uid TEXT')
 
-        # An intermediate schema added linked_pet_series_uid to the PK of
-        # deface_mask_cache.  Recreate the table with the correct
-        # (cache_key, modality) PK, preserving only homogeneous-group rows.
-        if 'linked_pet_series_uid' in existing_cols:
-            self._migrate_remove_pet_uid_from_mask_cache(cursor)
-
         # The column was originally named ct_series_instance_uid but is used for
         # any modality.  Rename it transparently on existing databases.
-        # Re-read column list in case the table was just rebuilt above.
-        existing_cols = {row[1] for row in cursor.execute('PRAGMA table_info(deface_mask_cache)')}
+        # This must run BEFORE _migrate_remove_pet_uid_from_mask_cache, which
+        # SELECTs series_instance_uid from the old table.
         if 'ct_series_instance_uid' in existing_cols:
             cursor.execute(
                 'ALTER TABLE deface_mask_cache RENAME COLUMN ct_series_instance_uid TO series_instance_uid'
@@ -159,6 +153,14 @@ class DefaceMaskDatabase:
             self.logger.info(
                 'Migrated deface_mask_cache: renamed ct_series_instance_uid -> series_instance_uid'
             )
+
+        # An intermediate schema added linked_pet_series_uid to the PK of
+        # deface_mask_cache.  Recreate the table with the correct
+        # (cache_key, modality) PK, preserving only homogeneous-group rows.
+        # Re-read column list after the rename above.
+        existing_cols = {row[1] for row in cursor.execute('PRAGMA table_info(deface_mask_cache)')}
+        if 'linked_pet_series_uid' in existing_cols:
+            self._migrate_remove_pet_uid_from_mask_cache(cursor)
 
         cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_dmc_cache_key
@@ -198,16 +200,18 @@ class DefaceMaskDatabase:
                 anonymized_study_uid   TEXT,
                 created_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (cache_key, modality)
+                PRIMARY KEY (cache_key, modality, series_instance_uid)
             )
         ''')
         cursor.execute('''
             INSERT OR IGNORE INTO deface_mask_cache_v2
                 (cache_key, modality, mask_path,
                  spacing, origin, direction, frame_of_reference_uid, study_instance_uid,
+                 series_instance_uid,
                  anonymized_patient_id, anonymized_study_uid, created_at, updated_at)
             SELECT cache_key, modality, mask_path,
                    spacing, origin, direction, frame_of_reference_uid, study_instance_uid,
+                   series_instance_uid,
                    anonymized_patient_id, anonymized_study_uid, created_at, updated_at
             FROM   deface_mask_cache
             WHERE  linked_pet_series_uid = ''
@@ -216,7 +220,7 @@ class DefaceMaskDatabase:
         cursor.execute('ALTER TABLE deface_mask_cache_v2 RENAME TO deface_mask_cache')
         self.conn.commit()
         self.logger.info(
-            'Migration complete: deface_mask_cache rebuilt with (cache_key, modality) PK'
+            'Migration complete: deface_mask_cache rebuilt with (cache_key, modality, series_instance_uid) PK'
         )
 
     # ------------------------------------------------------------------
