@@ -12,7 +12,7 @@ import re
 import shutil
 import sqlite3
 import traceback
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 import pydicom
 import pandas as pd
 
