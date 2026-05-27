@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Make renderer importable from the same directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from renderer import detect_modality, detect_volume_modality, check_transfer_syntax, NIFTI_EXTENSIONS, NRRD_EXTENSIONS
+from renderer import detect_modality, detect_volume_modality, NIFTI_EXTENSIONS, NRRD_EXTENSIONS
 
 RENDERER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "renderer.py")
 
@@ -136,13 +136,6 @@ def _process_input(
             return result
         result["modality"] = modality
     else:
-        # DICOM - check transfer syntax
-        supported, ts_name = check_transfer_syntax(input_path)
-        if not supported:
-            result["skipped"] = True
-            result["skip_reason"] = f"unsupported transfer syntax: {ts_name}"
-            return result
-
         # Detect modality
         try:
             modality = detect_modality(input_path)

@@ -10,7 +10,7 @@ Supports PDF and JPEG outputs, single-page composites, and batch rendering.
 Render a single volume from 10 predefined camera angles (front, back, left, right, obliques, above, below).
 
 **Input formats:**
-- DICOM directory (CT or PET) - uncompressed transfer syntax only
+- DICOM directory (CT or PET) via SimpleITK/GDCM
 - NIfTI file (`.nii` / `.nii.gz`)
 - NRRD file (`.nrrd`)
 
@@ -81,4 +81,4 @@ python batch_render.py /path/to/inputs /path/to/output_dir --output-format pdf -
 ## Requirements
 
 - Python 3.10+
-- `vtk`, `pydicom`, `numpy`, `matplotlib`, `pypdf`, `Pillow`
+- `vtk`, `SimpleITK`, `pydicom`, `numpy`, `matplotlib`, `pypdf`, `Pillow`

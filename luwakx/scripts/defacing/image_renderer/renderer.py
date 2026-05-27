@@ -18,39 +18,9 @@ import tempfile
 
 import numpy as np
 import pydicom
+import SimpleITK as sitk
 import vtk
-from vtk.util.numpy_support import vtk_to_numpy
-
-
-# -- Transfer syntax support ------------------------------------------------
-
-# Transfer syntaxes that vtkDICOMImageReader can handle (uncompressed)
-VTK_SUPPORTED_TRANSFER_SYNTAXES = {
-    "1.2.840.10008.1.2",        # Implicit VR Little Endian
-    "1.2.840.10008.1.2.1",      # Explicit VR Little Endian
-    "1.2.840.10008.1.2.2",      # Explicit VR Big Endian
-}
-
-
-def check_transfer_syntax(dicom_dir: str) -> tuple[bool, str]:
-    """Check if the DICOM files use a transfer syntax supported by VTK.
-
-    Returns (is_supported, transfer_syntax_description).
-    """
-    dcm_files = glob.glob(os.path.join(dicom_dir, "**", "*"), recursive=True)
-    for f in dcm_files:
-        if os.path.isdir(f):
-            continue
-        try:
-            ds = pydicom.dcmread(f, stop_before_pixels=True)
-            ts_uid = str(ds.file_meta.TransferSyntaxUID)
-            ts_name = getattr(ds.file_meta.TransferSyntaxUID, "name", ts_uid)
-            if ts_uid in VTK_SUPPORTED_TRANSFER_SYNTAXES:
-                return True, ts_name
-            return False, ts_name
-        except Exception:
-            continue
-    return False, "unknown (could not read DICOM metadata)"
+from vtk.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
 
 # -- NIfTI/NRRD support ------------------------------------------------------
@@ -98,12 +68,81 @@ def load_nrrd(path: str) -> vtk.vtkImageData:
 
 
 def _load_volume_file(path: str) -> vtk.vtkImageData:
-    """Load a standalone volume file (NIfTI or NRRD)."""
+    """Load a standalone volume file (NIfTI or NRRD) via SimpleITK."""
+    if not is_volume_file(path):
+        raise RuntimeError(f"Unsupported volume file extension: {path}")
+
+    image = sitk.ReadImage(path)
+    return _sitk_image_to_vtk(image)
+
+
+def _load_volume_file_with_matrix(path: str) -> tuple[vtk.vtkImageData, vtk.vtkMatrix4x4]:
+    """Load a standalone volume file and return image data plus LPS transform."""
+    if not is_volume_file(path):
+        raise RuntimeError(f"Unsupported volume file extension: {path}")
+
+    image = sitk.ReadImage(path)
+    return _sitk_image_to_vtk(image), _build_lps_patient_matrix(image)
+
+
+def _load_volume_file_vtk(path: str) -> vtk.vtkImageData:
+    """Legacy VTK-based loader kept for reference/troubleshooting."""
     if is_nifti(path):
         return load_nifti(path)
     if is_nrrd(path):
         return load_nrrd(path)
     raise RuntimeError(f"Unsupported volume file extension: {path}")
+
+
+def _sitk_image_to_vtk(image: sitk.Image) -> vtk.vtkImageData:
+    """Convert a SimpleITK scalar image (z, y, x) to vtkImageData (x, y, z)."""
+    arr = sitk.GetArrayFromImage(image)
+    if arr.ndim != 3:
+        raise RuntimeError(f"Expected a 3D volume from DICOM, got shape {arr.shape}")
+
+    z, y, x = arr.shape
+    vtk_arr = numpy_to_vtk(num_array=np.ascontiguousarray(arr).ravel(order="C"), deep=True)
+
+    image_data = vtk.vtkImageData()
+    image_data.SetDimensions(x, y, z)
+    image_data.SetExtent(0, x - 1, 0, y - 1, 0, z - 1)
+    image_data.SetSpacing(image.GetSpacing())
+    image_data.SetOrigin(0.0, 0.0, 0.0)
+    image_data.GetPointData().SetScalars(vtk_arr)
+    return image_data
+
+
+def _build_lps_patient_matrix(image: sitk.Image) -> vtk.vtkMatrix4x4:
+    """Build a voxel-to-LPS transform matrix from a SimpleITK image."""
+    direction = image.GetDirection()  # row-major 3x3
+    origin = image.GetOrigin()
+
+    matrix = vtk.vtkMatrix4x4()
+    matrix.Identity()
+    for r in range(3):
+        for c in range(3):
+            matrix.SetElement(r, c, float(direction[r * 3 + c]))
+        matrix.SetElement(r, 3, float(origin[r]))
+    return matrix
+
+
+def load_dicom_with_simpleitk(dicom_dir: str) -> tuple[vtk.vtkImageData, vtk.vtkMatrix4x4]:
+    """Load a DICOM series with SimpleITK and return VTK image data and LPS matrix."""
+    series_ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(dicom_dir)
+    if not series_ids:
+        raise RuntimeError(f"No DICOM series found in directory: {dicom_dir}")
+
+    file_names = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(dicom_dir, series_ids[0])
+    if not file_names:
+        raise RuntimeError(f"No DICOM files found for series in directory: {dicom_dir}")
+
+    reader = sitk.ImageSeriesReader()
+    reader.SetFileNames(file_names)
+    image = reader.Execute()
+
+    image_data = _sitk_image_to_vtk(image)
+    patient_matrix = _build_lps_patient_matrix(image)
+    return image_data, patient_matrix
 
 
 def infer_modality_from_image(image_data: vtk.vtkImageData) -> tuple[str, str]:
@@ -317,6 +356,36 @@ VIEWS = [
     (0, -20, "front_below"),
 ]
 
+SINGLE_PAGE_VIEW_ORDER = [
+    "left",
+    "oblique_left_30",
+    "front",
+    "oblique_right_30",
+    "right",
+    "oblique_left_above",
+    "front_below",
+    "front_above",
+    "oblique_right_above",
+    "back",
+]
+
+
+def _label_from_png_path(path: str) -> str:
+    """Extract view label from renderer output filename (e.g. 01_front -> front)."""
+    base = os.path.splitext(os.path.basename(path))[0]
+    return "_".join(base.split("_")[1:])
+
+
+def _reorder_single_page_paths(png_paths: list[str]) -> list[str]:
+    """Return PNG paths ordered for single-page grid presentation."""
+    by_label = {_label_from_png_path(p): p for p in png_paths}
+    ordered = [by_label[label] for label in SINGLE_PAGE_VIEW_ORDER if label in by_label]
+
+    # Preserve any unexpected paths by appending them after known slots.
+    seen = set(ordered)
+    ordered.extend([p for p in png_paths if p not in seen])
+    return ordered
+
 
 # -- Rendering ----------------------------------------------------------------
 
@@ -324,13 +393,11 @@ VIEWS = [
 def render_views(input_path: str, modality: str) -> list[str]:
     """Render all views and return list of temp PNG paths."""
 
+    patient_matrix = None
     if is_volume_file(input_path):
-        image_data = _load_volume_file(input_path)
+        image_data, patient_matrix = _load_volume_file_with_matrix(input_path)
     else:
-        reader = vtk.vtkDICOMImageReader()
-        reader.SetDirectoryName(input_path)
-        reader.Update()
-        image_data = reader.GetOutput()
+        image_data, patient_matrix = load_dicom_with_simpleitk(input_path)
 
     scalar_range = image_data.GetScalarRange()
     print(
@@ -359,6 +426,8 @@ def render_views(input_path: str, modality: str) -> list[str]:
     volume = vtk.vtkVolume()
     volume.SetMapper(mapper)
     volume.SetProperty(create_volume_property(resolved_tf))
+    if patient_matrix is not None:
+        volume.SetUserMatrix(patient_matrix)
 
     renderer = vtk.vtkRenderer()
     renderer.AddVolume(volume)
@@ -387,12 +456,11 @@ def render_views(input_path: str, modality: str) -> list[str]:
         cam.SetFocalPoint(cx, cy, cz)
         cam.SetPosition(
             cx + cam_dist * math.sin(az) * math.cos(el),
-            cy + cam_dist * math.cos(az) * math.cos(el),
+            cy - cam_dist * math.cos(az) * math.cos(el),
             cz + cam_dist * math.sin(el),
         )
-        cam.SetViewUp(0, 0, -1)
-        # Rotate each view by 180 degrees so head/foot orientation is flipped.
-        cam.Roll(180.0)
+        # In patient LPS space, keep superior (+Z) as up.
+        cam.SetViewUp(0, 0, 1)
         cam.SetViewAngle(30)
         renderer.ResetCameraClippingRange()
         win.Render()
@@ -429,10 +497,12 @@ def save_pdf(
     import matplotlib.pyplot as plt
     import matplotlib.image as mpimg
 
+    ordered_paths = _reorder_single_page_paths(png_paths) if single_page else png_paths
+
     if single_page:
         cols = 5
-        rows = math.ceil(len(png_paths) / cols)
-        per_page = len(png_paths)
+        rows = math.ceil(len(ordered_paths) / cols)
+        per_page = len(ordered_paths)
         fig_size = (cols * 3.2, rows * 3.2 + 1.0)
     else:
         cols, rows = 2, 1
@@ -441,8 +511,8 @@ def save_pdf(
     header = f"{name}  -  {modality}"
 
     with PdfPages(output_path) as pdf:
-        for page_start in range(0, len(png_paths), per_page):
-            batch = png_paths[page_start : page_start + per_page]
+        for page_start in range(0, len(ordered_paths), per_page):
+            batch = ordered_paths[page_start : page_start + per_page]
             fig, axes = plt.subplots(rows, cols, figsize=fig_size)
             if per_page == 1:
                 axes = [axes]
@@ -504,9 +574,11 @@ def save_jpg(
     import matplotlib.image as mpimg
     from PIL import Image
 
+    ordered_paths = _reorder_single_page_paths(png_paths) if single_page else png_paths
+
     if single_page:
         cols = 5
-        rows = math.ceil(len(png_paths) / cols)
+        rows = math.ceil(len(ordered_paths) / cols)
         fig_size = (cols * 3.2, rows * 3.2 + 1.0)
         header = f"{name}  -  {modality}"
 
@@ -522,10 +594,10 @@ def save_jpg(
             axes = [ax for row in axes for ax in row]
 
         for j, ax in enumerate(axes):
-            if j < len(png_paths):
-                img = mpimg.imread(png_paths[j])
+            if j < len(ordered_paths):
+                img = mpimg.imread(ordered_paths[j])
                 ax.imshow(img)
-                label = os.path.splitext(os.path.basename(png_paths[j]))[0]
+                label = os.path.splitext(os.path.basename(ordered_paths[j]))[0]
                 label = "_".join(label.split("_")[1:])
                 pretty_label = label.replace("_", " ")
                 if (j // cols) == (rows - 1):
@@ -621,16 +693,6 @@ def main():
         modality = args.modality or detect_volume_modality(input_path)
         print(f"Volume input: {input_path}  (modality: {modality})")
     else:
-        # Check transfer syntax before attempting VTK rendering
-        supported, ts_name = check_transfer_syntax(input_path)
-        if not supported:
-            print(
-                f"SKIPPED: {input_path}\n"
-                f"  Unsupported transfer syntax: {ts_name}\n"
-                f"  vtkDICOMImageReader only supports uncompressed DICOM.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
         modality = args.modality or detect_modality(input_path)
 
     # Render
