@@ -20,14 +20,51 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+import logging
+import time
 
 # Make renderer importable from the same directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from renderer import detect_modality, detect_volume_modality, NIFTI_EXTENSIONS, NRRD_EXTENSIONS
+import renderer as renderer_module
+from renderer import (
+    detect_modality,
+    detect_volume_modality,
+    NIFTI_EXTENSIONS,
+    NRRD_EXTENSIONS,
+    VIEW_LABELS,
+)
 
 RENDERER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "renderer.py")
+
+
+# -- Logging setup -----------------------------------------------------------
+
+def setup_logging(level: str = "INFO"):
+    """Configure logging for batch rendering.
+    
+    Levels: SILENT, ERROR, WARNING, INFO (default), DEBUG
+    SILENT suppresses all logging output.
+    """
+    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    if level.upper() == "SILENT":
+        logging.disable(logging.CRITICAL)
+    else:
+        logging.basicConfig(
+            level=numeric_level,
+            format="%(levelname)s: %(message)s",
+            stream=sys.stderr,
+        )
+    return logging.getLogger(__name__)
+
+
+logger: logging.Logger | None = None
+
+
+def emit_progress(message: str):
+    """Print progress messages when INFO logging is enabled."""
+    if logger is not None and logger.isEnabledFor(logging.INFO):
+        print(message, flush=True)
 
 
 def _matches_filename_filters(filename: str, filename_filters: list[str] | None) -> bool:
@@ -50,12 +87,24 @@ def find_inputs(root: str, filename_filters: list[str] | None = None) -> list[di
         type  - "dicom" or "volume"
     """
     inputs = []
+    dirs_scanned = 0
+    files_seen = 0
+    last_update = time.monotonic()
 
     for dirpath, dirnames, filenames in os.walk(root):
+        dirs_scanned += 1
         # Skip hidden directories in-place so os.walk doesn't descend into them
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         # Skip hidden files
         filenames = [f for f in filenames if not f.startswith(".")]
+        files_seen += len(filenames)
+
+        now = time.monotonic()
+        if now - last_update >= 5:
+            emit_progress(
+                f"Scanning inputs... {dirs_scanned} directories, {files_seen} files seen"
+            )
+            last_update = now
 
         matching_filenames = [f for f in filenames if _matches_filename_filters(f, filename_filters)]
 
@@ -105,9 +154,10 @@ def _process_input(
     inp: dict,
     root: str,
     output_dir: str,
-    tmpdir: str | None,
+    renders_dir: str,
     single_page: bool,
     output_format: str,
+    modality_method: str,
 ) -> dict:
     """Process a single input: pre-check, then render via subprocess.
 
@@ -127,9 +177,39 @@ def _process_input(
         "skip_reason": None,
     }
 
+    # Determine final output path first so resume checks can short-circuit
+    # before any expensive modality detection or metadata reads.
+    base_name = _flatten_relative_path(input_path, root)
+    if output_format == "pdf":
+        series_output = os.path.join(renders_dir, f"{base_name}.pdf")
+    else:
+        series_output = os.path.join(output_dir, f"{base_name}.jpg")
+
+    # --- Resume: skip if already fully rendered ---
+    if output_format == "pdf":
+        if os.path.exists(series_output):
+            result["output_paths"] = [series_output]
+            result["skip_reason"] = "already rendered (resume)"
+            # We still want to include this in the merge, so don't set skipped=True.
+            return result
+    else:
+        if single_page:
+            if os.path.exists(series_output):
+                result["output_paths"] = [series_output]
+                result["skip_reason"] = "already rendered (resume)"
+                return result
+        else:
+            stem = os.path.splitext(series_output)[0]
+            existing = [f"{stem}_{label}.jpg" for label in VIEW_LABELS
+                        if os.path.exists(f"{stem}_{label}.jpg")]
+            if len(existing) == len(VIEW_LABELS):
+                result["output_paths"] = sorted(existing)
+                result["skip_reason"] = "already rendered (resume)"
+                return result
+
     if input_type == "volume":
         try:
-            modality = detect_volume_modality(input_path)
+            modality = detect_volume_modality(input_path, method=modality_method)
         except RuntimeError:
             result["skipped"] = True
             result["skip_reason"] = "could not detect modality from volume scalar range"
@@ -145,22 +225,11 @@ def _process_input(
             return result
 
         result["modality"] = modality
-
-    # Run renderer subprocess
-    if output_format == "pdf":
-        if tmpdir is None:
-            result["skipped"] = True
-            result["skip_reason"] = "internal error: missing temp directory for pdf output"
-            return result
-        series_output = os.path.join(tmpdir, f"series_{index:04d}.pdf")
-    else:
-        base_name = _flatten_relative_path(input_path, root)
-        series_output = os.path.join(output_dir, f"{base_name}.jpg")
-
     cmd = [sys.executable, RENDERER_SCRIPT, input_path, "-o", series_output]
     cmd += ["--modality", modality]
     cmd += ["--label", label]
     cmd += ["--output-format", output_format]
+    cmd += ["--modality-method", modality_method]
     if single_page:
         cmd += ["--single-page"]
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -217,14 +286,40 @@ def main():
         choices=["pdf", "jpg"],
         help="Output format: pdf (default) or jpg.",
     )
+    parser.add_argument(
+        "--modality-method",
+        default="intensity",
+        choices=["intensity", "dicom"],
+        help=(
+            "How to auto-detect modality for NIfTI/NRRD files. "
+            "'intensity' (default): use voxel-intensity heuristics. "
+            "'dicom': read Modality tag from a sibling DICOM file (falls back to intensity)."
+        ),
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["SILENT", "ERROR", "WARNING", "INFO", "DEBUG"],
+        help="Logging verbosity (default: INFO). Modality detection only logged at DEBUG level.",
+    )
     args = parser.parse_args()
+    global logger
+    logger = setup_logging(args.log_level)
+    renderer_module.logger = logger
 
     if not os.path.isdir(args.input_dir):
         sys.exit(f"Input directory not found: {args.input_dir}")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
+    # For PDF output, per-series PDFs are stored in a stable subfolder so
+    # interrupted runs can be resumed without re-rendering already-done series.
+    renders_dir = os.path.join(args.output_dir, "renders") if args.output_format == "pdf" else None
+    if renders_dir:
+        os.makedirs(renders_dir, exist_ok=True)
+
     # Discover all inputs
+    emit_progress(f"Scanning input tree under {args.input_dir} for DICOM/NIfTI/NRRD inputs...")
     inputs = find_inputs(args.input_dir, args.filename_filter)
     if not inputs:
         if args.filename_filter:
@@ -238,43 +333,94 @@ def main():
     total = len(inputs)
     n_vol = sum(1 for i in inputs if i["type"] == "volume")
     n_dicom = sum(1 for i in inputs if i["type"] == "dicom")
-    print(f"Found {total} inputs ({n_dicom} DICOM, {n_vol} NIfTI/NRRD, {args.workers} workers)")
+    emit_progress(f"Found {total} inputs ({n_dicom} DICOM, {n_vol} NIfTI/NRRD, {args.workers} workers)")
     if args.filename_filter:
-        print(f"Filename filter(s): {', '.join(args.filename_filter)}")
+        emit_progress(f"Filename filter(s): {', '.join(args.filename_filter)}")
     if args.single_page:
         if args.output_format == "pdf":
-            print("Single-page mode: each volume will be rendered on one PDF page.")
+            emit_progress("Single-page mode: each volume will be rendered on one PDF page.")
         else:
-            print("Single-page mode: each volume will be rendered into one JPEG image.")
+            emit_progress("Single-page mode: each volume will be rendered into one JPEG image.")
     if n_vol > 0:
-        print(f"Standalone volume modality auto-detection enabled for {n_vol} inputs.")
-    print()
+        logger.info(f"Standalone volume modality auto-detection enabled for {n_vol} inputs (method: {args.modality_method}).")
+    emit_progress("Starting parallel rendering jobs. First completion can take a while depending on volume size.")
 
     # Render inputs in parallel using thread pool
-    tmpdir = tempfile.mkdtemp(prefix="batch_render_") if args.output_format == "pdf" else None
     results: list[dict] = []
     done_count = 0
 
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = {
-            executor.submit(
-                _process_input, i, total, inp,
-                args.input_dir, args.output_dir, tmpdir, args.single_page, args.output_format,
-            ): i
-            for i, inp in enumerate(inputs, 1)
-        }
+        pending: set = set()
+        input_iter = iter(enumerate(inputs, 1))
+        submitted_count = 0
 
-        for future in as_completed(futures):
-            r = future.result()
-            results.append(r)
-            done_count += 1
+        # Seed initial workers so we can start waiting/reporting immediately.
+        for _ in range(args.workers):
+            try:
+                i, inp = next(input_iter)
+            except StopIteration:
+                break
+            pending.add(
+                executor.submit(
+                    _process_input, i, total, inp,
+                    args.input_dir, args.output_dir, renders_dir,
+                    args.single_page, args.output_format, args.modality_method,
+                )
+            )
+            submitted_count += 1
 
-            if r["skipped"]:
-                print(f"[done {done_count:>{len(str(total))}}/{total}] "
-                      f"{r['label']} - skipped: {r['skip_reason']}")
-            else:
-                print(f"[done {done_count:>{len(str(total))}}/{total}] "
-                      f"{r['label']} - rendered ({r['modality']})")
+        emit_progress(
+            f"Queued {submitted_count}/{total} render jobs "
+            f"({len(pending)} active workers)"
+        )
+
+        last_wait_update = time.monotonic()
+        while pending:
+            done, pending = wait(pending, timeout=10, return_when=FIRST_COMPLETED)
+            if not done:
+                now = time.monotonic()
+                if now - last_wait_update >= 30:
+                    emit_progress(
+                        f"Still working... completed {done_count}/{total}, "
+                        f"submitted {submitted_count}/{total}, active {len(pending)}"
+                    )
+                    last_wait_update = now
+                continue
+
+            for future in done:
+                r = future.result()
+                results.append(r)
+                done_count += 1
+
+                if r["skipped"]:
+                    emit_progress(f"[done {done_count:>{len(str(total))}}/{total}] "
+                                  f"{r['label']} - skipped: {r['skip_reason']}")
+                elif r.get("skip_reason") == "already rendered (resume)":
+                    emit_progress(f"[done {done_count:>{len(str(total))}}/{total}] "
+                                  f"{r['label']} - skipped: already rendered (resume)")
+                else:
+                    emit_progress(f"[done {done_count:>{len(str(total))}}/{total}] "
+                                  f"{r['label']} - rendered ({r['modality']})")
+
+                try:
+                    i, inp = next(input_iter)
+                except StopIteration:
+                    continue
+
+                pending.add(
+                    executor.submit(
+                        _process_input, i, total, inp,
+                        args.input_dir, args.output_dir, renders_dir,
+                        args.single_page, args.output_format, args.modality_method,
+                    )
+                )
+                submitted_count += 1
+
+                if submitted_count % max(args.workers * 10, 50) == 0:
+                    emit_progress(
+                        f"Queued {submitted_count}/{total} render jobs "
+                        f"({len(pending)} active workers)"
+                    )
 
     # Sort by original index to preserve directory order in merged PDF
     results.sort(key=lambda r: r["index"])
@@ -296,20 +442,22 @@ def main():
         print(f"\n[!] {len(skipped)} inputs skipped - see {log_path}")
 
     if not rendered_outputs:
-        if tmpdir:
-            shutil.rmtree(tmpdir, ignore_errors=True)
         sys.exit("No inputs were rendered successfully.")
 
     if args.output_format == "pdf":
         # Merge all per-series PDFs into one
         output_pdf = os.path.join(args.output_dir, "batch_renders.pdf")
         _merge_pdfs(rendered_outputs, output_pdf)
-        print(f"Done - {len(rendered_outputs)} rendered -> {output_pdf}")
+        n_resumed = sum(1 for r in results
+                        if not r["skipped"] and r.get("skip_reason") == "already rendered (resume)")
+        n_new = len(rendered_outputs) - n_resumed
+        print(f"Done - {n_new} newly rendered, {n_resumed} resumed from cache -> {output_pdf}")
     else:
-        print(f"Done - wrote {len(rendered_outputs)} JPEG files -> {args.output_dir}")
-
-    if tmpdir:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        n_resumed = sum(1 for r in results
+                        if not r["skipped"] and r.get("skip_reason") == "already rendered (resume)")
+        n_new = len(rendered_outputs) - n_resumed
+        print(f"Done - wrote {len(rendered_outputs)} JPEG files "
+              f"({n_new} new, {n_resumed} resumed) -> {args.output_dir}")
 
 
 def _merge_pdfs(pdf_paths: list[str], output_path: str):
