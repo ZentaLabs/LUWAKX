@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import glob
+import logging
 import math
 import os
 import shutil
@@ -21,6 +22,32 @@ import pydicom
 import SimpleITK as sitk
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+
+
+# -- Logging setup -----------------------------------------------------------
+
+def setup_logging(level: str = "INFO"):
+    """Configure logging for the renderer.
+    
+    Levels: SILENT, ERROR, WARNING, INFO (default), DEBUG
+    SILENT suppresses all logging output.
+    """
+    resolved_logger = logging.getLogger(__name__)
+    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    if level.upper() == "SILENT":
+        logging.disable(logging.CRITICAL)
+    else:
+        logging.disable(logging.NOTSET)
+        logging.basicConfig(
+            level=numeric_level,
+            format="%(levelname)s: %(message)s",
+            stream=sys.stderr,
+        )
+        resolved_logger.setLevel(numeric_level)
+    return resolved_logger
+
+
+logger = logging.getLogger(__name__)
 
 
 # -- NIfTI/NRRD support ------------------------------------------------------
@@ -174,9 +201,12 @@ def infer_modality_from_image(image_data: vtk.vtkImageData) -> tuple[str, str]:
     p99 = float(np.percentile(vox, 99))
     frac_gt200 = float(np.mean(vox > 200))
 
-    # Near-zero non-negative volumes are typically not PET activity maps.
+    # Near-zero non-negative volumes (hi < 1.0, 99th-pct ≈ 0) are sparse or normalized
+    # PET activity maps — NOT CT.  A normalized CT in [0, 1] would have p99 well above
+    # 0.01 because tissue values spread across the full range; CT with HU is already
+    # caught above by the lo < -200 guard.
     if lo >= 0 and hi < 1.0 and p99 < 0.01:
-        return "CT", f"near-zero non-negative distribution (max={hi:.4f}, p99={p99:.4f})"
+        return "PT", f"near-zero non-negative distribution (max={hi:.4f}, p99={p99:.4f}); likely sparse/normalized PET"
 
     # PET-like pattern: non-negative background-dominant distribution with hot uptake tail.
     if lo >= 0 and p75 < 150 and p95 > 300:
@@ -194,6 +224,13 @@ def infer_modality_from_image(image_data: vtk.vtkImageData) -> tuple[str, str]:
         return "PT", (
             f"non-negative with very low p75={p75:.2f}, moderate p90={p90:.2f}, "
             f"and PET-like tail p95={p95:.2f}"
+        )
+
+    # Low-uptake PET can remain mostly near-zero with a modest tail.
+    if lo >= 0 and p75 < 25 and p95 > 70 and (p99 > 150 or frac_gt200 > 0.005):
+        return "PT", (
+            f"low-uptake non-negative pattern (p75={p75:.2f}, p95={p95:.2f}, "
+            f"p99={p99:.2f}, frac>200={frac_gt200:.3f})"
         )
 
     # PET-like when a meaningful fraction of voxels are >200 even if percentile tails are softer.
@@ -220,12 +257,53 @@ def infer_modality_from_image(image_data: vtk.vtkImageData) -> tuple[str, str]:
     )
 
 
-def detect_volume_modality(input_path: str) -> str:
-    """Auto-detect modality for standalone NIfTI/NRRD using intensity distribution."""
+def _detect_modality_from_companion_dicom(volume_path: str) -> str | None:
+    """Look for DICOM files in the same directory as a volume file and read their Modality tag.
+
+    Returns the modality string (e.g. "CT", "PT") or None if no DICOM is found.
+    """
+    dicom_dir = os.path.dirname(os.path.abspath(volume_path))
+    dcm_files = glob.glob(os.path.join(dicom_dir, "*.dcm"))
+    if not dcm_files:
+        return None
+    try:
+        ds = pydicom.dcmread(dcm_files[0], stop_before_pixels=True)
+        modality = str(ds.Modality).upper()
+        logger.debug(f"Detected modality from companion DICOM: {modality}")
+        return modality
+    except Exception:
+        return None
+
+
+def detect_volume_modality(input_path: str, method: str = "intensity") -> str:
+    """Auto-detect modality for standalone NIfTI/NRRD.
+
+    method="intensity" (default): classify using voxel-intensity heuristics only.
+    method="dicom": read the Modality tag from a sibling DICOM file; fall back to
+        intensity heuristics when no companion DICOM is present.
+    """
+    if method == "dicom":
+        companion_modality = _detect_modality_from_companion_dicom(input_path)
+        if companion_modality is not None:
+            return companion_modality
+
     image_data = _load_volume_file(input_path)
     scalar_range = image_data.GetScalarRange()
     modality, reason = infer_modality_from_image(image_data)
-    print(
+
+    # Intensity-only heuristics can classify some PET volumes as CT.
+    # If a sibling DICOM exists, use its modality as a tie-breaker.
+    if method == "intensity" and modality == "CT":
+        companion_modality = _detect_modality_from_companion_dicom(input_path)
+        if companion_modality in {"PT", "PET"}:
+            logger.info(
+                "Companion DICOM indicates PET/PT; overriding intensity-based CT "
+                f"classification for {input_path}"
+            )
+            modality = "PT"
+            reason += f"; overridden by companion DICOM modality={companion_modality}"
+
+    logger.debug(
         f"Detected volume modality from intensity distribution: {modality} "
         f"(range={scalar_range}, reason={reason})"
     )
@@ -279,6 +357,119 @@ DEFAULT_PET_TF = {
 }
 
 
+def _clone_tf(tf: dict) -> dict:
+    """Return a shallow clone of a transfer-function dict."""
+    return {
+        "opacity": [[float(v), float(a)] for v, a in tf["opacity"]],
+        "gradient_opacity": [[float(v), float(a)] for v, a in tf["gradient_opacity"]],
+        "color": [[float(v), [float(c) for c in rgb]] for v, rgb in tf["color"]],
+    }
+
+
+def _map_tf_values_linear(tf: dict, dst_lo: float, dst_hi: float) -> dict:
+    """Linearly map all scalar-domain TF points into [dst_lo, dst_hi]."""
+    values = [v for v, _ in tf["opacity"]] + [v for v, _ in tf["color"]]
+    src_lo = min(values)
+    src_hi = max(values)
+    if src_hi <= src_lo or dst_hi <= dst_lo:
+        return _clone_tf(tf)
+
+    scale = (dst_hi - dst_lo) / (src_hi - src_lo)
+
+    def remap(v: float) -> float:
+        return dst_lo + (v - src_lo) * scale
+
+    mapped = _clone_tf(tf)
+    mapped["opacity"] = [[remap(v), a] for v, a in mapped["opacity"]]
+    mapped["color"] = [[remap(v), rgb] for v, rgb in mapped["color"]]
+    return mapped
+
+
+def _apply_pet_rescale_to_tf(tf: dict, slope: float, intercept: float) -> dict:
+    """Map PET TF from physical units into raw scalar domain via inverse affine."""
+    if not np.isfinite(slope) or not np.isfinite(intercept) or slope <= 0:
+        raise ValueError("invalid PET rescale parameters")
+
+    mapped = _clone_tf(tf)
+    mapped["opacity"] = [[(v - intercept) / slope, a] for v, a in mapped["opacity"]]
+    mapped["color"] = [[(v - intercept) / slope, rgb] for v, rgb in mapped["color"]]
+    return mapped
+
+
+def _first_visible_opacity(tf: dict) -> float | None:
+    """Return the first scalar value where opacity becomes non-zero."""
+    visible = [v for v, a in tf["opacity"] if a > 0]
+    if not visible:
+        return None
+    return min(visible)
+
+
+def _estimate_image_percentile(image_data: vtk.vtkImageData, percentile: float) -> float | None:
+    """Estimate a voxel percentile with bounded sampling for large volumes."""
+    scalars = image_data.GetPointData().GetScalars()
+    if scalars is None:
+        return None
+
+    vox = vtk_to_numpy(scalars)
+    if vox.size == 0:
+        return None
+
+    if vox.size > 1_000_000:
+        stride = int(np.ceil(vox.size / 1_000_000))
+        vox = vox[::stride]
+
+    value = float(np.percentile(vox, percentile))
+    if not np.isfinite(value):
+        return None
+    return value
+
+
+def _fit_pet_tf_to_image_percentiles(tf: dict, image_data: vtk.vtkImageData) -> dict:
+    """Fit PET TF scalar points to observed voxel percentiles for sparse inputs."""
+    scalars = image_data.GetPointData().GetScalars()
+    if scalars is None:
+        return _clone_tf(tf)
+
+    vox = vtk_to_numpy(scalars)
+    if vox.size == 0:
+        return _clone_tf(tf)
+
+    if vox.size > 1_000_000:
+        stride = int(np.ceil(vox.size / 1_000_000))
+        vox = vox[::stride]
+
+    p90 = float(np.percentile(vox, 90))
+    p99 = float(np.percentile(vox, 99))
+    lo = float(np.min(vox))
+    hi = float(np.max(vox))
+
+    if not np.isfinite(p90) or not np.isfinite(p99) or hi <= lo:
+        return _clone_tf(tf)
+
+    target_visible = max(p90, lo)
+    target_hi = max(p99, target_visible * 1.1)
+    if target_hi <= target_visible:
+        target_hi = hi
+    if target_hi <= target_visible:
+        return _map_tf_values_linear(tf, lo, hi)
+
+    visible_src = _first_visible_opacity(tf)
+    values = [v for v, _ in tf["opacity"]] + [v for v, _ in tf["color"]]
+    src_hi = max(values)
+    if visible_src is None or src_hi <= visible_src:
+        return _map_tf_values_linear(tf, lo, hi)
+
+    scale = (target_hi - target_visible) / (src_hi - visible_src)
+
+    def remap(v: float) -> float:
+        return target_visible + (v - visible_src) * scale
+
+    mapped = _clone_tf(tf)
+    mapped["opacity"] = [[remap(v), a] for v, a in mapped["opacity"]]
+    mapped["color"] = [[remap(v), rgb] for v, rgb in mapped["color"]]
+    return mapped
+
+
 def detect_modality(dicom_dir: str) -> str:
     """Read the Modality DICOM tag from the first file in the directory."""
     dcm_files = glob.glob(os.path.join(dicom_dir, "**", "*"), recursive=True)
@@ -288,7 +479,7 @@ def detect_modality(dicom_dir: str) -> str:
         try:
             ds = pydicom.dcmread(f, stop_before_pixels=True)
             modality = ds.Modality.upper()
-            print(f"Detected DICOM modality: {modality}")
+            logger.debug(f"Detected DICOM modality: {modality}")
             return modality
         except Exception:
             continue
@@ -369,6 +560,9 @@ SINGLE_PAGE_VIEW_ORDER = [
     "back",
 ]
 
+# Ordered list of view labels (useful for callers that need to enumerate expected outputs).
+VIEW_LABELS = [label for _, _, label in VIEWS]
+
 
 def _label_from_png_path(path: str) -> str:
     """Extract view label from renderer output filename (e.g. 01_front -> front)."""
@@ -390,8 +584,17 @@ def _reorder_single_page_paths(png_paths: list[str]) -> list[str]:
 # -- Rendering ----------------------------------------------------------------
 
 
-def render_views(input_path: str, modality: str) -> list[str]:
-    """Render all views and return list of temp PNG paths."""
+def render_views(
+    input_path: str,
+    modality: str,
+    views_dir: str | None = None,
+) -> list[str]:
+    """Render all views and return a list of PNG paths.
+
+    If *views_dir* is given, PNGs are written there (directory is created if
+    needed).  Otherwise a temporary directory is used and the caller is
+    responsible for deleting it via ``shutil.rmtree(os.path.dirname(paths[0]))``.
+    """
 
     patient_matrix = None
     if is_volume_file(input_path):
@@ -400,21 +603,50 @@ def render_views(input_path: str, modality: str) -> list[str]:
         image_data, patient_matrix = load_dicom_with_simpleitk(input_path)
 
     scalar_range = image_data.GetScalarRange()
-    print(
+    logger.info(
         f"Volume: {image_data.GetDimensions()}, "
         f"spacing: {image_data.GetSpacing()} mm, "
         f"range: {scalar_range}"
     )
 
     if modality == "PT":
-        resolved_tf = DEFAULT_PET_TF
         slope, intercept, units = get_pet_rescale(input_path) if not is_volume_file(input_path) else (1.0, 0.0, "BQML")
         bqml_lo = scalar_range[0] * slope + intercept
         bqml_hi = scalar_range[1] * slope + intercept
-        print(
-            f"PET rescale: slope={slope}, intercept={intercept}, units={units}\n"
+        logger.info(
+            f"PET rescale: slope={slope}, intercept={intercept}, units={units} | "
             f"Bq/ml range: {bqml_lo:.1f} - {bqml_hi:.1f}"
         )
+
+        # Start from PET defaults, then try physically meaningful remapping.
+        try:
+            resolved_tf = _apply_pet_rescale_to_tf(DEFAULT_PET_TF, slope, intercept)
+        except ValueError:
+            resolved_tf = _clone_tf(DEFAULT_PET_TF)
+            logger.warning(
+                "PET rescale parameters are invalid; using unscaled PET transfer function."
+            )
+
+        # If the visible opacity threshold is outside the actual scalar range,
+        # or above robust upper percentiles, the rendered volume can appear empty.
+        # Auto-fit TF to observed data percentiles in those cases.
+        visible_start = _first_visible_opacity(resolved_tf)
+        p99 = _estimate_image_percentile(image_data, 99.0)
+        if (
+            visible_start is not None
+            and scalar_range[1] > scalar_range[0]
+            and (
+                visible_start > scalar_range[1]
+                or (p99 is not None and visible_start > p99)
+            )
+        ):
+            logger.warning(
+                "PET transfer function is out of scalar range "
+                f"(first visible={visible_start:.6g}, data max={scalar_range[1]:.6g}, "
+                f"p99={p99 if p99 is not None else float('nan'):.6g}); "
+                "auto-scaling PET preset to data range."
+            )
+            resolved_tf = _fit_pet_tf_to_image_percentiles(DEFAULT_PET_TF, image_data)
     else:
         resolved_tf = DEFAULT_CT_TF
 
@@ -445,7 +677,12 @@ def render_views(input_path: str, modality: str) -> list[str]:
     max_ext = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
     cam_dist = max_ext * 1.8
 
-    tmpdir = tempfile.mkdtemp(prefix="vol_render_")
+    _own_tmpdir: str | None = None
+    if views_dir is None:
+        _own_tmpdir = tempfile.mkdtemp(prefix="vol_render_")
+        views_dir = _own_tmpdir
+    else:
+        os.makedirs(views_dir, exist_ok=True)
     png_paths = []
 
     for i, (az_deg, el_deg, label) in enumerate(VIEWS):
@@ -469,14 +706,14 @@ def render_views(input_path: str, modality: str) -> list[str]:
         w2i.SetInput(win)
         w2i.Update()
 
-        path = os.path.join(tmpdir, f"{i + 1:02d}_{label}.png")
+        path = os.path.join(views_dir, f"{i + 1:02d}_{label}.png")
         writer = vtk.vtkPNGWriter()
         writer.SetFileName(path)
         writer.SetInputConnection(w2i.GetOutputPort())
         writer.Write()
         png_paths.append(path)
 
-        print(f"  [{i + 1}/{len(VIEWS)}] {label} (az={az_deg} deg, el={el_deg} deg)")
+        logger.info(f"  [{i + 1}/{len(VIEWS)}] {label} (az={az_deg} deg, el={el_deg} deg)")
 
     return png_paths
 
@@ -555,7 +792,7 @@ def save_pdf(
             pdf.savefig(fig, facecolor=fig.get_facecolor())
             plt.close(fig)
 
-    print(f"\nPDF saved: {output_path}")
+    logger.info(f"PDF saved: {output_path}")
 
 
 def save_jpg(
@@ -584,6 +821,7 @@ def save_jpg(
 
         root, ext = os.path.splitext(output_path)
         single_jpg_path = output_path if ext.lower() in (".jpg", ".jpeg") else f"{output_path}.jpg"
+        logger.debug(f"Composing single-page JPEG: {single_jpg_path}")
 
         fig, axes = plt.subplots(rows, cols, figsize=fig_size)
         if rows == 1 and cols == 1:
@@ -628,7 +866,7 @@ def save_jpg(
             pil_kwargs={"quality": 75, "optimize": True},
         )
         plt.close(fig)
-        print(f"\nJPEG saved: {single_jpg_path}")
+        logger.info(f"JPEG saved: {single_jpg_path}")
         return
 
     base, _ = os.path.splitext(output_path)
@@ -642,7 +880,7 @@ def save_jpg(
         with Image.open(path) as im:
             rgb = im.convert("RGB")
             rgb.save(jpg_path, format="JPEG", quality=75, optimize=True)
-        print(f"JPEG saved: {jpg_path}")
+        logger.info(f"JPEG saved: {jpg_path}")
 
 
 # -- CLI ----------------------------------------------------------------------
@@ -681,22 +919,49 @@ def main():
         action="store_true",
         help="Render all views for this volume on a single page/image.",
     )
+    parser.add_argument(
+        "--modality-method",
+        default="intensity",
+        choices=["intensity", "dicom"],
+        help=(
+            "How to auto-detect modality for NIfTI/NRRD files. "
+            "'intensity' (default): use voxel-intensity heuristics. "
+            "'dicom': read Modality tag from a sibling DICOM file (falls back to intensity)."
+        ),
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["SILENT", "ERROR", "WARNING", "INFO", "DEBUG"],
+        help="Logging verbosity (default: INFO). Modality detection only logged at DEBUG level.",
+    )
     args = parser.parse_args()
+    global logger
+    logger = setup_logging(args.log_level)
 
     input_path = args.input
     volume_mode = is_volume_file(input_path)
 
     if volume_mode:
         if not os.path.isfile(input_path):
-            print(f"Volume file not found: {input_path}", file=sys.stderr)
+            logger.error(f"Volume file not found: {input_path}")
             sys.exit(1)
-        modality = args.modality or detect_volume_modality(input_path)
-        print(f"Volume input: {input_path}  (modality: {modality})")
+        modality = args.modality or detect_volume_modality(input_path, method=args.modality_method)
+        logger.info(f"Volume input: {input_path}  (modality: {modality})")
     else:
         modality = args.modality or detect_modality(input_path)
 
+    # Derive a deterministic views directory inside the output directory so that
+    # intermediate PNGs are never written to /tmp.
+    output_abs = os.path.abspath(args.output)
+    output_stem = os.path.splitext(os.path.basename(output_abs))[0]
+    # Strip a second extension for .nii.gz-style stems
+    if output_stem.lower().endswith(".nii"):
+        output_stem = os.path.splitext(output_stem)[0]
+    views_dir = os.path.join(os.path.dirname(output_abs), ".views", output_stem)
+
     # Render
-    png_paths = render_views(input_path, modality)
+    png_paths = render_views(input_path, modality, views_dir=views_dir)
 
     # Save PDF and clean up temp PNGs
     if args.label:
@@ -710,7 +975,7 @@ def main():
     else:
         save_jpg(png_paths, args.output, name, modality, single_page=args.single_page)
 
-    shutil.rmtree(os.path.dirname(png_paths[0]), ignore_errors=True)
+    shutil.rmtree(views_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
