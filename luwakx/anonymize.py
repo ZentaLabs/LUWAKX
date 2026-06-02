@@ -660,16 +660,7 @@ class LuwakAnonymizer:
                     "be overwritten once the new scan completes)."
                 )
                 # Remove old job rows for this folder pair so a clean job is created
-                checkpoint_db.conn.execute(
-                    'DELETE FROM series_status WHERE job_id IN '
-                    '(SELECT job_id FROM jobs WHERE input_folder = ? AND output_folder = ?)',
-                    (input_folder, output_directory),
-                )
-                checkpoint_db.conn.execute(
-                    'DELETE FROM jobs WHERE input_folder = ? AND output_folder = ?',
-                    (input_folder, output_directory),
-                )
-                checkpoint_db.conn.commit()
+                checkpoint_db.delete_job(input_folder, output_directory)
                 job_id = checkpoint_db.get_or_create_job(
                     input_folder=input_folder,
                     output_folder=output_directory,

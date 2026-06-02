@@ -59,6 +59,7 @@ class JobCheckpointDatabase:
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
         self._write_lock = threading.Lock()
+        self.__db_dir: Optional[str] = None  # lazily computed, see _db_dir
 
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
@@ -72,6 +73,50 @@ class JobCheckpointDatabase:
         self.conn.execute('PRAGMA synchronous=NORMAL')
         self.conn.execute('PRAGMA busy_timeout=30000')
         self._create_tables()
+
+    # ------------------------------------------------------------------
+    # Relative-path helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def _db_dir(self) -> str:
+        """Absolute path of the directory that contains the database file.
+
+        All folder paths stored in the database are kept relative to this
+        directory so that the entire project tree can be relocated without
+        invalidating the checkpoint state.
+        """
+        if self.__db_dir is None:
+            self.__db_dir = os.path.dirname(os.path.abspath(self.db_path))
+        return self.__db_dir
+
+    def _to_rel(self, path: str) -> str:
+        """Return *path* as a path relative to the DB directory.
+
+        Already-relative and empty values are returned unchanged.
+        On Windows, cross-drive paths that cannot be expressed as relative
+        are returned as-is.
+        """
+        if not path or not os.path.isabs(path):
+            return path
+        try:
+            return os.path.relpath(path, self._db_dir)
+        except ValueError:
+            return path  # Windows cross-drive — keep absolute
+
+    def _to_abs(self, path: str) -> str:
+        """Resolve *path* to an absolute path using the DB directory as anchor.
+
+        Relative paths are resolved against the DB directory.
+        Absolute paths (legacy entries written before this change) are returned
+        as-is so existing databases remain readable without migration.
+        Empty strings are returned unchanged.
+        """
+        if not path:
+            return path
+        if os.path.isabs(path):
+            return path  # legacy absolute path — use directly
+        return os.path.normpath(os.path.join(self._db_dir, path))
 
     # ------------------------------------------------------------------
     # Schema
@@ -136,7 +181,9 @@ class JobCheckpointDatabase:
         prevent resuming a job.
         """
         relevant_keys = {
-            'inputFolder', 'outputDeidentifiedFolder', 'outputPrivateMappingFolder',
+            # Anonymization settings that change output content.
+            # Folder paths are intentionally excluded: relocating the project tree
+            # should not be treated as config drift.
             'recipes', 'patientIdPrefix', 'projectHashRoot',
             'customTags', 'selectedModalities',
             'physicalFacePixelationSizeMm', 'faceDilationMarginMm',
@@ -158,6 +205,10 @@ class JobCheckpointDatabase:
     ) -> Optional[str]:
         """Return the job_id for an existing resumable job, or create a new one.
 
+        Paths are stored relative to the DB directory.  When an existing row
+        is found that still contains absolute paths (written by an older version
+        of the code), those paths are migrated to relative in place.
+
         If an existing job for ``(input_folder, output_folder)`` is found:
         - ``config_hash`` matches  -> return its job_id (resume path).
         - ``config_hash`` differs  -> return ``None`` (config drift; caller warns).
@@ -165,14 +216,39 @@ class JobCheckpointDatabase:
         Returns:
             job_id string, or None when config drift is detected.
         """
+        rel_input   = self._to_rel(input_folder)
+        rel_output  = self._to_rel(output_folder)
+        rel_private = self._to_rel(private_folder)
+
         with self._write_lock:
             cursor = self.conn.cursor()
+
+            # Primary lookup: relative paths (current format).
             cursor.execute(
                 'SELECT job_id, config_hash FROM jobs '
                 'WHERE input_folder = ? AND output_folder = ?',
-                (input_folder, output_folder),
+                (rel_input, rel_output),
             )
             row = cursor.fetchone()
+
+            if row is None:
+                # Fallback: absolute paths written by older code.  If found,
+                # migrate the row to relative paths so future lookups succeed.
+                cursor.execute(
+                    'SELECT job_id, config_hash FROM jobs '
+                    'WHERE input_folder = ? AND output_folder = ?',
+                    (input_folder, output_folder),
+                )
+                row = cursor.fetchone()
+                if row is not None:
+                    self.conn.execute(
+                        'UPDATE jobs '
+                        'SET input_folder = ?, output_folder = ?, private_folder = ?, '
+                        '    last_updated_at = CURRENT_TIMESTAMP '
+                        'WHERE job_id = ?',
+                        (rel_input, rel_output, rel_private, row['job_id']),
+                    )
+                    self.conn.commit()
 
             if row is not None:
                 if row['config_hash'] != config_hash:
@@ -184,7 +260,7 @@ class JobCheckpointDatabase:
                 'INSERT INTO jobs '
                 '(job_id, input_folder, output_folder, private_folder, config_hash) '
                 'VALUES (?, ?, ?, ?, ?)',
-                (job_id, input_folder, output_folder, private_folder, config_hash),
+                (job_id, rel_input, rel_output, rel_private, config_hash),
             )
             self.conn.commit()
             return job_id
@@ -215,6 +291,29 @@ class JobCheckpointDatabase:
             )
             self.conn.commit()
 
+    def delete_job(self, input_folder: str, output_folder: str) -> None:
+        """Delete a job and all its series rows, matched by folder pair.
+
+        Tries relative paths first (current format), then falls back to the
+        raw values (absolute paths stored by older code) so that config-drift
+        cleanup works regardless of which format the row was written in.
+        """
+        rel_input  = self._to_rel(input_folder)
+        rel_output = self._to_rel(output_folder)
+
+        with self._write_lock:
+            for inp, out in [(rel_input, rel_output), (input_folder, output_folder)]:
+                self.conn.execute(
+                    'DELETE FROM series_status WHERE job_id IN '
+                    '(SELECT job_id FROM jobs WHERE input_folder = ? AND output_folder = ?)',
+                    (inp, out),
+                )
+                self.conn.execute(
+                    'DELETE FROM jobs WHERE input_folder = ? AND output_folder = ?',
+                    (inp, out),
+                )
+            self.conn.commit()
+
     # ------------------------------------------------------------------
     # Series status
     # ------------------------------------------------------------------
@@ -242,7 +341,13 @@ class JobCheckpointDatabase:
         never overwritten during a re-scan.  Path / partition columns are
         refreshed via a follow-up ``UPDATE`` so that any change in
         ``numWorkers`` between runs is persisted.
+
+        Folder paths are stored relative to the DB directory (see :meth:`_to_rel`).
         """
+        rel_org = self._to_rel(organized_base_path)
+        rel_def = self._to_rel(defaced_base_path)
+        rel_out = self._to_rel(output_base_path)
+
         with self._write_lock:
             self.conn.execute(
                 '''
@@ -259,7 +364,7 @@ class JobCheckpointDatabase:
                  original_series_uid, original_patient_id, original_study_uid,
                  anonymized_patient_id, anonymized_study_uid,
                  modality, series_order, primary_ct_series_uid, worker_partition,
-                 organized_base_path, defaced_base_path, output_base_path,
+                 rel_org, rel_def, rel_out,
                  ProcessingStatus.ORIGINAL.name),
             )
             self.conn.execute(
@@ -276,7 +381,7 @@ class JobCheckpointDatabase:
                   AND  processing_status = ?
                 ''',
                 (series_order, primary_ct_series_uid, worker_partition,
-                 organized_base_path, defaced_base_path, output_base_path,
+                 rel_org, rel_def, rel_out,
                  job_id, anonymized_series_uid, ProcessingStatus.ORIGINAL.name),
             )
             self.conn.commit()
@@ -375,9 +480,9 @@ class JobCheckpointDatabase:
         for row in rows:
             uid = row['anonymized_series_uid']
             status_name = row.get('processing_status', ProcessingStatus.ORIGINAL.name)
-            org_path = row.get('organized_base_path') or ''
-            def_path = row.get('defaced_base_path') or ''
-            out_path = row.get('output_base_path') or ''
+            org_path = self._to_abs(row.get('organized_base_path') or '')
+            def_path = self._to_abs(row.get('defaced_base_path') or '')
+            out_path = self._to_abs(row.get('output_base_path') or '')
 
             try:
                 status = ProcessingStatus[status_name]
