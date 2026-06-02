@@ -246,6 +246,7 @@ python luwakx.py --config_path /path/to/config.json
 
 - **`--config_path`** (required): Path to the JSON configuration file
 - **`--no-console`** (optional): Disable console logging output; logs will only be written to the log file
+- **`--dry-run`** (optional): Validate the configuration file without processing any DICOM files
 
 #### Logging Behavior
 
@@ -408,6 +409,15 @@ The following environment variables control testing:
 - **`TEST_INTERACTIVE_VISUALIZATION`**: set to `1` to show interactive visualizations (use interaction is needed to complete the testing).
 - **`DEFACER_SIMULATE`**: Set to 1 to read pre-computed mask instead of using a GPU to get the face mask. It allows running tests successfully without having access to a GPU.
 - **`CLEAN_DESCRIPTORS_LLM_SIMULATE`**: Set to `1` to download default LLM analysis cache from test data repository. It allows running tests successfully without having access to an LLM.
+
+## Stop and Resume
+
+When `analysisCacheFolder` is configured, luwakx tracks each series through the pipeline in a checkpoint database (`job_checkpoint.db`). This enables two behaviors:
+
+- **Graceful stop**: Press Ctrl-C once. The current series finishes processing, then the job pauses cleanly. Press Ctrl-C a second time to force an immediate exit.
+- **Automatic resume**: Run the same command again. Series that completed in the previous run are skipped; partially processed series are cleaned up and reprocessed from the beginning.
+
+If the configuration changes between runs (e.g. different recipes), luwakx detects the mismatch and starts a fresh job.
 
 ## Troubleshooting
 
