@@ -17,7 +17,7 @@ pip install luwakx
 
 ```bash
 git clone https://github.com/ZentaLabs/LUWAKX.git
-cd luwak
+cd luwakx
 pip install -e ".[test]"
 ```
 
