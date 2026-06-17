@@ -99,7 +99,10 @@ def pixelate_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, target_blo
         The image with the face region pixelated.
     """
     spacing = image.GetSpacing()
-    downsample_factors = [max(1, int(target_block_size_mm / s)) for s in spacing]
+    downsample_factors = [
+        max(2, int(target_block_size_mm / s)) if target_block_size_mm > s else 1
+        for s in spacing
+    ]
 
     down_size = [
         max(1, -(-sz // f)) for sz, f in zip(image.GetSize(), downsample_factors)
