@@ -102,7 +102,7 @@ def pixelate_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, target_blo
     downsample_factors = [max(1, int(target_block_size_mm / s)) for s in spacing]
 
     down_size = [
-        max(1, int(sz / f)) for sz, f in zip(image.GetSize(), downsample_factors)
+        max(1, -(-sz // f)) for sz, f in zip(image.GetSize(), downsample_factors)
     ]
     down_spacing = tuple(s * f for s, f in zip(spacing, downsample_factors))
     transform = SimpleITK.Transform()
@@ -119,7 +119,8 @@ def pixelate_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, target_blo
                                            outputSpacing=image.GetSpacing(),
                                            outputOrigin=image.GetOrigin(),
                                            outputDirection=image.GetDirection(),
-                                           outputPixelType=SimpleITK.sitkFloat32)
+                                           outputPixelType=SimpleITK.sitkFloat32,
+                                           useNearestNeighborExtrapolator=True)
 
     # Use the mask at its original resolution: down/up-resampling drops thin structures (e.g. ears).
     mask_f = SimpleITK.Cast(face_mask, SimpleITK.sitkFloat32)
