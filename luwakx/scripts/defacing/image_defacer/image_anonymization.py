@@ -4,6 +4,7 @@ import os
 import SimpleITK
 import numpy as np
 from moosez import moose
+from moosez.image_processing import image_get_orientation_code, image_reorient
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +26,15 @@ def prepare_face_mask(image: SimpleITK.Image | None = None, modality: str | None
     if face_segmentation_path and os.path.exists(face_segmentation_path):
         image_face_segmentation = SimpleITK.ReadImage(face_segmentation_path, SimpleITK.sitkUInt8)
     elif image and modality:
-        mask, _ = moose(image, f"clin_{modality.lower()}_face")
+        original_orientation = image_get_orientation_code(image)
+        image_ras = image_reorient(image, "RAS")
+        mask, _ = moose(image_ras, f"clin_{modality.lower()}_face")
         if not mask:
             raise RuntimeError(
                 f"moose returned no segmentation for model 'clin_{modality.lower()}_face'. "
                 "The volume may not contain a face/head region."
             )
-        image_face_segmentation = mask[0]
+        image_face_segmentation = image_reorient(mask[0], original_orientation)
     else:
         raise ValueError("Either the path or image and modality must be provided.")
 
