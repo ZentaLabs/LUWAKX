@@ -153,6 +153,19 @@ class DefacePriorityElector:
                         f"PET series {sec.anonymized_series_uid!r} "
                         f"with CT series {ct.anonymized_series_uid!r} "
                     )
+                    # Safety net: warn if even the best-covering CT does not
+                    # reach the PET's head band.  The projected mask cannot cover
+                    # the face, so the PET output must be checked manually (the
+                    # face may be left exposed).
+                    coverage = self._head_coverage(ct, sec)
+                    if coverage is not None and coverage < self._MIN_HEAD_COVERAGE:
+                        self.logger.warning(
+                            f"Elected CT series {ct.anonymized_series_uid!r} covers only "
+                            f"{coverage:.0%} of the head region of PET series "
+                            f"{sec.anonymized_series_uid!r} (no CT in the group fully covers "
+                            f"the head). The projected face mask may miss the face - verify "
+                            f"this PET output manually."
+                        )
                     if self.deface_mask_db is not None:
                         self.deface_mask_db.upsert_pairing(
                             study_instance_uid     = sec.original_study_uid,
@@ -203,20 +216,27 @@ class DefacePriorityElector:
     ) -> DicomSeries:
         """Return the best CT candidate to pair with ``pet``.
 
-        Candidates are ranked by ``(time distance, reformat penalty)``:
+        Candidates are ranked by ``(head coverage, time, reformat penalty)``:
 
-        1. The CT whose ``AcquisitionDateTime`` is closest to this PET's own
-           (only this PET is considered, unlike the former
-           ``_select_primary_ct_for_pets`` which summed across all PETs).
-        2. On a tie - common in PET/CT where the axial CT and its ``cor``/``sag``
-           MPR reformats share an identical acquisition time - a native axial
-           acquisition is preferred over an MPR reformat / localizer.  The
-           reformats derive from the same acquisition, so this only breaks exact
-           ties and never overrides a genuinely closer CT.
+        1. **Head coverage (primary).** The CT must actually cover the PET's
+           head region (the superior end of the PET, where the face is).  A
+           limited-FOV diagnostic CT - e.g. a thorax-only scan - does not
+           contain the head, so a "face" mask segmented on it lands on the
+           shoulders and leaves the PET face exposed.  Candidates are sorted by
+           how much of the PET's head band they cover (most first).  This is a
+           spatial test and does not depend on acquisition timing, which is
+           unreliable for whole-body PET (its per-bed ``AcquisitionTime`` spans
+           the whole scan, and ``AcquisitionDateTime`` is often absent).
+        2. **Time distance.** Among CTs that cover the head equally, the one
+           whose ``AcquisitionDateTime`` is closest to this PET's (the
+           co-acquired CT).
+        3. **Reformat penalty (final tie-break).** When coverage and time are
+           equal - e.g. an axial CT and its ``cor``/``sag`` MPR reformats, which
+           share an acquisition time - a native axial acquisition is preferred
+           over an MPR reformat / localizer.
 
-        Candidates with no parseable datetime sort last on the time component
-        but are still ordered by the reformat preference, so a usable CT is
-        always returned.
+        When z-extents are unavailable (e.g. a stale metadata cache), coverage
+        is treated as neutral and the decision falls back to reformat + time.
 
         Args:
             primary_candidates: Non-empty list of primary-modality series (CT).
@@ -227,15 +247,39 @@ class DefacePriorityElector:
         """
         pet_dt = self._parse_dicom_datetime(pet.acquisition_datetime)
 
-        def sort_key(candidate: DicomSeries) -> Tuple[float, int]:
+        def sort_key(candidate: DicomSeries) -> Tuple[float, float, int]:
+            cov = self._head_coverage(candidate, pet)
+            # More coverage sorts first; None (unknown) -> 0.0, i.e. neutral.
+            coverage_rank = -round(cov, 2) if cov is not None else 0.0
             cdt = self._parse_dicom_datetime(candidate.acquisition_datetime)
             if pet_dt is None or cdt is None:
                 time_score = float('inf')
             else:
                 time_score = abs((cdt - pet_dt).total_seconds())
-            return (time_score, self._ct_reformat_penalty(candidate))
+            return (coverage_rank, time_score, self._ct_reformat_penalty(candidate))
 
         return min(primary_candidates, key=sort_key)
+
+    # Fraction of the PET head band a CT must cover to be considered a valid
+    # face-mask source; below this the pairing is flagged for manual review.
+    _HEAD_BAND_MM: float = 150.0
+    _MIN_HEAD_COVERAGE: float = 0.5
+
+    @classmethod
+    def _head_coverage(cls, ct: DicomSeries, pet: DicomSeries) -> Optional[float]:
+        """Fraction (0..1) of the PET's head band that ``ct`` covers in z.
+
+        The head band is the most-superior ``_HEAD_BAND_MM`` of the PET's
+        z-extent (LPS z increases toward the head, so the face is at the top).
+        Returns ``None`` when either series' z-extent is unknown.
+        """
+        ct_z, pet_z = getattr(ct, 'z_extent', None), getattr(pet, 'z_extent', None)
+        if not ct_z or not pet_z:
+            return None
+        pet_top = pet_z[1]
+        band_lo, band_hi = pet_top - cls._HEAD_BAND_MM, pet_top
+        overlap = min(band_hi, ct_z[1]) - max(band_lo, ct_z[0])
+        return max(0.0, overlap) / cls._HEAD_BAND_MM
 
     @staticmethod
     def _ct_reformat_penalty(series: DicomSeries) -> int:

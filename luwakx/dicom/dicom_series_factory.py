@@ -207,6 +207,34 @@ class DicomSeriesFactory:
                             meta['image_type'] = tuple(str(v) for v in raw_image_type) if raw_image_type else ()
                         except Exception:
                             meta['image_type'] = ()
+
+                        # World-space z-span (superior-inferior, LPS) covered by
+                        # THIS slice.  Aggregated across the series below to give
+                        # the elector each series' head/foot extent so a PET is
+                        # paired only with a CT that covers its head region.
+                        # For an axial slice the two in-plane terms are zero and
+                        # the span collapses to the slice's ImagePositionPatient z.
+                        meta['file_z_min'] = meta['file_z_max'] = None
+                        try:
+                            ipp = [float(x) for x in getattr(ds, 'ImagePositionPatient', []) or []]
+                            iop = [float(x) for x in getattr(ds, 'ImageOrientationPatient', []) or []]
+                            ps  = getattr(ds, 'PixelSpacing', None)
+                            rows = int(getattr(ds, 'Rows', 0) or 0)
+                            cols = int(getattr(ds, 'Columns', 0) or 0)
+                            if len(ipp) == 3 and len(iop) == 6 and ps is not None and rows and cols:
+                                row_sp, col_sp = float(ps[0]), float(ps[1])
+                                z_across_cols = iop[2] * col_sp * (cols - 1)  # along row dir (columns)
+                                z_down_rows   = iop[5] * row_sp * (rows - 1)  # along col dir (rows)
+                                z_corners = (
+                                    ipp[2],
+                                    ipp[2] + z_across_cols,
+                                    ipp[2] + z_down_rows,
+                                    ipp[2] + z_across_cols + z_down_rows,
+                                )
+                                meta['file_z_min'] = min(z_corners)
+                                meta['file_z_max'] = max(z_corners)
+                        except Exception:
+                            pass
                     # Store in cache
                     file_cache[cache_key] = (patient_id, patient_name, birthdate, modality, study_uid, series_uid, meta)
                     updated_cache = True
@@ -226,8 +254,19 @@ class DicomSeriesFactory:
                 if grouping_key not in series_groups:
                     series_groups[grouping_key] = []
                     series_metadata[grouping_key] = meta
-                
+
                 series_groups[grouping_key].append(file_path)
+
+                # Aggregate the world-space z-extent across every file of the
+                # series (files arrive in arbitrary order, so min/max over all
+                # of them - not first/last - gives the true head/foot extent).
+                if _needs_deface_priority:
+                    fz_min, fz_max = meta.get('file_z_min'), meta.get('file_z_max')
+                    if fz_min is not None and fz_max is not None:
+                        agg = series_metadata[grouping_key]
+                        z_min, z_max = agg.get('z_min'), agg.get('z_max')
+                        agg['z_min'] = fz_min if z_min is None else min(z_min, fz_min)
+                        agg['z_max'] = fz_max if z_max is None else max(z_max, fz_max)
                 
             except Exception as e:
                 self.logger.warning(f"Could not read DICOM file {file_path}: {e}")
@@ -244,6 +283,7 @@ class DicomSeriesFactory:
                     if _needs_deface_priority:
                         unknown_meta['acquisition_datetime'] = ''
                         unknown_meta['image_type'] = ()
+                        unknown_meta['file_z_min'] = unknown_meta['file_z_max'] = None
                     series_metadata[unknown_key] = unknown_meta
                 series_groups[unknown_key].append(file_path)
 
@@ -282,6 +322,8 @@ class DicomSeriesFactory:
             if _needs_deface_priority:
                 series.acquisition_datetime = metadata.get('acquisition_datetime', '')
                 series.image_type = tuple(metadata.get('image_type', ()))
+                z_min, z_max = metadata.get('z_min'), metadata.get('z_max')
+                series.z_extent = (z_min, z_max) if (z_min is not None and z_max is not None) else None
 
             # Generate anonymized UIDs if patient_uid_db is available
             if self.patient_uid_db and patient_id != 'unknown':

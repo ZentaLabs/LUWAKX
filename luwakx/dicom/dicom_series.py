@@ -116,6 +116,15 @@ class DicomSeries:
         # same group are equally close in acquisition time to a paired PET.
         self.image_type: Tuple[str, ...] = ()
 
+        # World-space extent along the patient superior-inferior (z) axis, as
+        # (z_min, z_max) in mm (LPS, so z_max is the most superior / head end).
+        # Populated by DicomSeriesFactory when the deface priority feature is
+        # active.  DefacePriorityElector uses it to pair a PET only with a CT
+        # that actually covers the PET's head region (where the face is), so a
+        # limited-FOV diagnostic CT (e.g. thorax-only) is never elected for the
+        # face mask.  None when geometry was unavailable.
+        self.z_extent: Optional[Tuple[float, float]] = None
+
         # Reference to the primary CT (or other best-modality) series whose face
         # mask will be resampled and applied to this series instead of running the
         # ML model again.  Set by DefacePriorityElector on secondary-modality series
