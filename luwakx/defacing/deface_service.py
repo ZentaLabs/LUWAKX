@@ -174,7 +174,14 @@ class DefaceService:
             reader.SetOutputPixelType(SimpleITK.sitkFloat32)
 
             image = reader.Execute()
-            
+
+            # Guard against ImageSeriesReader assigning a slice-axis direction
+            # whose sign disagrees with the DICOM ImagePositionPatient ordering
+            # (seen on some Philips DERIVED/SECONDARY CT and MPR reformats).  Left
+            # uncorrected this mirrors the volume in world space and misplaces the
+            # CT->PET mask projection while leaving the CT's own output intact.
+            image = self._correct_flipped_slice_axis(image, gdcm_sorted_files, pydicom)
+
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
             log_project_stacktrace(self.logger, e)
@@ -661,6 +668,83 @@ class DefaceService:
             self.logger.warning(f"Cached deface mask file not found on disk: {self._rel_path(abs_mask_path)}")
             return None
         return abs_mask_path
+
+    def _correct_flipped_slice_axis(self, image, sorted_files, pydicom):
+        """Correct a slice-axis direction that disagrees with the DICOM geometry.
+
+        ``SimpleITK.ImageSeriesReader`` stacks pixel plane ``k`` from
+        ``sorted_files[k]``, so plane 0 must sit at the first file's
+        ``ImagePositionPatient`` and the slice axis must point along the
+        first->last IPP progression.  On some series (observed on Philips
+        DERIVED/SECONDARY CT and ``cor``/``sag`` MPR reformats whose
+        InstanceNumber runs opposite to the slice position) the reader instead
+        assigns the 3rd direction-cosine column with the *opposite* sign.  The
+        pixel data and origin remain correct, but the volume is mirrored along
+        the slice axis in world coordinates.
+
+        This is invisible when the series is written back slice-by-slice via
+        each file's own IPP (pure array indexing), which is why a defaced CT
+        still looks aligned.  It does, however, corrupt any world-coordinate
+        resampling - in particular projecting a CT face mask onto a paired PET,
+        which then lands away from the face.
+
+        The check is a pure geometric-consistency test, so it is a no-op for
+        correctly-read volumes (PET included) and only fires on genuinely
+        inconsistent geometry.  Only the sign of the slice-axis column is
+        corrected (the in-plane axes and spacing are left untouched), so oblique
+        (gantry-tilted) acquisitions are not made oblique by this step.
+
+        Args:
+            image: The volume returned by ``ImageSeriesReader.Execute()``.
+            sorted_files: The file list passed to ``SetFileNames`` (plane order).
+            pydicom: The imported ``pydicom`` module (headers only are read).
+
+        Returns:
+            The same image, with a corrected direction/origin if a flip was found.
+        """
+        if image.GetDepth() < 2 or len(sorted_files) < 2:
+            return image  # no slice axis to verify
+
+        try:
+            ipp0 = np.array(
+                pydicom.dcmread(sorted_files[0], stop_before_pixels=True).ImagePositionPatient,
+                dtype=float,
+            )
+            ippN = np.array(
+                pydicom.dcmread(sorted_files[-1], stop_before_pixels=True).ImagePositionPatient,
+                dtype=float,
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Could not read ImagePositionPatient to verify slice-axis direction: {e}"
+            )
+            return image
+
+        delta = ippN - ipp0
+        norm = float(np.linalg.norm(delta))
+        if norm < 1e-6:
+            return image  # all slices share a position - nothing to verify
+        expected_axis = delta / norm
+
+        direction = np.array(image.GetDirection(), dtype=float).reshape(3, 3)
+        slice_axis = direction[:, 2].copy()
+
+        if float(np.dot(slice_axis, expected_axis)) >= 0:
+            return image  # consistent with DICOM - healthy volume, no change
+
+        # Flipped: correct the slice-axis column sign and pin the origin to the
+        # first plane's IPP (guaranteed to be sorted_files[0] by SetFileNames).
+        direction[:, 2] = -slice_axis
+        image.SetDirection(tuple(direction.flatten()))
+        image.SetOrigin(tuple(ipp0))
+        self.logger.warning(
+            "Corrected flipped slice-axis direction from ImageSeriesReader "
+            f"(reader slice-axis {np.round(slice_axis, 3).tolist()} vs DICOM "
+            f"progression {np.round(expected_axis, 3).tolist()}). The volume was "
+            "mirrored along the slice axis in world coordinates, which would "
+            "misplace CT->PET mask projection."
+        )
+        return image
 
     def _persist_mask_to_db(
         self,

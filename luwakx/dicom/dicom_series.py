@@ -110,6 +110,12 @@ class DicomSeries:
         # the temporally closest CT primary for PET mask projection.
         self.acquisition_datetime: str = ''
 
+        # ImageType (0008,0008) - populated by DicomSeriesFactory when the deface
+        # priority feature is active.  Used by DefacePriorityElector to prefer a
+        # native axial CT over MPR reformats / localizers when several CTs in the
+        # same group are equally close in acquisition time to a paired PET.
+        self.image_type: Tuple[str, ...] = ()
+
         # Reference to the primary CT (or other best-modality) series whose face
         # mask will be resampled and applied to this series instead of running the
         # ML model again.  Set by DefacePriorityElector on secondary-modality series

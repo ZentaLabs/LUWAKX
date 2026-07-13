@@ -201,12 +201,22 @@ class DefacePriorityElector:
         primary_candidates: List[DicomSeries],
         pet: DicomSeries,
     ) -> DicomSeries:
-        """Return the CT candidate whose AcquisitionDateTime is closest to ``pet``.
+        """Return the best CT candidate to pair with ``pet``.
 
-        Only the acquisition time of this single PET is considered (unlike the
-        former ``_select_primary_ct_for_pets`` which used the sum across all PETs).
-        Falls back to the first candidate when datetime values are absent or
-        unparseable for all candidates.
+        Candidates are ranked by ``(time distance, reformat penalty)``:
+
+        1. The CT whose ``AcquisitionDateTime`` is closest to this PET's own
+           (only this PET is considered, unlike the former
+           ``_select_primary_ct_for_pets`` which summed across all PETs).
+        2. On a tie - common in PET/CT where the axial CT and its ``cor``/``sag``
+           MPR reformats share an identical acquisition time - a native axial
+           acquisition is preferred over an MPR reformat / localizer.  The
+           reformats derive from the same acquisition, so this only breaks exact
+           ties and never overrides a genuinely closer CT.
+
+        Candidates with no parseable datetime sort last on the time component
+        but are still ordered by the reformat preference, so a usable CT is
+        always returned.
 
         Args:
             primary_candidates: Non-empty list of primary-modality series (CT).
@@ -216,24 +226,36 @@ class DefacePriorityElector:
             The elected primary :class:`DicomSeries`.
         """
         pet_dt = self._parse_dicom_datetime(pet.acquisition_datetime)
-        if pet_dt is None:
-            return primary_candidates[0]
 
-        best: Optional[DicomSeries] = None
-        best_score = float('inf')
-
-        for candidate in primary_candidates:
+        def sort_key(candidate: DicomSeries) -> Tuple[float, int]:
             cdt = self._parse_dicom_datetime(candidate.acquisition_datetime)
-            if cdt is None:
-                continue
-            score = abs((cdt - pet_dt).total_seconds())
-            if score < best_score:
-                best_score = score
-                best = candidate
+            if pet_dt is None or cdt is None:
+                time_score = float('inf')
+            else:
+                time_score = abs((cdt - pet_dt).total_seconds())
+            return (time_score, self._ct_reformat_penalty(candidate))
 
-        if best is None:
-            return primary_candidates[0]
-        return best
+        return min(primary_candidates, key=sort_key)
+
+    @staticmethod
+    def _ct_reformat_penalty(series: DicomSeries) -> int:
+        """Rank a CT for face-segmentation suitability (lower is better).
+
+        Returns ``1`` for MPR reformats, reformatted reconstructions and
+        localizers/scouts - derived views that are poor sources for face
+        segmentation and world-coordinate mask projection - and ``0`` for a
+        native (typically axial) acquisition.  Based on ImageType (0008,0008);
+        an absent/empty ImageType is treated as a native acquisition.
+        """
+        tokens = {str(t).upper() for t in (getattr(series, 'image_type', ()) or ())}
+        joined = ' '.join(tokens)
+        is_reformat = (
+            'MPR' in joined
+            or 'REFORMATTED' in tokens
+            or 'LOCALIZER' in tokens
+            or 'PROJECTION IMAGE' in joined
+        )
+        return 1 if is_reformat else 0
 
     @staticmethod
     def _parse_dicom_datetime(dt_str: str) -> Optional[datetime]:

@@ -198,6 +198,15 @@ class DicomSeriesFactory:
                             )
                             acq_dt = ''
                         meta['acquisition_datetime'] = acq_dt
+
+                        # ImageType (0008,0008) lets the elector prefer a native
+                        # axial CT over MPR reformats / localizers when pairing a
+                        # PET with a CT.  Absent/unreadable -> empty tuple.
+                        try:
+                            raw_image_type = getattr(ds, 'ImageType', None)
+                            meta['image_type'] = tuple(str(v) for v in raw_image_type) if raw_image_type else ()
+                        except Exception:
+                            meta['image_type'] = ()
                     # Store in cache
                     file_cache[cache_key] = (patient_id, patient_name, birthdate, modality, study_uid, series_uid, meta)
                     updated_cache = True
@@ -234,6 +243,7 @@ class DicomSeriesFactory:
                     }
                     if _needs_deface_priority:
                         unknown_meta['acquisition_datetime'] = ''
+                        unknown_meta['image_type'] = ()
                     series_metadata[unknown_key] = unknown_meta
                 series_groups[unknown_key].append(file_path)
 
@@ -271,6 +281,7 @@ class DicomSeriesFactory:
             series.frame_of_reference_uid = metadata.get('frame_of_reference_uid', '')
             if _needs_deface_priority:
                 series.acquisition_datetime = metadata.get('acquisition_datetime', '')
+                series.image_type = tuple(metadata.get('image_type', ()))
 
             # Generate anonymized UIDs if patient_uid_db is available
             if self.patient_uid_db and patient_id != 'unknown':
