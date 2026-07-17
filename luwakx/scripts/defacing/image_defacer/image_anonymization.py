@@ -22,16 +22,19 @@ def blur_face(image: SimpleITK.Image, face_mask: SimpleITK.Image, sigma: float =
     return SimpleITK.Cast(blended, image.GetPixelID())
 
 
-def prepare_face_mask(image: SimpleITK.Image | None = None, modality: str | None = None, face_segmentation_path: str | None = None, dilation_margin_mm: float = 15.0) -> SimpleITK.Image:
+def prepare_face_mask(image: SimpleITK.Image | None = None, modality: str | None = None, face_segmentation_path: str | None = None, dilation_margin_mm: float = 15.0, model_name: str | None = None) -> SimpleITK.Image:
     if face_segmentation_path and os.path.exists(face_segmentation_path):
         image_face_segmentation = SimpleITK.ReadImage(face_segmentation_path, SimpleITK.sitkUInt8)
     elif image and modality:
+        # Default model is derived from the modality (e.g. clin_ct_face); callers
+        # may override it explicitly (e.g. clin_pt_fdg_face for FDG PET).
+        model = model_name or f"clin_{modality.lower()}_face"
         original_orientation = image_get_orientation_code(image)
         image_ras = image_reorient(image, "RAS")
-        mask, _ = moose(image_ras, f"clin_{modality.lower()}_face")
+        mask, _ = moose(image_ras, model)
         if not mask:
             raise RuntimeError(
-                f"moose returned no segmentation for model 'clin_{modality.lower()}_face'. "
+                f"moose returned no segmentation for model {model!r}. "
                 "The volume may not contain a face/head region."
             )
         image_face_segmentation = image_reorient(mask[0], original_orientation)

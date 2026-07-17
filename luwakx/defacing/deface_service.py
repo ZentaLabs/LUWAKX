@@ -188,10 +188,11 @@ class DefaceService:
         #
         # Strategies (highest priority first):
         #   1. Test-time external mask  (testOptions.useExistingMaskDefacer)
-        #   2. PET paired with a CT     -> project cached CT mask, no ML
-        #   3. All other series:
-        #      3a. Cached mask in DB    -> reuse from a previous run, no ML
-        #      3b. ML inference         -> run model; save if primary CT or mode='all'
+        #   2. PET (modality PT)        -> run the FDG PET face model directly
+        #   3. PET paired with a CT     -> project cached CT mask, no ML
+        #   4. All other series:
+        #      4a. Cached mask in DB    -> reuse from a previous run, no ML
+        #      4b. ML inference         -> run model; save if primary CT or mode='all'
         save_mask_after_ml = False
 
         try:
@@ -202,9 +203,24 @@ class DefaceService:
                 image_face_segmentation = defacer.prepare_face_mask(image, modality, mask_path, dilation_margin_mm=self.face_dilation_margin_mm)
                 self._series_counter += 1
 
+            elif (modality or '').upper() == 'PT':
+                # Strategy 2: PET is defaced directly with the dedicated FDG PET
+                # face model (clin_pt_fdg_face) run on the PET volume itself,
+                # instead of projecting a paired CT's mask onto it.
+                self.logger.info(
+                    f"Running ML defacing (clin_pt_fdg_face) for PET series "
+                    f"{series.anonymized_series_uid!r}"
+                )
+                image_face_segmentation = defacer.prepare_face_mask(
+                    image, modality, model_name="clin_pt_fdg_face",
+                    dilation_margin_mm=self.face_dilation_margin_mm,
+                )
+                cleanup_gpu_memory()
+                self.logger.debug("GPU memory cleaned up after PET face detection")
+
             elif series.primary_ct_series is not None:
-                # Strategy 2: PET paired with a CT primary.
-                # 2a: Check if this secondary series already has its own cached mask
+                # Strategy 3: PET paired with a CT primary.
+                # 3a: Check if this secondary series already has its own cached mask
                 #     saved from a previous run (only present when saveDefaceMasks=true
                 #     was active).  Reuse it directly - no CT lookup or resampling needed.
                 cached_pet_mask_path = self._get_cached_mask_path(series)
@@ -215,7 +231,7 @@ class DefaceService:
                     )
                     image_face_segmentation = SimpleITK.ReadImage(cached_pet_mask_path)
                 else:
-                    # 2b: Retrieve the CT face mask from the database, resample it onto
+                    # 3b: Retrieve the CT face mask from the database, resample it onto
                     # this series' geometry (same FrameOfReferenceUID guarantees spatial
                     # co-registration), and apply pixelation directly - no ML inference.
                     ct_mask_path = self._get_ct_mask_for_pet(series)
@@ -274,8 +290,8 @@ class DefaceService:
                             self.logger.warning(f"Failed to persist resampled PET face mask to database: {e}")
 
             else:
-                # Strategy 3: CT-only or standalone modality.
-                # 3a: Check DB cache - reuse a mask saved during a *previous run of
+                # Strategy 4: CT-only or standalone modality.
+                # 4a: Check DB cache - reuse a mask saved during a *previous run of
                 #     this exact series*.  Cache hit is only valid when the stored
                 #     series_instance_uid matches this series' UID, guaranteeing
                 #     identical geometry (no resampling needed).  Any other cached
@@ -326,7 +342,7 @@ class DefaceService:
                             )
 
                 if cached_mask_path is None:
-                    # 3b: Run ML inference.
+                    # 4b: Run ML inference.
                     self.logger.info(
                         f"Running ML defacing for series {series.anonymized_series_uid!r} "
                         f"(modality={modality})"
