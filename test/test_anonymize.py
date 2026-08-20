@@ -565,6 +565,55 @@ class TestAnonymizeScript(unittest.TestCase):
             os.unlink(config_path)
             self.logger.info("Fixed datetime generation test completed and config cleaned up")
 
+    def test_clean_descriptors_with_llm_skips_empty_value(self):
+        """An already-empty descriptor carries no PHI and must never reach the LLM/cache
+        or be deleted - a cached "PHI" verdict for "" would otherwise strip every
+        zero-length descriptor tag dataset-wide."""
+        print("Test that clean_descriptors_with_llm skips empty values without calling the LLM/cache")
+
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "Original file `00000001.dcm` not found.")
+        original_ds = pydicom.dcmread(original_file)
+
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["clean_descriptors"],
+        )
+
+        class ExplodingLLMCache:
+            """Fails the test if the empty-value path ever reaches the cache/LLM."""
+            def get_cached_result(self, input_text, model):
+                raise AssertionError("LLM cache should not be queried for an empty value")
+
+            def store_result(self, input_text, model, phi_result, reasoning=None):
+                raise AssertionError("LLM cache should not be written for an empty value")
+
+        try:
+            anonymizer = LuwakAnonymizer(config_path)
+            processor = DicomProcessor(
+                config=anonymizer.config,
+                logger=anonymizer.logger,
+                llm_cache=ExplodingLLMCache()
+            )
+
+            mock_empty_field = type('MockField', (), {
+                'element': type('MockElement', (), {
+                    'VR': 'LO',
+                    'value': '',
+                    'tag': '(0032,1060)',
+                    'keyword': 'RequestedProcedureDescription'
+                })()
+            })()
+
+            result = processor.clean_descriptors_with_llm(
+                "item1", "func:clean_descriptors_with_llm", mock_empty_field, original_ds
+            )
+            self.assertEqual(result, "", "Empty descriptor value should be returned unchanged, not deleted")
+        finally:
+            os.unlink(config_path)
+            self.logger.info("Clean descriptors empty-value skip test completed and config cleaned up")
+
     def test_fixed_datetime_with_basic_profile_recipe(self):
         """Test fixed datetime generation when running full anonymization with DICOM basic profile recipe (batch input)."""
         print("Test fixed datetime generation with DICOM basic profile recipe (batch input)")

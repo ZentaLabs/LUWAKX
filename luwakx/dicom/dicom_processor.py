@@ -984,7 +984,22 @@ class DicomProcessor:
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
             log_project_stacktrace(self.logger, e)
             original_value = "unknown"
-        
+
+        # An already-empty value carries no information, so deleting it has zero
+        # privacy benefit and would break Type 2 conformance. Skip the LLM/cache
+        # entirely rather than risk a spurious PHI=1 verdict for "" getting cached
+        # and reused to strip every zero-length descriptor tag dataset-wide.
+        if not original_value.strip():
+            if self.review_collector:
+                self.review_collector.add_flag(
+                    reason         = ReviewFlagCollector.REASON_LLM_VERIFICATION_SKIPPED,
+                    original_value = original_value,
+                    keep           = 1,
+                    output_value   = original_value,
+                    **self._flag_params(field, dicom),
+                )
+            return original_value
+
         # Get LLM config
         # Precedence: config dict > env var >  > default
         base_url = self.config.get('cleanDescriptorsLlmBaseUrl') or os.environ.get("CLEAN_DESCRIPTORS_LLM_BASE_URL")
