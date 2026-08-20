@@ -51,6 +51,10 @@ def detect_phi_or_pii(
                     "You are an accurate and helpful protected health information (PHI) "
                     "and personally identifiable information (PII) detector. Based on a DICOM tag "
                     "description and DICOM tag content, you will classify if the tag contains PHI or PII. "
+                    "Pay close attention to the names of any individuals mentioned: a bare person name "
+                    "(e.g. 'John Smith') is PHI/PII even in a field whose label suggests a department, service, or facility "
+                    "(e.g. RequestingService, PerformingPhysicianName) rather than a person, because such fields are sometimes "
+                    "filled in with a staff member's name. "
                     "The output is only binary, nothing else. Return 1 if it contains PHI or PII and 0 if not."
                 ),
             },
