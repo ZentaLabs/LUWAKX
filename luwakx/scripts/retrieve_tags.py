@@ -12,12 +12,13 @@ import argparse
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from pydicom.datadict import get_entry
+from pydicom.datadict import get_entry, private_dictionary_VR
 import sys
 from enum import Enum
 # Add the parent directory of luwakx to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from luwakx.utils import download_github_asset_by_tag
+from luwakx.dicom.dicom_private_tag_registry import tag_str_to_int
 
 
 class TCIAPrivateDisposition(Enum):
@@ -316,6 +317,34 @@ def split_group_element(val):
         return parts[0].strip(), parts[1].strip()
     return '', ''
 
+def prefer_pydicom_vr(row):
+    """Prefer pydicom's built-in private dictionary VR over the TCIA/DICOM
+    standard-sourced VR when the two disagree.
+
+    The TCIA Private Tag Knowledge Base's VR column is observational and
+    disagrees with pydicom's built-in private dictionary (the same
+    GDCM/dcm4che-derived data validation tools such as dciodvfy use) for a
+    meaningful fraction of entries - e.g. GEMS_ACQU_01 (0019,xx02) "Detector
+    Channel" is SL, not the TCIA source's OB. register_private_tags_from_csv()
+    already refuses to let a conflicting CSV VR override pydicom's dictionary
+    at anonymization runtime, but correcting it here too keeps this generated
+    template - and the recipe summary/documentation derived from it -
+    accurate, and keeps a from-scratch regeneration from re-introducing the
+    mismatch.
+    """
+    vr = row['vr']
+    if pd.isna(vr) or not str(vr).strip():
+        return vr
+    group, element, creator = row['Group'], row['Element'], row['Private_Creator_cmp']
+    if not group or not element or not creator:
+        return vr
+    try:
+        tag = tag_str_to_int(group, element)
+        known_vr = private_dictionary_VR(tag, creator)
+    except Exception:
+        return vr
+    return known_vr if known_vr and known_vr != vr else vr
+
 def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=False):
     tcia_df['element_sig_pattern_cmp'] = tcia_df['element_sig_pattern'].apply(extract_last_paren)
     tcia_df['Private_Creator_cmp'] = tcia_df['Private_Creator'].apply(extract_last_paren, private_creator=True)
@@ -347,7 +376,11 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
     # Exclude rows where Element == 'xxinc.' or 'xxinc'
     final_out = final_out[final_out['Element'] != 'xxinc.'].copy()
     final_out = final_out[final_out['Element'] != 'xxinc'].copy()
-   
+
+    # Correct VR values that disagree with pydicom's built-in private dictionary
+    # before they get baked into the template. See prefer_pydicom_vr() docstring.
+    final_out['vr'] = final_out.apply(prefer_pydicom_vr, axis=1)
+
     rename_map = {
         'Private_Creator': 'TCIA Private_Creator',
         'Private_Creator_cmp': 'Private Creator',
