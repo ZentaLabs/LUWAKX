@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import traceback
 import importlib.util
+from datetime import datetime, timedelta
 from typing import Any, Dict
 import pydicom
 
@@ -26,6 +27,14 @@ pydicom.config.convert_wrong_length_to_UN = True
 from .dicom_series import DicomSeries
 from ..logging.luwak_logger import log_project_stacktrace
 from ..export.review_flag_collector import ReviewFlagCollector
+
+# DICOM PS3.5 6.4 DA/DT patterns, applied per backslash-separated VM component.
+_DA_RE = re.compile(r"^\d{8}$")                                     # YYYYMMDD
+_DT_RE = re.compile(r"^\d{8}(\d{6}(\.\d{1,6})?)?([+-]\d{4})?$")     # YYYYMMDD[HHMMSS[.F]][+/-ZZZZ]
+
+
+def _is_dicom_date(component: str) -> bool:
+    return bool(_DA_RE.match(component) or _DT_RE.match(component))
 
 
 class DicomProcessor:
@@ -684,23 +693,28 @@ class DicomProcessor:
     
     def generate_hmacdate_shift(self, item, value, field, dicom):
         """Generate date/time shift using HMAC with patient-specific key.
-        
+
         Uses the patient's cryptographic random token (same as UID generation)
         to ensure consistent, secure, unpredictable date shifts per patient.
         This approach provides:
         - Cryptographically secure randomness (HMAC-SHA512)
         - Patient-specific deterministic shifts
-        
+
         Args:
             item: Item identifier from deid processing
             value: Recipe string (e.g., "func:generate_hmacdate_shift")
             field: DICOM field element containing the date/time tag
             dicom: PyDicom dataset object
-        
+
         Returns:
-            int: Number of days to shift backward (0-maxDateShiftDays days, consistent per patient)
-                 or 0 if VR type is not DA or DT (no shift applied)
-                 
+            int or None: Number of days to shift backward (negative, magnitude
+                 1-maxDateShiftDays, consistent per patient) for DA/DT tags.
+                 For non-DA/DT tags (e.g. UN) holding a valid date/datetime
+                 string, the shift is computed and written back directly and
+                 None is returned so deid does not attempt its own (VR-blind)
+                 jitter. None is also returned when the stored value is not a
+                 valid date/datetime, in which case the tag is removed instead.
+
         See conformance documentation:
         https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#535-date-shifting-funcgenerate_hmacdate_shift
         """
@@ -709,8 +723,10 @@ class DicomProcessor:
         # For non-DA/DT VRs (e.g. UN misidentified as a date tag by a private
         # dictionary): validate the stored value against DA/DT patterns.
         # If the value is not a valid date/datetime, remove the tag and bail out.
-        # If the value IS a valid date/datetime string, fall through to the shift
-        # computation below so the date is still properly jittered.
+        # If the value IS a valid date/datetime string, shift and write it back
+        # ourselves below - deid's jitter_timestamp() dispatches on
+        # field.element.VR and silently returns non-DA/DT values (e.g. bytes)
+        # unchanged, so we can't just fall through and let deid handle it.
         if field_vr not in ('DA', 'DT'):
             tag_str = str(getattr(field.element, 'tag', 'unknown')) if hasattr(field, 'element') else 'unknown'
             keyword_str = getattr(field.element, 'keyword', '') if hasattr(field, 'element') else ''
@@ -725,63 +741,87 @@ class DicomProcessor:
                 _orig = str(_raw_val)
             _fp = self._flag_params(field, dicom)
 
-            _da_pattern = r"^\d{8}$"                                       # YYYYMMDD
-            _dt_pattern = r"^\d{8}(\d{6}(\.\d{1,6})?)?([\+\-]\d{4})?$"   # YYYYMMDD[HHMMSS[.F]][+/-ZZZZ]
-            if not (re.match(_da_pattern, _orig) or re.match(_dt_pattern, _orig)):
-                series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
-                if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
-                                          ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
-                                          f"dateshift_badvalue_{tag_str}_{keyword_str}"):
-                    self.logger.warning(
-                        f"Tag {tag_str} ({keyword_str}) (VR={field_vr}) value {_orig!r} "
-                        f"does not match DICOM DA/DT format. Tag will be removed. "
-                        f"Series: {series_info}"
-                    )
-                try:
-                    del dicom[field.element.tag]
-                    if self.review_collector:
-                        try:
-                            self.review_collector.add_flag(
-                                reason         = ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
-                                original_value = _orig,
-                                keep           = 0,
-                                output_value   = '',
-                                **_fp,
-                            )
-                        except Exception:
-                            pass
-                except Exception:
-                    if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
-                                              ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
-                                              f"dateshift_badvalue_remove_{tag_str}_{keyword_str}"):
-                        self.logger.warning(
-                            f"Tag {tag_str} ({keyword_str}) could not be removed. "
-                            f"Original value kept for manual review. Series: {series_info}"
-                        )
-                    if self.review_collector:
-                        try:
-                            self.review_collector.add_flag(
-                                reason         = ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
-                                original_value = _orig,
-                                keep           = 1,
-                                output_value   = _orig,
-                                **_fp,
-                            )
-                        except Exception:
-                            pass
-                # Return None - NOT 0.  Deid's parser checks `if value is not None`
-                # before calling jitter_timestamp; returning 0 passes that check and
-                # jitter_timestamp still writes the value back via replace_field.
-                # Returning None makes deid skip the jitter entirely, so the deletion
-                # above sticks.
+            # DICOM PS3.5 6.4: VM > 1 is encoded as backslash-separated
+            # components inside a single element value - validate (and later
+            # shift) each component separately instead of the whole string.
+            _components = [c.strip() for c in _orig.split('\\')] if _orig else []
+            if not _components or not all(_is_dicom_date(c) for c in _components):
+                self._remove_unshiftable_date_tag(field, dicom, tag_str, keyword_str, field_vr, _orig, _fp)
                 return None
-            # Value looks like a valid date/datetime despite the wrong VR - fall
-            # through to compute the shift normally.
 
-        # Compute HMAC-based date shift (reached for DA/DT tags always, and for
-        # non-DA/DT tags whose stored value is a valid date/datetime string).
+            _days = self._hmac_date_shift_days(field)
+            _shifted = [self._shift_date_component(c, _days) for c in _components]
+            if any(s is None for s in _shifted):
+                # Matched the regex (e.g. "20180230") but isn't a real
+                # calendar date - treat the same as any other bad value.
+                self._remove_unshiftable_date_tag(field, dicom, tag_str, keyword_str, field_vr, _orig, _fp)
+                return None
+
+            _new = '\\'.join(_shifted)
+            if len(_new) % 2:
+                _new += ' '  # DICOM requires even-length values
+            field.element.value = _new.encode('ascii') if isinstance(_raw_val, (bytes, bytearray)) else _new
+            self.logger.debug(
+                f"Shifted non-DA/DT date tag {tag_str} ({keyword_str}, VR={field_vr}) "
+                f"by {_days} days: {_orig!r} -> {_new!r}"
+            )
+            # Return None - NOT the shift value.  Deid's parser checks
+            # `if value is not None` before calling jitter_timestamp(), which
+            # dispatches on VR and would overwrite what we just wrote above
+            # with the unshifted original (jitter_timestamp can't parse bytes).
+            return None
+
+        # Reached for DA/DT tags only (non-DA/DT tags return above).
+        return self._hmac_date_shift_days(field)
+
+    def _remove_unshiftable_date_tag(self, field, dicom, tag_str, keyword_str, field_vr, orig_value, flag_params):
+        """Delete a JITTER-recipe tag whose stored value isn't a valid DICOM date/datetime, and flag it."""
+        series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+        if self._first_occurrence(flag_params['tag_group'], flag_params['tag_element'],
+                                  ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
+                                  f"dateshift_badvalue_{tag_str}_{keyword_str}"):
+            self.logger.warning(
+                f"Tag {tag_str} ({keyword_str}) (VR={field_vr}) value {orig_value!r} "
+                f"does not match DICOM DA/DT format. Tag will be removed. "
+                f"Series: {series_info}"
+            )
+        try:
+            del dicom[field.element.tag]
+            if self.review_collector:
+                try:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_VR_FORMAT_INVALID,
+                        original_value = orig_value,
+                        keep           = 0,
+                        output_value   = '',
+                        **flag_params,
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            if self._first_occurrence(flag_params['tag_group'], flag_params['tag_element'],
+                                      ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                                      f"dateshift_badvalue_remove_{tag_str}_{keyword_str}"):
+                self.logger.warning(
+                    f"Tag {tag_str} ({keyword_str}) could not be removed. "
+                    f"Original value kept for manual review. Series: {series_info}"
+                )
+            if self.review_collector:
+                try:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                        original_value = orig_value,
+                        keep           = 1,
+                        output_value   = orig_value,
+                        **flag_params,
+                    )
+                except Exception:
+                    pass
+
+    def _hmac_date_shift_days(self, field):
+        """Compute the per-patient HMAC-based day shift (negative, magnitude 1-maxDateShiftDays)."""
         project_hash_root = self.config.get('projectHashRoot', '')
-        
+
         # Get patient's random token from database to use as HMAC key
         hmac_key = None
         if self.patient_uid_db:
@@ -789,7 +829,7 @@ class DicomProcessor:
                 original_patient_id = self.series.original_patient_id
                 original_patient_name = self.series.original_patient_name
                 original_patient_birthdate = self.series.original_patient_birthdate
-                
+
                 # Get cached patient data (includes random token)
                 cached_result = self.patient_uid_db.get_cached_patient_id(
                     original_patient_id,
@@ -817,7 +857,7 @@ class DicomProcessor:
                 project_salt = f"{project_hash_root}{self.series.original_patient_id}{self.series.original_patient_name}{self.series.original_patient_birthdate}"
                 salt_hash = hashlib.sha256(project_salt.encode()).hexdigest()
                 hash_int = int(salt_hash[:8], 16)
-            
+
             # Scale to max_date_shift_days (default 1095)
             # Ensure shift is always at least 1 day (never 0) for proper anonymization
             max_shift = self.config.get('maxDateShiftDays', 1095)
@@ -832,12 +872,31 @@ class DicomProcessor:
                 f"computed date shift: -{project_date_shift} days"
             )
             return -project_date_shift
-            
+
         except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
-            line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
             log_project_stacktrace(self.logger, e)
             return 1  # Return 1 day shift on error
+
+    def _shift_date_component(self, component, days):
+        """Shift a single DA or DT value by `days`, preserving its precision and timezone.
+
+        Returns None if `component` matches the DA/DT regex but isn't an
+        actual calendar date (e.g. "20180230").
+        """
+        if _DA_RE.match(component):
+            try:
+                return (datetime.strptime(component, "%Y%m%d") + timedelta(days=days)).strftime("%Y%m%d")
+            except ValueError:
+                return None
+        m = re.match(r"^(\d{8})(\d{6})?(\.\d{1,6})?([+-]\d{4})?$", component)
+        if not m:
+            return None
+        date_part, time_part, frac, tz = m.groups()
+        try:
+            shifted_date = (datetime.strptime(date_part, "%Y%m%d") + timedelta(days=days)).strftime("%Y%m%d")
+        except ValueError:
+            return None
+        return shifted_date + (time_part or '') + (frac or '') + (tz or '')
 
     def generate_hmacdate_shift_or_remove_epoch(self, item, value, field, dicom):
         """Remove tags holding the Unix-epoch placeholder; shift genuinely populated ones.
