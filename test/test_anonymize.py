@@ -481,7 +481,148 @@ class TestAnonymizeScript(unittest.TestCase):
         finally:
             os.unlink(config_path)
             self.logger.info("Date shift test completed and config cleaned up")
-          
+
+    def _expected_hmac_shift_days(self, anonymizer, series):
+        """Reproduce _hmac_date_shift_days()'s sha256-salt fallback (no patient_uid_db)."""
+        import hashlib
+        project_hash_root = anonymizer.config.get('projectHashRoot', '')
+        project_salt = f"{project_hash_root}{series.original_patient_id}{series.original_patient_name}{series.original_patient_birthdate}"
+        salt_hash = hashlib.sha256(project_salt.encode()).hexdigest()
+        hash_int = int(salt_hash[:8], 16)
+        max_shift = anonymizer.config.get('maxDateShiftDays', 1095)
+        return -((hash_int % max_shift) + 1)
+
+    def _make_dateshift_processor(self, anonymizer):
+        """Create a DicomProcessor + mock series suitable for direct generate_hmacdate_shift() calls."""
+        processor = DicomProcessor(config=anonymizer.config, logger=anonymizer.logger, llm_cache=None)
+        processor.series = type('MockSeries', (), {
+            'anonymized_series_uid': 'test_series_uid',
+            'anonymized_study_uid': 'test_study_uid',
+            'anonymized_patient_id': 'test_patient_id',
+            'original_patient_id': 'orig_pid',
+            'original_patient_name': 'orig_name',
+            'original_patient_birthdate': '19800101',
+        })()
+        return processor
+
+    def test_generate_hmacdate_shift_shifts_multivalued_un_date_tag(self):
+        """Regression test for ff2b0cd: a non-DA/DT (e.g. UN) tag with VM>1, encoded as
+        backslash-separated dates, must have every component shifted - not be deleted.
+        Before the fix, the DA/DT regex was validated against the whole backslash-joined
+        value, so any VM>1 date tag always failed the check and was removed outright."""
+        print("Test that a multi-valued (VM>1) non-DA/DT date tag is shifted, not deleted")
+
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "File `00000001.dcm` not found.")
+
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile"],
+        )
+        try:
+            from datetime import datetime, timedelta
+
+            anonymizer = LuwakAnonymizer(config_path)
+            processor = self._make_dateshift_processor(anonymizer)
+
+            ds = pydicom.Dataset()
+            ds.SOPInstanceUID = "1.2.3.4.5"
+            tag = pydicom.tag.Tag(0x0009, 0x1001)  # private tag, VR misidentified as UN
+            ds.add_new(tag, 'UN', b'20200101\\20200105')
+            field = type('MockField', (), {'element': ds[tag]})()
+
+            expected_days = self._expected_hmac_shift_days(anonymizer, processor.series)
+            expected_1 = (datetime.strptime("20200101", "%Y%m%d") + timedelta(days=expected_days)).strftime("%Y%m%d")
+            expected_2 = (datetime.strptime("20200105", "%Y%m%d") + timedelta(days=expected_days)).strftime("%Y%m%d")
+
+            result = processor.generate_hmacdate_shift("item1", "func:generate_hmacdate_shift", field, ds)
+
+            self.assertIsNone(result, "Non-DA/DT tags are written back directly and must return None")
+            self.assertIn(tag, ds, "VM>1 UN date tag must not be deleted when all components are valid dates")
+            raw = ds[tag].value
+            shifted_value = raw.decode('ascii') if isinstance(raw, (bytes, bytearray)) else raw
+            self.assertEqual(shifted_value.strip(), f"{expected_1}\\{expected_2}",
+                f"Both VM components should be shifted by {expected_days} days, got '{shifted_value}'")
+            self.logger.info(f"[OK] VM>1 UN date tag shifted: '20200101\\20200105' -> '{shifted_value.strip()}'")
+        finally:
+            os.unlink(config_path)
+            self.logger.info("Multi-valued date shift test completed and config cleaned up")
+
+    def test_generate_hmacdate_shift_shifts_single_value_non_da_dt_tag(self):
+        """Regression test for ff2b0cd: a single-valued non-DA/DT (e.g. UN) tag holding a
+        valid date must have its stored VALUE overwritten with the shifted date. Before the
+        fix, the computed shift (an int) was returned to deid, whose jitter_timestamp()
+        dispatches on VR and silently leaves non-DA/DT values unchanged - so the date was
+        never actually shifted on disk even though no error was raised."""
+        print("Test that a single-valued non-DA/DT date tag has its value actually shifted")
+
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "File `00000001.dcm` not found.")
+
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile"],
+        )
+        try:
+            from datetime import datetime, timedelta
+
+            anonymizer = LuwakAnonymizer(config_path)
+            processor = self._make_dateshift_processor(anonymizer)
+
+            ds = pydicom.Dataset()
+            ds.SOPInstanceUID = "1.2.3.4.5"
+            tag = pydicom.tag.Tag(0x0009, 0x1002)
+            ds.add_new(tag, 'UN', b'20200101')
+            field = type('MockField', (), {'element': ds[tag]})()
+
+            expected_days = self._expected_hmac_shift_days(anonymizer, processor.series)
+            expected = (datetime.strptime("20200101", "%Y%m%d") + timedelta(days=expected_days)).strftime("%Y%m%d")
+
+            result = processor.generate_hmacdate_shift("item1", "func:generate_hmacdate_shift", field, ds)
+
+            self.assertIsNone(result, "Non-DA/DT tags are written back directly and must return None")
+            self.assertIn(tag, ds, "Tag holding a valid date must not be deleted")
+            self.assertEqual(ds[tag].value, expected.encode('ascii'),
+                f"Value must be shifted by {expected_days} days, not left as the original '20200101'")
+            self.logger.info(f"[OK] Single-valued UN date tag shifted: '20200101' -> '{expected}'")
+        finally:
+            os.unlink(config_path)
+            self.logger.info("Single-valued date shift test completed and config cleaned up")
+
+    def test_generate_hmacdate_shift_removes_invalid_non_da_dt_value(self):
+        """A non-DA/DT tag whose value still isn't a valid date (even per-component) must
+        continue to be removed - the fix only stops deleting tags whose components ARE
+        valid dates, it doesn't change behavior for genuinely bad values."""
+        print("Test that a non-DA/DT tag with a genuinely invalid date component is still removed")
+
+        original_file = os.path.join(self.test_data_dir, "00000001.dcm")
+        self.assertTrue(os.path.exists(original_file), "File `00000001.dcm` not found.")
+
+        config_path = self.create_test_config(
+            input_folder=original_file,
+            output_folder=self.test_output_dir,
+            recipes=["basic_profile"],
+        )
+        try:
+            anonymizer = LuwakAnonymizer(config_path)
+            processor = self._make_dateshift_processor(anonymizer)
+
+            ds = pydicom.Dataset()
+            ds.SOPInstanceUID = "1.2.3.4.5"
+            tag = pydicom.tag.Tag(0x0009, 0x1003)
+            ds.add_new(tag, 'UN', b'20200101\\notadate')
+            field = type('MockField', (), {'element': ds[tag]})()
+
+            result = processor.generate_hmacdate_shift("item1", "func:generate_hmacdate_shift", field, ds)
+
+            self.assertIsNone(result)
+            self.assertNotIn(tag, ds, "Tag with an invalid date component should still be removed")
+            self.logger.info("[OK] Tag with invalid date component removed as before")
+        finally:
+            os.unlink(config_path)
+            self.logger.info("Invalid non-DA/DT value removal test completed and config cleaned up")
 
     def test_fixed_datetime_generation(self):
         """Test the fixed datetime generation for DA, DT, and TM VR types."""
