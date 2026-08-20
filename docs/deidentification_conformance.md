@@ -1007,6 +1007,12 @@ The Clean Descriptors option applies LLM-based PHI detection to textual descript
 
 **Effect:** Sends textual descriptors (Study Description, Series Description, Protocol Name, etc.) to an LLM for PHI/PII detection. Tags containing PHI are removed or replaced; clean tags are retained unchanged.
 
+**Documented deviation from PS3.15:** PS3.15 defines the 'C' (Clean) code as replacement "with values of similar meaning known not to contain identifying information" - not as license to route the field through PHI detection and hope for the best. For tags whose free-text content is, in practice, dominated by structured identifying values (referrer names, ward/site codes) rather than incidental prose, an LLM classifier cannot be relied on to guarantee that requirement. Luwak therefore forces the stricter Basic Profile `remove` action for these tags even when Clean Descriptors is selected, via `CLEAN_DESC_FORCE_BASIC_TAGS` in `luwakx/scripts/retrieve_tags.py`:
+
+| Tag | Name | Reason |
+|-----|------|--------|
+| (0032,1033) | Requesting Service | Holds referrer names and ward/site codes in practice |
+
 #### 5.4.9 Clean Structured Content Option
 
 The Clean Structured Content option identifies structured content sequences requiring manual PHI review. The template generation logic:

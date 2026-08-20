@@ -1162,6 +1162,20 @@ def retain_institution_id_option(df, doc_refs_dict):
 
     return df
 
+# DICOM PS3.15 marks 'C' (Clean) for these tags in the Clean Descriptors option,
+# which permits routing them through the LLM-based cleaner
+# (func:clean_descriptors_with_llm) instead of removing them outright. Luwak
+# deliberately deviates from the standard and forces the stricter Basic Profile
+# 'remove' action for tags known to carry structured identifying values (e.g.
+# referrer names, ward/site codes) rather than free-form prose - a free-text LLM
+# PHI classifier cannot be relied on to guarantee the PS3.15 'C' requirement
+# ("replacement with values of similar meaning known not to contain identifying
+# information") for values like these.
+# See: docs/deidentification_conformance.md#548-clean-descriptors-option
+CLEAN_DESC_FORCE_BASIC_TAGS = {
+    ('0032', '1033'),  # Requesting Service - referrer names / ward-site codes in practice
+}
+
 def clean_profiles(df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', and 'Clean Graph. Opt.' columns based on institution ID retention rules.
@@ -1197,9 +1211,16 @@ def clean_profiles(df, doc_refs_dict):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
         if profile1 == DICOMStandardActionCode.C_CLEAN.value:
-            # See: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#548-clean-descriptors-option
-            df.at[idx, 'Clean Desc. Opt.'] = 'func:clean_descriptors_with_llm'
-            doc_refs_dict[idx].append("Clean Descriptors: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#537-llm-descriptor-cleaning-funcclean_descriptors_with_llm")
+            group = str(row['Group']).strip().lower()
+            element = str(row['Element']).strip().lower()
+            if (group, element) in CLEAN_DESC_FORCE_BASIC_TAGS:
+                # See CLEAN_DESC_FORCE_BASIC_TAGS definition above.
+                df.at[idx, 'Clean Desc. Opt.'] = ''
+                doc_refs_dict[idx].append("Clean Descriptors: deliberately not applied - see docs/deidentification_conformance.md#548-clean-descriptors-option")
+            else:
+                # See: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#548-clean-descriptors-option
+                df.at[idx, 'Clean Desc. Opt.'] = 'func:clean_descriptors_with_llm'
+                doc_refs_dict[idx].append("Clean Descriptors: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#537-llm-descriptor-cleaning-funcclean_descriptors_with_llm")
         if profile2 == DICOMStandardActionCode.C_CLEAN.value:
             # See: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#549-clean-structured-content-option
             # clean_manually action requires manual review - see: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#641-translation-logic-by-action
