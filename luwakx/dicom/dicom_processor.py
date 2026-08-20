@@ -1083,11 +1083,20 @@ class DicomProcessor:
         if str(result).strip() == "1":
             # PHI detected - remove/anonymize
             try:
+                _fp = self._flag_params(field, dicom)
                 del dicom[field.element.tag]
                 self.logger.debug(
                     f"Removed tag {field.element.tag} ({getattr(field.element, 'keyword', '')}) "
                     f"from DICOM file as the detector found PHI information in its text."
                 )
+                if self.review_collector:
+                    self.review_collector.add_flag(
+                        reason         = ReviewFlagCollector.REASON_LLM_PHI_REMOVED,
+                        original_value = original_value,
+                        keep           = 0,
+                        output_value   = "",
+                        **_fp,
+                    )
                 return None
             except Exception as e:
                 _fp = self._flag_params(field, dicom)
