@@ -22,7 +22,7 @@ Group,Element,Private Creator,VR,VM,Meaning,Rtn. Safe Priv. Opt.,IsInDICOMRetain
 0009,xx0c,FDMS 1.0,OW,,Film UID,func:generate_hmacuid,False,"(0009,xx0c)"
 0009,xx0c,GEMS_PETD_01,SH,,Scan Software Version,keep,False,"(0009,xx0c)"
 0009,xx0d,GEMS_PETD_01,DT,,Scan Date Time,func:generate_hmacdate_shift,False,"(0009,xx0d)"
-0009,xx0e,GEMS_PETD_01,DT,,Scan Ready,func:generate_hmacdate_shift,False,"(0009,xx0e)"
+0009,xx0e,GEMS_PETD_01,DT,,Scan Ready,func:generate_hmacdate_shift_or_remove_epoch,False,"(0009,xx0e)"
 0009,xx10,FDMS 1.0,CS,,Exposure Unit Type Code,keep,False,"(0009,xx10)"
 0009,xx10,SIEMENS CM VA0  CMS,CS,,Storage Mode,keep,False,"(0009,xx10)"
 0009,xx10,SIEMENS CM VA0  LAB,LO,,Generator Identification Label,keep,False,"(0009,xx10)"

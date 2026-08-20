@@ -414,6 +414,15 @@ def make_recipe_file(recipes_to_process: List[str], recipe_folder: str, config: 
                         # Skip private date tags if retain_long_modified_dates is not selected
                         # See "func:generate_hmacdate_shift" conditional logic in "Private tag handling" paragraph: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#641-translation-logic-by-action
                         continue
+                    elif action.lower() == 'func:generate_hmacdate_shift_or_remove_epoch' and 'retain_long_modified_dates' in recipes_to_process:
+                        # Same conditional gating as func:generate_hmacdate_shift, but the target
+                        # function removes the tag instead of jittering it when the stored value
+                        # is a known constant/placeholder (e.g. the Unix epoch) rather than a real
+                        # per-patient date - jittering a known constant would leak the shift amount.
+                        line = f"JITTER ({group},\"{private_creator}\",{element}) func:generate_hmacdate_shift_or_remove_epoch\n"
+                    elif action.lower() == 'func:generate_hmacdate_shift_or_remove_epoch' and not 'retain_long_modified_dates' in recipes_to_process:
+                        # Skip private date tags if retain_long_modified_dates is not selected
+                        continue
                     else:
                         logger.warning(f"Unrecognized action '{action}' for private tag ({group},\"{private_creator}\",{element}), skipping.")
                         continue  # Skip unrecognized actions
