@@ -130,6 +130,7 @@ class DicomProcessor:
             items[item]["generate_hmacuid"] = self.generate_hmacuid
             items[item]["generate_patient_id"] = self.generate_patient_id
             items[item]["generate_hmacdate_shift"] = self.generate_hmacdate_shift
+            items[item]["generate_hmacdate_shift_or_remove_epoch"] = self.generate_hmacdate_shift_or_remove_epoch
             items[item]["set_fixed_datetime"] = self.set_fixed_datetime
             items[item]["clean_descriptors_with_llm"] = self.clean_descriptors_with_llm
             items[item]["is_tag_private"] = self.is_tag_private
@@ -837,7 +838,100 @@ class DicomProcessor:
             line_info = f" (line {tb[-1].lineno} in {tb[-1].filename})" if tb else ""
             log_project_stacktrace(self.logger, e)
             return 1  # Return 1 day shift on error
-    
+
+    def generate_hmacdate_shift_or_remove_epoch(self, item, value, field, dicom):
+        """Remove tags holding the Unix-epoch placeholder; shift genuinely populated ones.
+
+        Some vendor private DT fields (e.g. GE's GEMS_PETD_01 "Scan Ready") are left
+        at the Unix epoch (1970-01-01) by scanner firmware when the workflow step that
+        would populate them never ran. 19700101 is a universally known constant, so
+        jittering it the same way as a real date would let an attacker recover the
+        exact per-patient shift by diffing the jittered value against the known epoch -
+        the same class of leak as a fixed DCMR version date (see
+        generate_hmacdate_shift's docstring reference). When the field is genuinely
+        populated with a real per-patient timestamp, it should still be shifted like
+        any other longitudinal date, so this only special-cases the epoch value and
+        otherwise delegates to generate_hmacdate_shift().
+
+        Args:
+            item: Item identifier from deid processing
+            value: Recipe string (e.g., "func:generate_hmacdate_shift_or_remove_epoch")
+            field: DICOM field element containing the date/time tag
+            dicom: PyDicom dataset object
+
+        Returns:
+            int or None: Same as generate_hmacdate_shift() for genuinely populated
+                         values; None (tag removed) when the value is the epoch
+                         placeholder.
+
+        See conformance documentation:
+        https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#535-date-shifting-funcgenerate_hmacdate_shift
+        """
+        raw_val = getattr(field.element, 'value', '') if hasattr(field, 'element') else ''
+        if isinstance(raw_val, (bytes, bytearray)):
+            try:
+                orig = raw_val.decode('ascii').strip('\x00').strip()
+            except (UnicodeDecodeError, AttributeError):
+                orig = ''
+        else:
+            orig = str(raw_val)
+
+        if orig.startswith('19700101'):
+            tag_str = str(getattr(field.element, 'tag', 'unknown'))
+            keyword_str = getattr(field.element, 'keyword', '') or ''
+            _fp = self._flag_params(field, dicom)
+            series_info = f"series:{self.series.anonymized_series_uid}, study:{self.series.anonymized_study_uid}, patient:{self.series.anonymized_patient_id}"
+            try:
+                del dicom[field.element.tag]
+                if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                          ReviewFlagCollector.REASON_KNOWN_CONSTANT_DATE,
+                                          f"epochremove_{tag_str}_{keyword_str}"):
+                    self.logger.debug(
+                        f"Removed tag {tag_str} ({keyword_str}): value {orig!r} is the "
+                        f"Unix-epoch placeholder, not a real date; jittering it would "
+                        f"leak the per-patient shift. Series: {series_info}"
+                    )
+                if self.review_collector:
+                    try:
+                        self.review_collector.add_flag(
+                            reason         = ReviewFlagCollector.REASON_KNOWN_CONSTANT_DATE,
+                            original_value = orig,
+                            keep           = 0,
+                            output_value   = '',
+                            **_fp,
+                        )
+                    except Exception:
+                        pass
+            except Exception as remove_err:
+                if self._first_occurrence(_fp['tag_group'], _fp['tag_element'],
+                                          ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                                          f"epochremove_failed_{tag_str}_{keyword_str}"):
+                    self.logger.warning(
+                        f"Tag {tag_str} ({keyword_str}) holds the epoch placeholder "
+                        f"{orig!r} and could not be removed (tag may be nested inside "
+                        f"a sequence). Please verify this tag manually. "
+                        f"Error: {remove_err}. Series: {series_info}"
+                    )
+                if self.review_collector:
+                    try:
+                        self.review_collector.add_flag(
+                            reason         = ReviewFlagCollector.REASON_PHI_REMOVAL_FAILED,
+                            original_value = orig,
+                            keep           = 1,
+                            output_value   = orig,
+                            **_fp,
+                        )
+                    except Exception:
+                        pass
+                # Fall through and return the value unchanged below.
+                return field.element.value
+            # Return None - not 0. Deid skips the jitter entirely when the value is
+            # None, so the deletion above sticks. See the matching comment in
+            # generate_hmacdate_shift().
+            return None
+
+        return self.generate_hmacdate_shift(item, value, field, dicom)
+
     def set_fixed_datetime(self, item, value, field, dicom):
         """Generate fixed date/time values based on VR type for anonymization.
         

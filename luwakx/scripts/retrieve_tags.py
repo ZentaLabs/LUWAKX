@@ -361,6 +361,20 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
     merged['IsInDICOMRetainSafePrivateTags'] = merged[cmp_cols].apply(tuple, axis=1).isin(dicom_std[cmp_cols].apply(tuple, axis=1))
     merged['tag_name'] = merged['tag_name_dicom'].combine_first(merged['tag_name'])
     merged['Rtn. Safe Priv. Opt.'] = merged.apply(rtn_safe_priv_opt, axis=1)
+
+    # GEMS_PETD_01 (0009,xx0e) "Scan Ready" is left at the Unix epoch (19700101)
+    # by GE PET scanners when unset, but the TCIA Knowledge Base's offset-time
+    # disposition ('o') implies it also holds genuine per-patient timestamps in
+    # some files. rtn_safe_priv_opt() above turns 'o' into plain
+    # func:generate_hmacdate_shift, which would jitter the epoch placeholder the
+    # same as a real date - leaking the exact per-patient shift to anyone who
+    # diffs the jittered value against the known epoch. Route it through
+    # func:generate_hmacdate_shift_or_remove_epoch instead, which only removes
+    # the tag when the value is literally the epoch and still shifts it normally
+    # when genuinely populated.
+    known_constant_private_tags = merged['element_sig_pattern_cmp'].eq('0009,xx0e') & merged['Private_Creator_cmp'].eq('GEMS_PETD_01')
+    merged.loc[known_constant_private_tags, 'Rtn. Safe Priv. Opt.'] = 'func:generate_hmacdate_shift_or_remove_epoch'
+
     local_tuples = set(merged[cmp_cols].apply(tuple, axis=1))
     dicom_std_not_in_tcia = dicom_std[~dicom_std[cmp_cols].apply(tuple, axis=1).isin(local_tuples)].copy()
     dicom_std_not_in_tcia['private_disposition'] = ''
@@ -1039,7 +1053,18 @@ def generate_retain_long_modified_dates_profile(final_df, doc_refs_dict):
             print(f"Warning: Unrecognized profile value '{profile}' for tag {tag} in 'Rtn. Long. Modif. Dates Opt.' column, skipping.")
             # For any other values, keep them as is or set to default
             continue
-    
+
+    # Context Group Version (0008,0106) and Context Group Local Version (0008,0107)
+    # hold fixed DCMR version dates published in PS3.16, not real per-patient dates.
+    # The VR-based rule above routes any DA/DT tag under this profile to
+    # func:generate_hmacdate_shift, which would jitter these known-constant values -
+    # letting an attacker recover the exact per-patient shift by diffing the jittered
+    # value against the publicly known constant. Force them to 'keep' regardless of VR.
+    for idx in df[(df['Group'] == '0008') & (df['Element'].isin(['0106', '0107']))].index:
+        df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'keep'
+        doc_refs_dict[idx] = [ref for ref in doc_refs_dict[idx] if not ref.startswith('Retain Modified Dates:')]
+        doc_refs_dict[idx].append("Retain Modified Dates: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#531-keep")
+
     return df
 
 def retain_device_id_option(df, doc_refs_dict):
