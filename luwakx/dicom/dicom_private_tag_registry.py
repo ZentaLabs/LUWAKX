@@ -9,7 +9,7 @@ including tag conversion, keyword generation, and CSV-based tag registration.
 
 import re
 import csv
-from pydicom.datadict import add_private_dict_entry
+from pydicom.datadict import add_private_dict_entry, private_dictionary_VR
 
 # Import the centralized logger
 from ..logging.luwak_logger import get_logger
@@ -79,6 +79,7 @@ def register_private_tags_from_csv(csv_path):
     logger.debug(f"Loading private tags from: {csv_path}")
     
     tag_count = 0
+    conflict_count = 0
     with open(csv_path, newline='') as csvfile:
         reader = csv.reader(csvfile)
         header = next(reader)  # Skip header if present
@@ -89,10 +90,41 @@ def register_private_tags_from_csv(csv_path):
             try:
                 tag = tag_str_to_int(group, element)
                 description = name_to_keyword(description)
+
+                # pydicom ships its own private dictionary (same GDCM/dcm4che
+                # lineage used by validation tools such as dciodvfy). When it
+                # already has an entry for this (private_creator, tag), trust
+                # that over the CSV: this CSV is sourced from the TCIA Private
+                # Tag Knowledge Base, whose VR column is observational and
+                # disagrees with the standard dictionary for a meaningful
+                # fraction of entries (e.g. GEMS_ACQU_01 (0019,xx02) "Detector
+                # Channel" is SL, not OB; GEMS_IDEN_01 (0009,xxE3) "Equipment
+                # UID" is UI, not LO). Overwriting a correct built-in VR here
+                # causes pydicom to re-type these elements wrongly whenever
+                # they get re-parsed as VR=UN later in the pipeline (e.g.
+                # during transfer-syntax decompression), corrupting the VR of
+                # the anonymized output while leaving the raw bytes untouched.
+                try:
+                    known_vr = private_dictionary_VR(tag, private_creator)
+                except KeyError:
+                    known_vr = None
+
+                if known_vr and known_vr != vr:
+                    logger.warning(
+                        f"Private tag ({group},{element}) creator={private_creator!r}: "
+                        f"CSV VR={vr!r} disagrees with pydicom's built-in VR={known_vr!r}; "
+                        f"keeping the built-in VR."
+                    )
+                    conflict_count += 1
+                    continue
+
                 add_private_dict_entry(private_creator, tag, vr, description, vm)
                 tag_count += 1
             except Exception as e:
                 logger.warning(f"Skipping row {row}: {e}")
                 continue
-    
-    logger.info(f"Successfully registered {tag_count} private DICOM tags")
+
+    logger.info(
+        f"Successfully registered {tag_count} private DICOM tags "
+        f"({conflict_count} skipped due to conflicts with pydicom's built-in dictionary)"
+    )
