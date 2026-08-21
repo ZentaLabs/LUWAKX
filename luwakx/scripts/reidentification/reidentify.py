@@ -69,27 +69,25 @@ def _infer_deidentified_root(db_path: str) -> str:
     return os.path.join(project_dir, "deidentified")
 
 
-def _extract_patient_and_tail(stem: str) -> Tuple[str, str]:
-    """Split '<patient>_<tail>' from a rendered stem name."""
-    if "_" not in stem:
-        raise ValueError("rendered filename does not contain expected separators")
-    patient_anon, tail = stem.split("_", 1)
-    if not patient_anon:
-        raise ValueError("could not parse anonymized patient token")
-    return patient_anon, tail
+def _candidate_patient_study_series_triples(stem: str) -> list[Tuple[str, str, str]]:
+    """Generate possible (patient_token, study_token, series_token) splits from stem.
 
-
-def _candidate_study_series_pairs(tail: str) -> list[Tuple[str, str]]:
-    """Generate possible (study_token, series_token) splits from tail."""
-    pairs: list[Tuple[str, str]] = []
-    for idx, ch in enumerate(tail):
-        if ch != "_":
-            continue
-        study = tail[:idx]
-        series = tail[idx + 1 :]
-        if study and series:
-            pairs.append((study, series))
-    return pairs
+    Patient IDs, study tokens, and series tokens can all legitimately contain
+    underscores (e.g. patient "Patient_0037", or a series token like
+    "L1eHCNAPTdq1qlZ_"), so there is no single fixed split point - every pair of
+    underscore positions in the stem is a candidate 3-way split, to be disambiguated
+    by the caller against what actually exists on disk.
+    """
+    positions = [idx for idx, ch in enumerate(stem) if ch == "_"]
+    triples: list[Tuple[str, str, str]] = []
+    for a, i in enumerate(positions):
+        for j in positions[a + 1 :]:
+            patient = stem[:i]
+            study = stem[i + 1 : j]
+            series = stem[j + 1 :]
+            if patient and study and series:
+                triples.append((patient, study, series))
+    return triples
 
 
 def _find_first_dicom(series_dir: str) -> Optional[str]:
@@ -131,29 +129,22 @@ def _parse_rendering_filename_to_folder_tokens(
         raise ValueError(f"expected filename stem to end with '{suffix}', got '{stem}'")
 
     stem = stem[: -len(suffix)]
-    patient_anon, tail = _extract_patient_and_tail(stem)
 
-    candidates = _candidate_study_series_pairs(tail)
+    candidates = _candidate_patient_study_series_triples(stem)
     if not candidates:
-        raise ValueError("could not parse anonymized study/series tokens")
+        raise ValueError("could not parse anonymized patient/study/series tokens")
 
-    matches: list[Tuple[str, str]] = []
-    for study_anon, series_anon in candidates:
+    matches: list[Tuple[str, str, str]] = []
+    for patient_anon, study_anon, series_anon in candidates:
         series_dir = os.path.join(deidentified_root, patient_anon, study_anon, series_anon)
         if _find_first_dicom(series_dir) is not None:
-            matches.append((study_anon, series_anon))
+            matches.append((patient_anon, study_anon, series_anon))
 
     if len(matches) == 1:
-        study_anon, series_anon = matches[0]
-        return patient_anon, study_anon, series_anon
+        return matches[0]
 
     if len(matches) > 1:
-        raise ValueError("multiple study/series token candidates matched on disk")
-
-    study_anon, series_anon = tail.rsplit("_", 1)
-    series_dir = os.path.join(deidentified_root, patient_anon, study_anon, series_anon)
-    if _find_first_dicom(series_dir) is not None:
-        return patient_anon, study_anon, series_anon
+        raise ValueError("multiple patient/study/series token candidates matched on disk")
 
     raise ValueError("no companion DICOM found for parsed patient/study/series folder")
 

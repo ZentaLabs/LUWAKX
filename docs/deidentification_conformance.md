@@ -1007,6 +1007,12 @@ The Clean Descriptors option applies LLM-based PHI detection to textual descript
 
 **Effect:** Sends textual descriptors (Study Description, Series Description, Protocol Name, etc.) to an LLM for PHI/PII detection. Tags containing PHI are removed or replaced; clean tags are retained unchanged.
 
+**Documented deviation from PS3.15:** PS3.15 defines the 'C' (Clean) code as replacement "with values of similar meaning known not to contain identifying information" - not as license to route the field through PHI detection and hope for the best. For tags whose free-text content is, in practice, dominated by structured identifying values (referrer names, ward/site codes) rather than incidental prose, an LLM classifier cannot be relied on to guarantee that requirement. Luwak therefore forces the stricter Basic Profile `remove` action for these tags even when Clean Descriptors is selected, via `CLEAN_DESC_FORCE_BASIC_TAGS` in `luwakx/scripts/retrieve_tags.py`:
+
+| Tag | Name | Reason |
+|-----|------|--------|
+| (0032,1033) | Requesting Service | Holds referrer names and ward/site codes in practice |
+
 #### 5.4.9 Clean Structured Content Option
 
 The Clean Structured Content option identifies structured content sequences requiring manual PHI review. The template generation logic:
@@ -1589,6 +1595,7 @@ Luwak produces several output files during the deidentification pipeline, each s
     |-------------|-------------|
     | `VR_MISMATCH_OPERATION` | A recipe instruction (e.g. `func:generate_hmacuid`) was applied to a tag with an incompatible VR. For `func:generate_hmacuid`, Luwak first attempts to delete the tag; this flag is only emitted when deletion fails (e.g., the tag is nested inside a sequence) and the original value is preserved instead. |
     | `LLM_VERIFIED_CLEAN` | The LLM found no PHI; the original value was kept. Manual verification is still recommended. |
+    | `LLM_PHI_REMOVED` | The LLM found PHI and the tag was successfully deleted from the DICOM dataset (`keep`=0, `value` empty). Successful-deletion counterpart of `PHI_REMOVAL_FAILED`. |
     | `VR_FORMAT_INVALID` | pydicom/deid detected that a stored value does not conform to its declared VR format; the value may or may not have been modified. |
     | `SQ_REPLACE_NEEDS_REVIEW` | A sequence tag (VR=SQ) was kept unchanged because no automated replacement logic is available; manual review is required. |
     | `PHI_REMOVAL_FAILED` | An attempt to delete or replace a PHI-containing tag failed (e.g., nested tag in a sequence); the tag may still contain PHI. |
@@ -1882,7 +1889,7 @@ Luwak follows an object-oriented design with clear separation of concerns:
   - Buffer and deduplicate flagged-tag records during anonymization
   - Collapse per-instance rows to per-series rows when all instances share the same value
   - Expose structured rows for export via `flush_series()`
-- **Reason Codes:** `VR_MISMATCH_OPERATION`, `LLM_VERIFIED_CLEAN`, `VR_FORMAT_INVALID`, `SQ_REPLACE_NEEDS_REVIEW`, `PHI_REMOVAL_FAILED`, `PATIENT_DB_UNAVAILABLE`, `SERIES_FAILED`
+- **Reason Codes:** `VR_MISMATCH_OPERATION`, `LLM_VERIFIED_CLEAN`, `LLM_PHI_REMOVED`, `VR_FORMAT_INVALID`, `SQ_REPLACE_NEEDS_REVIEW`, `PHI_REMOVAL_FAILED`, `PATIENT_DB_UNAVAILABLE`, `SERIES_FAILED`
 - **Key Methods:**
   - `set_series_context(patient_id, study_uid, series_uid)` - Set current series context
   - `add_flag(tag, reason, original_value, keep, value)` - Record a flagged tag

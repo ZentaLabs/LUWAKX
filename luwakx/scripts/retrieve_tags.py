@@ -12,12 +12,13 @@ import argparse
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from pydicom.datadict import get_entry
+from pydicom.datadict import get_entry, private_dictionary_VR
 import sys
 from enum import Enum
 # Add the parent directory of luwakx to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from luwakx.utils import download_github_asset_by_tag
+from luwakx.dicom.dicom_private_tag_registry import tag_str_to_int
 
 
 class TCIAPrivateDisposition(Enum):
@@ -316,6 +317,34 @@ def split_group_element(val):
         return parts[0].strip(), parts[1].strip()
     return '', ''
 
+def prefer_pydicom_vr(row):
+    """Prefer pydicom's built-in private dictionary VR over the TCIA/DICOM
+    standard-sourced VR when the two disagree.
+
+    The TCIA Private Tag Knowledge Base's VR column is observational and
+    disagrees with pydicom's built-in private dictionary (the same
+    GDCM/dcm4che-derived data validation tools such as dciodvfy use) for a
+    meaningful fraction of entries - e.g. GEMS_ACQU_01 (0019,xx02) "Detector
+    Channel" is SL, not the TCIA source's OB. register_private_tags_from_csv()
+    already refuses to let a conflicting CSV VR override pydicom's dictionary
+    at anonymization runtime, but correcting it here too keeps this generated
+    template - and the recipe summary/documentation derived from it -
+    accurate, and keeps a from-scratch regeneration from re-introducing the
+    mismatch.
+    """
+    vr = row['vr']
+    if pd.isna(vr) or not str(vr).strip():
+        return vr
+    group, element, creator = row['Group'], row['Element'], row['Private_Creator_cmp']
+    if not group or not element or not creator:
+        return vr
+    try:
+        tag = tag_str_to_int(group, element)
+        known_vr = private_dictionary_VR(tag, creator)
+    except Exception:
+        return vr
+    return known_vr if known_vr and known_vr != vr else vr
+
 def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=False):
     tcia_df['element_sig_pattern_cmp'] = tcia_df['element_sig_pattern'].apply(extract_last_paren)
     tcia_df['Private_Creator_cmp'] = tcia_df['Private_Creator'].apply(extract_last_paren, private_creator=True)
@@ -332,6 +361,20 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
     merged['IsInDICOMRetainSafePrivateTags'] = merged[cmp_cols].apply(tuple, axis=1).isin(dicom_std[cmp_cols].apply(tuple, axis=1))
     merged['tag_name'] = merged['tag_name_dicom'].combine_first(merged['tag_name'])
     merged['Rtn. Safe Priv. Opt.'] = merged.apply(rtn_safe_priv_opt, axis=1)
+
+    # GEMS_PETD_01 (0009,xx0e) "Scan Ready" is left at the Unix epoch (19700101)
+    # by GE PET scanners when unset, but the TCIA Knowledge Base's offset-time
+    # disposition ('o') implies it also holds genuine per-patient timestamps in
+    # some files. rtn_safe_priv_opt() above turns 'o' into plain
+    # func:generate_hmacdate_shift, which would jitter the epoch placeholder the
+    # same as a real date - leaking the exact per-patient shift to anyone who
+    # diffs the jittered value against the known epoch. Route it through
+    # func:generate_hmacdate_shift_or_remove_epoch instead, which only removes
+    # the tag when the value is literally the epoch and still shifts it normally
+    # when genuinely populated.
+    known_constant_private_tags = merged['element_sig_pattern_cmp'].eq('0009,xx0e') & merged['Private_Creator_cmp'].eq('GEMS_PETD_01')
+    merged.loc[known_constant_private_tags, 'Rtn. Safe Priv. Opt.'] = 'func:generate_hmacdate_shift_or_remove_epoch'
+
     local_tuples = set(merged[cmp_cols].apply(tuple, axis=1))
     dicom_std_not_in_tcia = dicom_std[~dicom_std[cmp_cols].apply(tuple, axis=1).isin(local_tuples)].copy()
     dicom_std_not_in_tcia['private_disposition'] = ''
@@ -347,7 +390,11 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
     # Exclude rows where Element == 'xxinc.' or 'xxinc'
     final_out = final_out[final_out['Element'] != 'xxinc.'].copy()
     final_out = final_out[final_out['Element'] != 'xxinc'].copy()
-   
+
+    # Correct VR values that disagree with pydicom's built-in private dictionary
+    # before they get baked into the template. See prefer_pydicom_vr() docstring.
+    final_out['vr'] = final_out.apply(prefer_pydicom_vr, axis=1)
+
     rename_map = {
         'Private_Creator': 'TCIA Private_Creator',
         'Private_Creator_cmp': 'Private Creator',
@@ -1006,7 +1053,18 @@ def generate_retain_long_modified_dates_profile(final_df, doc_refs_dict):
             print(f"Warning: Unrecognized profile value '{profile}' for tag {tag} in 'Rtn. Long. Modif. Dates Opt.' column, skipping.")
             # For any other values, keep them as is or set to default
             continue
-    
+
+    # Context Group Version (0008,0106) and Context Group Local Version (0008,0107)
+    # hold fixed DCMR version dates published in PS3.16, not real per-patient dates.
+    # The VR-based rule above routes any DA/DT tag under this profile to
+    # func:generate_hmacdate_shift, which would jitter these known-constant values -
+    # letting an attacker recover the exact per-patient shift by diffing the jittered
+    # value against the publicly known constant. Force them to 'keep' regardless of VR.
+    for idx in df[(df['Group'] == '0008') & (df['Element'].isin(['0106', '0107']))].index:
+        df.at[idx, 'Rtn. Long. Modif. Dates Opt.'] = 'keep'
+        doc_refs_dict[idx] = [ref for ref in doc_refs_dict[idx] if not ref.startswith('Retain Modified Dates:')]
+        doc_refs_dict[idx].append("Retain Modified Dates: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#531-keep")
+
     return df
 
 def retain_device_id_option(df, doc_refs_dict):
@@ -1104,6 +1162,20 @@ def retain_institution_id_option(df, doc_refs_dict):
 
     return df
 
+# DICOM PS3.15 marks 'C' (Clean) for these tags in the Clean Descriptors option,
+# which permits routing them through the LLM-based cleaner
+# (func:clean_descriptors_with_llm) instead of removing them outright. Luwak
+# deliberately deviates from the standard and forces the stricter Basic Profile
+# 'remove' action for tags known to carry structured identifying values (e.g.
+# referrer names, ward/site codes) rather than free-form prose - a free-text LLM
+# PHI classifier cannot be relied on to guarantee the PS3.15 'C' requirement
+# ("replacement with values of similar meaning known not to contain identifying
+# information") for values like these.
+# See: docs/deidentification_conformance.md#548-clean-descriptors-option
+CLEAN_DESC_FORCE_BASIC_TAGS = {
+    ('0032', '1033'),  # Requesting Service - referrer names / ward-site codes in practice
+}
+
 def clean_profiles(df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', and 'Clean Graph. Opt.' columns based on institution ID retention rules.
@@ -1139,9 +1211,16 @@ def clean_profiles(df, doc_refs_dict):
             tag = '(' + str(row['Group']) + ',' + str(row['Element']) + ')'
 
         if profile1 == DICOMStandardActionCode.C_CLEAN.value:
-            # See: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#548-clean-descriptors-option
-            df.at[idx, 'Clean Desc. Opt.'] = 'func:clean_descriptors_with_llm'
-            doc_refs_dict[idx].append("Clean Descriptors: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#537-llm-descriptor-cleaning-funcclean_descriptors_with_llm")
+            group = str(row['Group']).strip().lower()
+            element = str(row['Element']).strip().lower()
+            if (group, element) in CLEAN_DESC_FORCE_BASIC_TAGS:
+                # See CLEAN_DESC_FORCE_BASIC_TAGS definition above.
+                df.at[idx, 'Clean Desc. Opt.'] = ''
+                doc_refs_dict[idx].append("Clean Descriptors: deliberately not applied - see docs/deidentification_conformance.md#548-clean-descriptors-option")
+            else:
+                # See: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#548-clean-descriptors-option
+                df.at[idx, 'Clean Desc. Opt.'] = 'func:clean_descriptors_with_llm'
+                doc_refs_dict[idx].append("Clean Descriptors: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#537-llm-descriptor-cleaning-funcclean_descriptors_with_llm")
         if profile2 == DICOMStandardActionCode.C_CLEAN.value:
             # See: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#549-clean-structured-content-option
             # clean_manually action requires manual review - see: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#641-translation-logic-by-action

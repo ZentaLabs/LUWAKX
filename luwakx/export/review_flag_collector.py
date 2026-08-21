@@ -56,6 +56,12 @@ class ReviewFlagCollector:
         REASON_LLM_VERIFIED_CLEAN:
             The LLM/PHI-detector inspected the tag value and found no PHI.  The original
             value was kept.  Manual verification is still recommended.
+        REASON_LLM_PHI_REMOVED:
+            The LLM/PHI-detector inspected the tag value, found PHI, and the tag was
+            successfully deleted from the DICOM dataset.  ``keep`` is 0 and ``value``
+            is empty.  This is the successful-deletion counterpart of
+            ``REASON_PHI_REMOVAL_FAILED`` (which records the fallback-to-'ANONYMIZED'
+            case when deletion itself raises).
         REASON_LLM_VERIFICATION_SKIPPED:
             The LLM/PHI-detector was not called on this tag (e.g. because LLM was not available or disabled).
         REASON_VR_FORMAT_INVALID:
@@ -83,17 +89,27 @@ class ReviewFlagCollector:
             was anonymized.  The error message is stored in ``original_value``.  ``tag_group``
             and ``tag_element`` are both ``'*'`` because the failure is not attributable to a
             specific tag.
+        REASON_KNOWN_CONSTANT_DATE:
+            A tag scheduled for date-shifting held a publicly known constant/placeholder
+            date (e.g. the Unix epoch 19700101, or a fixed DCMR version date) rather than
+            a real per-patient date. Shifting a known constant leaks the exact per-patient
+            offset: anyone who knows the true constant can diff it against the shifted
+            output and recover the shift, then apply it to reveal every other shifted date
+            for that patient. The tag was removed instead of shifted.  ``keep`` is 0 and
+            ``value`` is empty.
     """
 
     #  Reason codes ---------------------------------------------------------
     REASON_VR_MISMATCH              = "VR_MISMATCH_OPERATION"
     REASON_LLM_VERIFIED_CLEAN       = "LLM_VERIFIED_CLEAN"
+    REASON_LLM_PHI_REMOVED          = "LLM_PHI_REMOVED"
     REASON_LLM_VERIFICATION_SKIPPED = "LLM_VERIFICATION_SKIPPED"
     REASON_VR_FORMAT_INVALID        = "VR_FORMAT_INVALID"
     REASON_SQ_REPLACE_NEEDS_REVIEW  = "SQ_REPLACE_NEEDS_REVIEW"
     REASON_PHI_REMOVAL_FAILED       = "PHI_REMOVAL_FAILED"
     REASON_PATIENT_DB_UNAVAILABLE   = "PATIENT_DB_UNAVAILABLE"
     REASON_SERIES_FAILED            = "SERIES_FAILED"
+    REASON_KNOWN_CONSTANT_DATE      = "KNOWN_CONSTANT_DATE_REMOVED"
 
     #  CSV schema -----------------------------------------------------------
     CSV_COLUMNS: List[str] = [
