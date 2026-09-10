@@ -4,7 +4,6 @@ Group,Element,Private Creator,VR,VM,Meaning,Rtn. Safe Priv. Opt.,IsInDICOMRetain
 0009,xx01,GEIIS_RA1000,CS,,Referenced Series Sequence:Referenced Image Sequence:Unknown,keep,False,"(0008,1115)[<0>](0008,1140)[<1>](0009,xx01)"
 0009,xx01,GEMS_IDEN_01,LO,,Full Fidelity,keep,False,"(0009,xx01)"
 0009,xx01,GEMS_PETD_01,LO,,Implementation Version Name,keep,False,"(0009,xx01)"
-0009,xx02,SECTRA_Ident_01,LO,,Examination number,keep,False,"(0009,xx02)"
 0009,xx03,GEMS_PETD_01,SH,,Patient Compatible Version,keep,False,"(0009,xx03)"
 0009,xx04,GEMS_IDEN_01,SH,,Product Id,keep,False,"(0009,xx04)"
 0009,xx04,SPI-P Release 1,LO,,Image Data Consistence,keep,False,"(0009,xx04)"

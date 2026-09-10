@@ -489,6 +489,14 @@ python retrieve_tags.py --create_standard_tag_template \
 4. Writes specific deidentification actions per profile (more details at [§5.3](#53-tagprofile-specific-actions) and [§5.4](#54-profileoptions-description))
 5. Generates unified template.
 
+**Documented deviation from PS3.15 - tags added beyond Table E.1-1:** Table E.1-1 is not exhaustive: it omits issuer-qualifier sequences and retired attributes that nevertheless identify the submitting site or its systems, and a standard tag without a template rule passes through the de-identifier unchanged. Tags listed in `EXTRA_BASIC_REMOVE_TAGS` in `luwakx/scripts/retrieve_tags.py` are therefore force-added to the template with the Basic Profile `remove` action and no option-column overrides, so they are removed under every profile combination. All three were found retained in production QC:
+
+| Tag | Name | Reason |
+|-----|------|--------|
+| (0008,0051) | Issuer of Accession Number Sequence | Items carry LocalNamespaceEntityID issuer codes and a UniversalEntityID OID identifying the site's accession-number issuing system, while Accession Number itself is blanked |
+| (0010,0024) | Issuer of Patient ID Qualifiers Sequence | Items carry the same identifying UniversalEntityID OID |
+| (0008,0202) | (retired) | Observed carrying the local UTC offset (+0100/+0200), pinning the acquisition country; its non-retired sibling (0008,0201) is in Table E.1-1 and is removed |
+
 #### 5.1.3 Template Structure
 CSV columns include:
 
@@ -1048,6 +1056,8 @@ Here are the available actions for this option:
 - Retains the original value of safe private tags
 - TCIA specifies this action as `k`
 - Note: when TCIA specifies an action as `d` remove, but the DICOM standard table lists it as safe, we keep it.
+
+**Documented deviation from the TCIA Private Tag Knowledge Base:** SECTRA_Ident_01 (0009,xx02) "Examination number" is classified as safe (`k`) by the TCIA KB, but production QC found it carrying a copy of the original StudyID. The template generator drops this row (see `merge_tcia_df()` in `luwakx/scripts/retrieve_tags.py`), so the tag is removed like any other unlisted private element.
 
 **Action: `func:generate_hmacuid`**
 - Applies HMAC-based UID anonymization to private UID tags
