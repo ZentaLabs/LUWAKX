@@ -8,8 +8,9 @@ Two tables live in the same database file:
 ``deface_mask_cache``
     Content store.  One row per (patient, study, FrameOfReference, modality,
     series_instance_uid).  Written by :class:`DefaceService` after the ML
-    face mask is computed for each CT series.  Cache hit requires an exact
-    series UID match so that geometry is guaranteed to be identical.
+    face mask is computed for a series - CT candidates, and PET series
+    defaced directly with the FDG PET face model.  Cache hit requires an
+    exact series UID match so that geometry is guaranteed to be identical.
 
     Cache key is SHA-256 of:
         project_hash_root || PatientID || PatientName || PatientBirthDate ||

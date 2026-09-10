@@ -188,7 +188,10 @@ class DefaceService:
         #
         # Strategies (highest priority first):
         #   1. Test-time external mask  (testOptions.useExistingMaskDefacer)
-        #   2. PET (modality PT)        -> run the FDG PET face model directly
+        #   2. PET (modality PT):
+        #      2a. Cached mask in DB    -> reuse from a previous run, no ML
+        #      2b. ML inference         -> run the FDG PET face model directly;
+        #                                  save if primary or mode='all'
         #   3. PET paired with a CT     -> project cached CT mask, no ML
         #   4. All other series:
         #      4a. Cached mask in DB    -> reuse from a previous run, no ML
@@ -207,16 +210,35 @@ class DefaceService:
                 # Strategy 2: PET is defaced directly with the dedicated FDG PET
                 # face model (clin_pt_fdg_face) run on the PET volume itself,
                 # instead of projecting a paired CT's mask onto it.
-                self.logger.info(
-                    f"Running ML defacing (clin_pt_fdg_face) for PET series "
-                    f"{series.anonymized_series_uid!r}"
-                )
-                image_face_segmentation = defacer.prepare_face_mask(
-                    image, modality, model_name="clin_pt_fdg_face",
-                    dilation_margin_mm=self.face_dilation_margin_mm,
-                )
-                cleanup_gpu_memory()
-                self.logger.debug("GPU memory cleaned up after PET face detection")
+                # 2a: Check DB cache - reuse the mask saved during a *previous run
+                #     of this exact series*.  The hit requires a matching
+                #     series_instance_uid, so the geometry is identical and the
+                #     mask applies without resampling.  Without this the PET model
+                #     would re-run for every PET series on every re-run.
+                cached_pet_mask_path = self._get_cached_mask_path(series)
+                if cached_pet_mask_path is not None:
+                    self.logger.info(
+                        f"Reusing cached face mask for PET series "
+                        f"{series.anonymized_series_uid!r}: {self._rel_path(cached_pet_mask_path)}"
+                    )
+                    image_face_segmentation = SimpleITK.ReadImage(cached_pet_mask_path)
+                else:
+                    # 2b: Run ML inference with the FDG PET face model.
+                    self.logger.info(
+                        f"Running ML defacing (clin_pt_fdg_face) for PET series "
+                        f"{series.anonymized_series_uid!r}"
+                    )
+                    image_face_segmentation = defacer.prepare_face_mask(
+                        image, modality, model_name="clin_pt_fdg_face",
+                        dilation_margin_mm=self.face_dilation_margin_mm,
+                    )
+                    cleanup_gpu_memory()
+                    self.logger.debug("GPU memory cleaned up after PET face detection")
+                    # Persist the mask so the next run hits 2a.  A directly defaced
+                    # PET is its own primary: no other series can regenerate this
+                    # mask, so discarding it costs a full inference next time.
+                    if series.is_primary_deface_candidate or self.save_all_masks:
+                        save_mask_after_ml = True
 
             elif series.primary_ct_series is not None:
                 # Strategy 3: PET paired with a CT primary.
