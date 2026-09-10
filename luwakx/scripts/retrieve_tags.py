@@ -375,6 +375,12 @@ def merge_tcia_df(tcia_df, dicom_std, output_path, save_dicom_std_not_in_tcia=Fa
     known_constant_private_tags = merged['element_sig_pattern_cmp'].eq('0009,xx0e') & merged['Private_Creator_cmp'].eq('GEMS_PETD_01')
     merged.loc[known_constant_private_tags, 'Rtn. Safe Priv. Opt.'] = 'func:generate_hmacdate_shift_or_remove_epoch'
 
+    # Remove SECTRA_Ident_01 (0009,xx02) "Examination number" from known safe private tags.
+    # This tag was classified as safe (keep) by the TCIA Private Tag Knowledge Base, but production QC found it stored the original StudyID.
+    # Retained private tags are an "allowlist", therefore removing the row here means the anonymizer removes the tag like any other unlisted private element.
+    sectra_exam_number = merged['element_sig_pattern_cmp'].eq('0009,xx02') & merged['Private_Creator_cmp'].eq('SECTRA_Ident_01')
+    merged = merged[~sectra_exam_number].copy()
+
     local_tuples = set(merged[cmp_cols].apply(tuple, axis=1))
     dicom_std_not_in_tcia = dicom_std[~dicom_std[cmp_cols].apply(tuple, axis=1).isin(local_tuples)].copy()
     dicom_std_not_in_tcia['private_disposition'] = ''
@@ -1176,6 +1182,27 @@ CLEAN_DESC_FORCE_BASIC_TAGS = {
     ('0032', '1033'),  # Requesting Service - referrer names / ward-site codes in practice
 }
 
+# DICOM PS3.15 Table E.1-1 is not exhaustive: it omits issuer-qualifier sequences and
+# retired attributes that nevertheless identify the submitting site or its systems, and
+# tags without a rule pass through the de-identifier unchanged. Tags listed here are
+# force-added to the standard template with the Basic Profile 'remove' action and no
+# option-column overrides, so they are removed under every profile combination.
+# All three were found retained in production QC (2026-09 PET-CT review):
+#   (0008,0051) items carried LocalNamespaceEntityID issuer codes (e.g. 2513ZKA) and a
+#               UniversalEntityID OID registered to the issuing site's system, while
+#               AccessionNumber itself was already blanked;
+#   (0010,0024) items carried the same identifying UniversalEntityID OID;
+#   (0008,0202) is a retired attribute observed holding the local UTC offset
+#               (+0100/+0200), pinning the acquisition country - its non-retired
+#               sibling (0008,0201) IS in Table E.1-1 and was removed correctly.
+# See: docs/deidentification_conformance.md#51-standard-tags-template
+EXTRA_BASIC_REMOVE_TAGS = [
+    # (group, element, name, vr)
+    ('0008', '0051', 'Issuer of Accession Number Sequence', 'SQ'),
+    ('0008', '0202', 'Retired - carries local UTC offset in practice', 'LO'),
+    ('0010', '0024', 'Issuer of Patient ID Qualifiers Sequence', 'SQ'),
+]
+
 def clean_profiles(df, doc_refs_dict):
     """
     Process a DataFrame and update the 'Clean Desc. Opt.', 'Clean Struct. Cont. Opt.', and 'Clean Graph. Opt.' columns based on institution ID retention rules.
@@ -1277,7 +1304,31 @@ def create_final_file(final_df, output_csv):
     df = retain_device_id_option(df, doc_refs_dict)
     df = retain_institution_id_option(df, doc_refs_dict)
     df = clean_profiles(df, doc_refs_dict)
-    
+
+    # Force-add site/issuer identifier tags that PS3.15 Table E.1-1 omits (see
+    # EXTRA_BASIC_REMOVE_TAGS). Appended after all profile processing with every
+    # option column empty, so no profile combination can override the removal.
+    extra_rows = []
+    for group, element, name, vr in EXTRA_BASIC_REMOVE_TAGS:
+        existing = df[(df['Group'] == group) & (df['Element'] == element)].index
+        if len(existing):
+            for idx in existing:
+                df.at[idx, 'Basic Prof.'] = 'remove'
+                doc_refs_dict[idx] = [ref for ref in doc_refs_dict[idx] if not ref.startswith('Basic:')]
+                doc_refs_dict[idx].append("Basic: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#532-remove, Site/issuer identifier outside PS3.15 Table E.1-1 - see EXTRA_BASIC_REMOVE_TAGS in luwakx/scripts/retrieve_tags.py")
+            continue
+        extra_rows.append({
+            'Group': group, 'Element': element, 'Name': name, 'VR': vr, 'VM': '',
+            'Basic Prof.': 'remove',
+            'TCIA element_sig_pattern': f'({group},{element})',
+            'Final CTP Script': '',
+        })
+    if extra_rows:
+        start = len(df)
+        df = pd.concat([df, pd.DataFrame(extra_rows)], ignore_index=True).fillna('')
+        for offset in range(len(extra_rows)):
+            doc_refs_dict[start + offset].append("Basic: https://github.com/ZentaLabs/LUWAKX/blob/main/docs/deidentification_conformance.md#532-remove, Site/issuer identifier outside PS3.15 Table E.1-1 - see EXTRA_BASIC_REMOVE_TAGS in luwakx/scripts/retrieve_tags.py")
+
     # Convert documentation references lists to strings separated by " | "
     df['Documentation References'] = df.index.map(lambda idx: ' | '.join(doc_refs_dict[idx]) if doc_refs_dict[idx] else '')
         
